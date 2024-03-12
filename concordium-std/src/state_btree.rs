@@ -1,7 +1,7 @@
 use crate::{
-    marker::PhantomData, mem, Deletable, Deserial, DeserialWithState, Get, HasStateApi,
-    ParseResult, Read, Serial, Serialize, StateItemPrefix, StateMap, StateRef, StateRefMut,
-    UnwrapAbort, Write, STATE_ITEM_PREFIX_SIZE,
+    cmp::Ordering, marker::PhantomData, mem, Deletable, Deserial, DeserialWithState, Get,
+    HasStateApi, ParseResult, Read, Serial, Serialize, StateItemPrefix, StateMap, StateRef,
+    StateRefMut, UnwrapAbort, Write, STATE_ITEM_PREFIX_SIZE,
 };
 
 /// An ordered map based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
@@ -27,8 +27,9 @@ use crate::{
 /// The map `StateBTreeMap<K, V, S, M>` is parametrized by the types:
 /// - `K`: Keys used in the map. Most operations on the map require this to
 ///   implement [`Serialize`](crate::Serialize). Keys cannot contain references
-///   to the low-level state, such as types containing [`StateBox`],
-///   [`StateMap`] and [`StateSet`].
+///   to the low-level state, such as types containing
+///   [`StateBox`](crate::StateBox), [`StateMap`](crate::StateMap) and
+///   [`StateSet`](crate::StateSet).
 /// - `V`: Values stored in the map. Most operations on the map require this to
 ///   implement [`Serial`](crate::Serial) and
 ///   [`DeserialWithState<S>`](crate::DeserialWithState).
@@ -43,8 +44,8 @@ use crate::{
 /// ## Usage
 ///
 /// New maps can be constructed using the
-/// [`new_btree_map`][StateBuilder::new_btree_map] method on the
-/// [`StateBuilder`].
+/// [`new_btree_map`](crate::StateBuilder::new_btree_map) method on the
+/// [`StateBuilder`](crate::StateBuilder).
 ///
 /// ```
 /// # use concordium_std::*;
@@ -123,10 +124,11 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
     /// Remove a key from the map, returning the value at the key if the key was
     /// previously in the map.
     ///
-    /// *Caution*: If `V` is a [StateBox], [StateMap], then it is
-    /// important to call [`Deletable::delete`] on the value returned when
-    /// you're finished with it. Otherwise, it will remain in the contract
-    /// state.
+    /// *Caution*: If `V` is a [StateBox](crate::StateBox),
+    /// [StateMap](crate::StateMap), then it is important to call
+    /// [`Deletable::delete`](crate::Deletable::delete) on the value returned
+    /// when you're finished with it. Otherwise, it will remain in the
+    /// contract state.
     #[must_use]
     pub fn remove_and_get(&mut self, key: &K) -> Option<V>
     where
@@ -242,8 +244,8 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
 
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
-    /// [StateBox]. **If applicable use [`clear_flat`](Self::clear_flat)
-    /// instead.**
+    /// [StateBox](crate::StateBox). **If applicable use
+    /// [`clear_flat`](Self::clear_flat) instead.**
     pub fn clear(&mut self)
     where
         S: HasStateApi,
@@ -289,8 +291,9 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
 /// The map `StateBTreeSet<K, S, M>` is parametrized by the types:
 /// - `K`: Keys used in the set. Most operations on the set require this to
 ///   implement [`Serialize`](crate::Serialize). Keys cannot contain references
-///   to the low-level state, such as types containing [`StateBox`],
-///   [`StateMap`] and [`StateSet`].
+///   to the low-level state, such as types containing
+///   [`StateBox`](crate::StateBox), [`StateMap`](crate::StateMap) and
+///   [`StateSet`](crate::StateSet).
 /// - `S`: The low-level state implementation used, this allows for mocking the
 ///   state API in unit tests, see
 ///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
@@ -302,8 +305,8 @@ impl<const M: usize, K, V, S> StateBTreeMap<K, V, S, M> {
 /// ## Usage
 ///
 /// New sets can be constructed using the
-/// [`new_btree_set`][StateBuilder::new_btree_set] method on the
-/// [`StateBuilder`].
+/// [`new_btree_set`](crate::StateBuilder::new_btree_set) method on the
+/// [`StateBuilder`](crate::StateBuilder).
 ///
 /// ```
 /// # use concordium_std::*;
@@ -903,13 +906,10 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                 // Since the child is now split into two, we have to check which one to insert
                 // into.
                 let moved_up_key = &node.keys[insert_index];
-                if moved_up_key == &key {
-                    // If the key moved up during the split is the key we are inserting, we exit.
-                    return false;
-                } else if moved_up_key < &key {
-                    larger_child
-                } else {
-                    child
+                match moved_up_key.cmp(&key) {
+                    Ordering::Equal => return false,
+                    Ordering::Less => larger_child,
+                    Ordering::Greater => child,
                 }
             };
         }

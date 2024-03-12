@@ -2331,13 +2331,13 @@ where
         StateMap::open(state_api, prefix)
     }
 
-    /// Create a new empty [`StateBTreeSet`].
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet).
     pub fn new_btree_set<K>(&mut self) -> state_btree::StateBTreeSet<K, S> {
         let (state_api, prefix) = self.new_state_container();
         state_btree::StateBTreeSet::new(state_api, prefix)
     }
 
-    /// Create a new empty [`StateBTreeMap`].
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap).
     pub fn new_btree_map<K, V>(&mut self) -> state_btree::StateBTreeMap<K, V, S> {
         state_btree::StateBTreeMap {
             map:         self.new_map(),
@@ -2345,8 +2345,8 @@ where
         }
     }
 
-    /// Create a new empty [`StateBTreeSet`], setting the minimum degree `M` of
-    /// the B-Tree explicitly.
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet), setting the
+    /// minimum degree `M` of the B-Tree explicitly.
     pub fn new_btree_set_degree<const M: usize, K>(
         &mut self,
     ) -> state_btree::StateBTreeSet<K, S, M> {
@@ -2354,8 +2354,8 @@ where
         state_btree::StateBTreeSet::new(state_api, prefix)
     }
 
-    /// Create a new empty [`StateBTreeMap`], setting the minimum degree `M` of
-    /// the B-Tree explicitly.
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
+    /// minimum degree `M` of the B-Tree explicitly.
     pub fn new_btree_map_degree<const M: usize, K, V>(
         &mut self,
     ) -> state_btree::StateBTreeMap<K, V, S, M> {
