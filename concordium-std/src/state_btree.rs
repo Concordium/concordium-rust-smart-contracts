@@ -968,6 +968,73 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         let entry = self.state_api.lookup_entry(&key).unwrap_abort();
         StateRefMut::new(entry, self.state_api.clone())
     }
+
+    /// Construct a string for displaying the btree and debug information.
+    /// Should only be used while debugging and testing the btree itself.
+    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    pub(crate) fn debug(&self) -> String
+    where
+        K: Serialize + std::fmt::Debug + Ord,
+        S: HasStateApi, {
+        let Some(root_node_id) = self.root else {
+            return format!("no root");
+        };
+        let mut string = String::new();
+        let root: Node<M, K> = self.get_node(root_node_id);
+        string.push_str(format!("root: {:#?}", root).as_str());
+        let mut stack = root.children;
+
+        while let Some(node_id) = stack.pop() {
+            let node: Node<M, K> = self.get_node(node_id);
+            string.push_str(
+                format!("node {} {:?}: {:#?},\n", node_id.id, node.check_invariants(), node)
+                    .as_str(),
+            );
+
+            stack.extend(node.children);
+        }
+        string
+    }
+
+    /// Check a number of invariants, producing an error if any of them are
+    /// violated. Should only be used while debugging and testing the btree
+    /// itself.
+    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
+    where
+        K: Serialize + Ord,
+        S: HasStateApi, {
+        use crate::ops::Deref;
+        let Some(root_node_id) = self.root else {
+            return if self.len == 0 {
+                Ok(())
+            } else {
+                Err(InvariantViolation::NonZeroLenWithNoRoot)
+            };
+        };
+        let root: Node<M, K> = self.get_node(root_node_id);
+        if root.keys.is_empty() {
+            return Err(InvariantViolation::ZeroKeysInRoot);
+        }
+
+        let mut stack = root.children;
+        while let Some(node_id) = stack.pop() {
+            let node: Node<M, K> = self.get_node(node_id);
+            node.check_invariants()?;
+            stack.extend(node.children);
+        }
+
+        let mut prev = None;
+        for key in self.iter() {
+            if let Some(p) = prev.as_deref() {
+                if p >= key.deref() {
+                    return Err(InvariantViolation::IterationOutOfOrder);
+                }
+            }
+            prev = Some(key);
+        }
+        Ok(())
+    }
 }
 
 /// An iterator over the entries of a [`StateBTreeSet`].
@@ -1068,69 +1135,9 @@ struct NodeId {
     id: u32,
 }
 
-/// Type representing a node in the [`StateBTreeMap`].
-/// Each node is stored separately in the smart contract key-value store.
-#[derive(Debug)]
-struct Node<const M: usize, K> {
-    /// List of sorted keys tracked by this node.
-    /// This list should never be empty and contain between `M - 1` and `2M
-    /// - 1` elements.
-    keys:     Vec<K>,
-    /// List of nodes which are children of this node in the tree.
-    ///
-    /// This list is empty when this node is representing a leaf.
-    /// When not a leaf, it will contain exactly `keys.len() + 1` elements.
-    ///
-    /// The elements are ordered such that for a key `keys[i]`:
-    /// - `children[i]` is a subtree containing strictly smaller keys.
-    /// - `children[i + 1]` is a subtree containing strictly larger keys.
-    children: Vec<NodeId>,
-}
-
-/// Wrapper implement the exact same deserial as K, but wraps it in an
-/// option in memory. This is used, to allow taking a key from a mutable
-/// reference to a node, without cloning the key, during iteration of the
-/// set.
-#[repr(transparent)]
-struct KeyWrapper<K> {
-    key: Option<K>,
-}
-
-impl<K: Deserial> Deserial for KeyWrapper<K> {
-    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
-        let key = K::deserial(source)?;
-        Ok(Self {
-            key: Some(key),
-        })
-    }
-}
-
 /// Byte size of the key used to store a BTree internal node in the smart
 /// contract key-value store.
 const BTREE_NODE_KEY_SIZE: usize = STATE_ITEM_PREFIX_SIZE + NodeId::SERIALIZED_BYTE_SIZE;
-
-impl<const M: usize, K> Node<M, K> {
-    /// The max length of the child list.
-    const MAXIMUM_CHILD_LEN: usize = 2 * M;
-    /// The max length of the key list.
-    const MAXIMUM_KEY_LEN: usize = Self::MAXIMUM_CHILD_LEN - 1;
-    /// The min length of the child list, when the node is not a leaf node.
-    const MINIMUM_CHILD_LEN: usize = M;
-    /// The min length of the key list, except when the node is root.
-    const MINIMUM_KEY_LEN: usize = Self::MINIMUM_CHILD_LEN - 1;
-
-    /// The number of keys stored in this node.
-    fn len(&self) -> usize { self.keys.len() }
-
-    /// Check if the node holds the maximum number of keys.
-    fn is_full(&self) -> bool { self.len() == Self::MAXIMUM_KEY_LEN }
-
-    /// Check if the node is representing a leaf in the tree.
-    fn is_leaf(&self) -> bool { self.children.is_empty() }
-
-    /// Check if the node holds the minimum number of keys.
-    fn is_at_min(&self) -> bool { self.len() == Self::MINIMUM_KEY_LEN }
-}
 
 impl NodeId {
     /// Byte size of `NodeId` when serialized.
@@ -1160,6 +1167,118 @@ impl NodeId {
         // Transmuting away the maybeuninit is safe since we have initialized all of
         // them.
         unsafe { mem::transmute(prefixed) }
+    }
+}
+
+/// Type representing a node in the [`StateBTreeMap`].
+/// Each node is stored separately in the smart contract key-value store.
+#[derive(Debug)]
+struct Node<const M: usize, K> {
+    /// List of sorted keys tracked by this node.
+    /// This list should never be empty and contain between `M - 1` and `2M
+    /// - 1` elements. The root node being the only exception to this.
+    keys:     Vec<K>,
+    /// List of nodes which are children of this node in the tree.
+    ///
+    /// This list is empty when this node is representing a leaf.
+    /// When not a leaf, it will contain exactly `keys.len() + 1` elements.
+    ///
+    /// The elements are ordered such that for a key `keys[i]`:
+    /// - `children[i]` is a subtree containing strictly smaller keys.
+    /// - `children[i + 1]` is a subtree containing strictly larger keys.
+    children: Vec<NodeId>,
+}
+
+impl<const M: usize, K> Node<M, K> {
+    /// The max length of the child list.
+    const MAXIMUM_CHILD_LEN: usize = 2 * M;
+    /// The max length of the key list.
+    const MAXIMUM_KEY_LEN: usize = Self::MAXIMUM_CHILD_LEN - 1;
+    /// The min length of the child list, when the node is not a leaf node.
+    const MINIMUM_CHILD_LEN: usize = M;
+    /// The min length of the key list, except when the node is root.
+    const MINIMUM_KEY_LEN: usize = Self::MINIMUM_CHILD_LEN - 1;
+
+    /// The number of keys stored in this node.
+    fn len(&self) -> usize { self.keys.len() }
+
+    /// Check if the node holds the maximum number of keys.
+    fn is_full(&self) -> bool { self.len() == Self::MAXIMUM_KEY_LEN }
+
+    /// Check if the node is representing a leaf in the tree.
+    fn is_leaf(&self) -> bool { self.children.is_empty() }
+
+    /// Check if the node holds the minimum number of keys.
+    fn is_at_min(&self) -> bool { self.len() == Self::MINIMUM_KEY_LEN }
+
+    /// Check a number of invariants of a non-root node in a btree, producing an
+    /// error if any of them are violated. Should only be used while
+    /// debugging and testing the btree itself.
+    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
+    where
+        K: Ord, {
+        for i in 1..self.keys.len() {
+            if &self.keys[i - 1] >= &self.keys[i] {
+                return Err(InvariantViolation::NodeKeysOutOfOrder);
+            }
+        }
+
+        if self.keys.len() < Self::MINIMUM_KEY_LEN {
+            return Err(InvariantViolation::KeysLenBelowMin);
+        }
+        if self.keys.len() > Self::MAXIMUM_KEY_LEN {
+            return Err(InvariantViolation::KeysLenAboveMax);
+        }
+
+        if self.is_leaf() {
+            if !self.children.is_empty() {
+                return Err(InvariantViolation::LeafWithChildren);
+            }
+        } else {
+            if self.children.len() < Self::MINIMUM_CHILD_LEN {
+                return Err(InvariantViolation::ChildrenLenBelowMin);
+            }
+            if self.children.len() > Self::MAXIMUM_CHILD_LEN {
+                return Err(InvariantViolation::ChildrenLenAboveMax);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// The invariants to check in a btree.
+/// Should only be used while debugging and testing the btree itself.
+#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+#[derive(Debug)]
+pub(crate) enum InvariantViolation {
+    NonZeroLenWithNoRoot,
+    ZeroKeysInRoot,
+    IterationOutOfOrder,
+    NodeKeysOutOfOrder,
+    KeysLenBelowMin,
+    KeysLenAboveMax,
+    LeafWithChildren,
+    ChildrenLenBelowMin,
+    ChildrenLenAboveMax,
+}
+
+/// Wrapper implement the exact same deserial as K, but wraps it in an
+/// option in memory. This is used, to allow taking a key from a mutable
+/// reference to a node, without cloning the key, during iteration of the
+/// set.
+#[repr(transparent)]
+struct KeyWrapper<K> {
+    key: Option<K>,
+}
+
+impl<K: Deserial> Deserial for KeyWrapper<K> {
+    fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
+        let key = K::deserial(source)?;
+        Ok(Self {
+            key: Some(key),
+        })
     }
 }
 
@@ -1478,5 +1597,200 @@ mod wasm_test_btree {
         }
         let iter_keys: Vec<u32> = tree.iter().map(|k| k.clone()).collect();
         claim_eq!(keys, iter_keys);
+    }
+
+    #[concordium_test]
+    fn test_btree_insert_present_key() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
+        for n in [0, 3, 4, 1, 2].into_iter() {
+            tree.insert(n);
+        }
+        claim!(!tree.insert(1));
+    }
+
+    #[cfg(feature = "concordium-quickcheck")]
+    #[allow(deprecated)]
+    mod quickcheck {
+        use super::super::*;
+        use crate::{
+            self as concordium_std, concordium_quickcheck, concordium_test, fail, StateApi,
+            StateBuilder,
+        };
+        use ::quickcheck::{Arbitrary, Gen, TestResult};
+
+        #[concordium_quickcheck]
+        fn test_quickcheck_inserts(items: Vec<u32>) -> TestResult {
+            let mut state_builder = StateBuilder::open(StateApi::open());
+            let mut tree = state_builder.new_btree_set_degree::<2, _>();
+            for k in items.clone() {
+                tree.insert(k);
+            }
+            if let Err(violation) = tree.check_invariants() {
+                return TestResult::error(format!("Invariant violated: {:?}", violation));
+            }
+            for k in items.iter() {
+                if !tree.contains(k) {
+                    return TestResult::error(format!("Missing key: {}", k));
+                }
+            }
+            TestResult::passed()
+        }
+
+        #[concordium_quickcheck(num_tests = 500)]
+        fn test_quickcheck_inserts_removes(mutations: Mutations<u32>) -> TestResult {
+            let mut state_builder = StateBuilder::open(StateApi::open());
+            let mut tree = state_builder.new_btree_set_degree::<2, _>();
+
+            if let Err(err) = run_mutations(&mut tree, &mutations.0) {
+                TestResult::error(format!("Error: {}, tree: {}", err, tree.debug()))
+            } else {
+                TestResult::passed()
+            }
+        }
+
+        #[derive(Debug, Clone)]
+        struct Mutations<K>(Vec<(K, Operation)>);
+
+        #[derive(Debug, Clone, Copy)]
+        enum Operation {
+            InsertKeyNotPresent,
+            InsertKeyPresent,
+            RemoveKeyPresent,
+            RemoveKeyNotPresent,
+        }
+
+        fn run_mutations<const M: usize, S: HasStateApi>(
+            tree: &mut StateBTreeSet<u32, S, M>,
+            mutations: &[(u32, Operation)],
+        ) -> Result<(), String> {
+            for (k, op) in mutations.into_iter() {
+                if let Err(violation) = tree.check_invariants() {
+                    return Err(format!("Invariant violated: {:?}", violation));
+                }
+                match op {
+                    Operation::InsertKeyPresent => {
+                        if tree.insert(*k) {
+                            return Err(format!("InsertKeyPresent was not present: {}", k));
+                        }
+                    }
+                    Operation::InsertKeyNotPresent => {
+                        if !tree.insert(*k) {
+                            return Err(format!("InsertKeyNotPresent was present: {}", k));
+                        }
+                    }
+                    Operation::RemoveKeyNotPresent => {
+                        if tree.remove(k) {
+                            return Err(format!("RemoveKeyNotPresent was present: {}", k));
+                        }
+                    }
+                    Operation::RemoveKeyPresent => {
+                        if !tree.remove(k) {
+                            return Err(format!("RemoveKeyPresent was not present: {}", k));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        impl Arbitrary for Operation {
+            fn arbitrary(g: &mut Gen) -> Self {
+                g.choose(&[
+                    Self::InsertKeyNotPresent,
+                    Self::InsertKeyPresent,
+                    Self::RemoveKeyPresent,
+                    Self::RemoveKeyNotPresent,
+                ])
+                .unwrap()
+                .clone()
+            }
+        }
+
+        impl<K> Arbitrary for Mutations<K>
+        where
+            K: Arbitrary + Ord,
+        {
+            fn arbitrary(g: &mut Gen) -> Self {
+                let mut inserted_keys: Vec<K> = Vec::new();
+                let mut mutations = Vec::new();
+
+                while mutations.len() < g.size() {
+                    let op: Operation = Operation::arbitrary(g);
+                    match op {
+                        Operation::InsertKeyPresent if inserted_keys.len() > 0 => {
+                            let indexes: Vec<usize> =
+                                (0..inserted_keys.len()).into_iter().collect();
+                            let k_index = g.choose(&indexes).unwrap();
+                            let k = &inserted_keys[*k_index];
+                            mutations.push((k.clone(), op));
+                        }
+                        Operation::InsertKeyNotPresent => {
+                            let k = K::arbitrary(g);
+                            if let Err(index) = inserted_keys.binary_search(&k) {
+                                inserted_keys.insert(index, k.clone());
+                                mutations.push((k, op));
+                            }
+                        }
+                        Operation::RemoveKeyPresent if inserted_keys.len() > 0 => {
+                            let indexes: Vec<usize> =
+                                (0..inserted_keys.len()).into_iter().collect();
+                            let k_index = g.choose(&indexes).unwrap();
+                            let k = inserted_keys.remove(*k_index);
+                            mutations.push((k, op));
+                        }
+                        Operation::RemoveKeyNotPresent => {
+                            let k = K::arbitrary(g);
+                            if inserted_keys.binary_search(&k).is_err() {
+                                mutations.push((k, op));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                Self(mutations)
+            }
+
+            fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+                let pop = {
+                    let mut clone = self.0.clone();
+                    clone.pop();
+                    Self(clone)
+                };
+                let mut v = vec![pop];
+                for (i, (k, op)) in self.0.iter().enumerate() {
+                    match op {
+                        Operation::InsertKeyPresent | Operation::RemoveKeyNotPresent => {
+                            let mut clone = self.0.clone();
+                            clone.remove(i);
+                            v.push(Self(clone));
+                        }
+                        Operation::RemoveKeyPresent => {
+                            let mut clone = self.0.clone();
+                            let mut prev = clone[0..i].iter().enumerate().rev();
+                            let j = loop {
+                                if let Some((j, (k2, op))) = prev.next() {
+                                    match op {
+                                        Operation::InsertKeyNotPresent if k == k2 => {
+                                            break j;
+                                        }
+                                        _ => {}
+                                    }
+                                } else {
+                                    fail!("No insertion found before")
+                                }
+                            };
+                            clone.remove(i);
+                            clone.remove(j);
+                            v.push(Self(clone));
+                        }
+                        _ => {}
+                    }
+                }
+
+                Box::new(v.into_iter())
+            }
+        }
     }
 }
