@@ -16,9 +16,10 @@
 //!      contract-version1/Cargo.toml
 use concordium_smart_contract_testing::*;
 use concordium_std::Deserial;
+use concordium_std_derive::*;
 use smart_contract_upgrade::UpgradeParams;
 
-const ACC_ADDR_OWNER: AccountAddress = account_address!("00000000000000000000000000000000");
+const ACC_ADDR_OWNER: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 
 #[derive(Deserial, Debug, PartialEq, Eq)]

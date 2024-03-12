@@ -6,21 +6,22 @@ use concordium_std::{
     collections::BTreeMap, AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256,
     SignatureEd25519, Timestamp,
 };
+use concordium_std_derive::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = account_address!("00000000000000000000000000000000");
+const ALICE: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = account_address!("11111111111111111111111111111111");
-const BOB_CANONICAL: AccountAddress = account_address!("11111111111111111111111111111000");
+const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const BOB_CANONICAL: AccountAddress = BOB.get_alias_unchecked(0);
 const BOB_CANONICAL_ADDR: Address = Address::Account(BOB_CANONICAL);
 const BOB_ADDR: Address = Address::Account(BOB);
-const UPGRADER: AccountAddress = account_address!("22222222222222222222222222222222");
+const UPGRADER: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const UPGRADER_ADDR: Address = Address::Account(UPGRADER);
-const BLACKLISTER: AccountAddress = account_address!("33333333333333333333333333333333");
+const BLACKLISTER: AccountAddress = account_address!("2y57FyMyqAfY7X1SuSWJ5VMt1Z3ZgxbKt9w5mGoTwqA7YcpbXr");
 const BLACKLISTER_ADDR: Address = Address::Account(BLACKLISTER);
-const PAUSER: AccountAddress = account_address!("44444444444444444444444444444444");
+const PAUSER: AccountAddress = account_address!("2yWkbp92JL9LYVmxgP1QfTDsJs9sMLAWJBYMy8md3SQz5ErzEd");
 const PAUSER_ADDR: Address = Address::Account(PAUSER);
-const NON_EXISTING_ACCOUNT: AccountAddress = account_address!("63636363636363636363636363636363");
+const NON_EXISTING_ACCOUNT: AccountAddress = account_address!("3hWv6hv4nrgPTUgjHehCHx6ifXUoCfWZepKuPykXEBmsgjzni4");
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU8(2);
@@ -33,7 +34,7 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 const SIGNER: Signer = Signer::with_one_key();
 
 /// Dummy signature used as placeholder.
-const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
 
 /// Test minting succeeds and the tokens are owned by the given address and
 /// the appropriate events are logged.

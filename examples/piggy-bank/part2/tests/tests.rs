@@ -1,10 +1,11 @@
 //! This module contains integration tests for the piggy bank.
 //! To run them, use `cargo test`.
 use concordium_smart_contract_testing::*;
+use concordium_std_derive::*;
 use piggy_bank_part2::*;
 
-const ACC_ADDR_OWNER: AccountAddress = account_address!("00000000000000000000000000000000");
-const ACC_ADDR_OTHER: AccountAddress = account_address!("11111111111111111111111111111111"));
+const ACC_ADDR_OWNER: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const ACC_ADDR_OTHER: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 
 /// A helper method for setting up:

@@ -2,11 +2,12 @@
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519, Timestamp};
+use concordium_std_derive::*;
 use credential_registry::*;
 
 /// Constants for tests
 const SIGNER: Signer = Signer::with_one_key();
-pub const ISSUER_ACCOUNT: AccountAddress = account_address!("00000000000000000000000000000000");
+pub const ISSUER_ACCOUNT: AccountAddress = account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 pub const ISSUER_ADDRESS: Address = Address::Account(ISSUER_ACCOUNT);
 pub const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
 pub const CREDENTIAL_METADATA_URL: &str =
