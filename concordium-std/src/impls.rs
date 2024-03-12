@@ -3155,7 +3155,7 @@ mod tests {
 
 /// This test module rely on the runtime providing host functions and can only
 /// be run using `cargo concordium test`.
-#[cfg(feature = "wasm-test")]
+#[cfg(feature = "internal-wasm-test")]
 mod wasm_test {
     use crate::{
         claim, claim_eq, concordium_test, to_bytes, Deletable, Deserial, DeserialWithState,

@@ -971,7 +971,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
     /// Construct a string for displaying the btree and debug information.
     /// Should only be used while debugging and testing the btree itself.
-    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    #[cfg(feature = "internal-wasm-test")]
     pub(crate) fn debug(&self) -> String
     where
         K: Serialize + std::fmt::Debug + Ord,
@@ -999,7 +999,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
     /// Check a number of invariants, producing an error if any of them are
     /// violated. Should only be used while debugging and testing the btree
     /// itself.
-    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    #[cfg(feature = "internal-wasm-test")]
     pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
     where
         K: Serialize + Ord,
@@ -1214,7 +1214,7 @@ impl<const M: usize, K> Node<M, K> {
     /// Check a number of invariants of a non-root node in a btree, producing an
     /// error if any of them are violated. Should only be used while
     /// debugging and testing the btree itself.
-    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+    #[cfg(feature = "internal-wasm-test")]
     pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
     where
         K: Ord, {
@@ -1250,7 +1250,7 @@ impl<const M: usize, K> Node<M, K> {
 
 /// The invariants to check in a btree.
 /// Should only be used while debugging and testing the btree itself.
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck"))]
+#[cfg(feature = "internal-wasm-test")]
 #[derive(Debug)]
 pub(crate) enum InvariantViolation {
     NonZeroLenWithNoRoot,
@@ -1368,7 +1368,7 @@ where
 
 /// This test module rely on the runtime providing host functions and can only
 /// be run using `cargo concordium test`.
-#[cfg(feature = "wasm-test")]
+#[cfg(feature = "internal-wasm-test")]
 mod wasm_test_btree {
     use crate::{claim, claim_eq, concordium_test, StateApi, StateBuilder};
 
@@ -1609,7 +1609,6 @@ mod wasm_test_btree {
         claim!(!tree.insert(1));
     }
 
-    #[cfg(feature = "concordium-quickcheck")]
     #[allow(deprecated)]
     mod quickcheck {
         use super::super::*;
