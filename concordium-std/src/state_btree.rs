@@ -385,10 +385,7 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
         S: HasStateApi,
         K: Serialize + Ord, {
         let Some(root_id) = self.root else {
-            let node_id = {
-                let (node_id, _node) = self.create_node(crate::vec![key], Vec::new());
-                node_id
-            };
+            let (node_id, _) = self.create_node(crate::vec![key], Vec::new());
             self.root = Some(node_id);
             self.len = 1;
             return true;
@@ -655,21 +652,21 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
 
         // If something was deleted, we update the length and make sure to remove the
         // root node if needed.
+        let root = self.get_node_mut(root_node_id);
         if deleted_something {
             self.len -= 1;
-            let root = self.get_node_mut(root_node_id);
             if self.len == 0 {
                 // Remote the root node if tree is empty.
                 self.root = None;
                 self.delete_node(root);
-            } else {
-                // If the root is empty but the tree is not, point to the only child of the root
-                // as the root.
-                if root.keys.is_empty() {
-                    self.root = Some(root.children[0]);
-                    self.delete_node(root);
-                }
+                return true;
             }
+        }
+        // If the root is empty but the tree is not, point to the only child of the root
+        // as the root.
+        if root.keys.is_empty() {
+            self.root = Some(root.children[0]);
+            self.delete_node(root);
         }
         deleted_something
     }
@@ -905,7 +902,11 @@ impl<const M: usize, K, S> StateBTreeSet<K, S, M> {
                 let larger_child = self.split_child(&mut node, insert_index, &mut child);
                 // Since the child is now split into two, we have to check which one to insert
                 // into.
-                if node.keys[insert_index] < key {
+                let moved_up_key = &node.keys[insert_index];
+                if moved_up_key == &key {
+                    // If the key moved up during the split is the key we are inserting, we exit.
+                    return false;
+                } else if moved_up_key < &key {
                     larger_child
                 } else {
                     child
