@@ -1,5 +1,5 @@
 use crate::{
-    cmp::Ordering, marker::PhantomData, mem, Deletable, Deserial, DeserialWithState, Get,
+    cmp::Ordering, marker::PhantomData, mem, vec::Vec, Deletable, Deserial, DeserialWithState, Get,
     HasStateApi, ParseResult, Read, Serial, Serialize, StateItemPrefix, StateMap, StateRef,
     StateRefMut, UnwrapAbort, Write, STATE_ITEM_PREFIX_SIZE,
 };
@@ -1199,17 +1199,14 @@ impl<const M: usize, K> Node<M, K> {
     /// The min length of the key list, except when the node is root.
     const MINIMUM_KEY_LEN: usize = Self::MINIMUM_CHILD_LEN - 1;
 
-    /// The number of keys stored in this node.
-    fn len(&self) -> usize { self.keys.len() }
-
     /// Check if the node holds the maximum number of keys.
-    fn is_full(&self) -> bool { self.len() == Self::MAXIMUM_KEY_LEN }
+    fn is_full(&self) -> bool { self.keys.len() == Self::MAXIMUM_KEY_LEN }
 
     /// Check if the node is representing a leaf in the tree.
     fn is_leaf(&self) -> bool { self.children.is_empty() }
 
     /// Check if the node holds the minimum number of keys.
-    fn is_at_min(&self) -> bool { self.len() == Self::MINIMUM_KEY_LEN }
+    fn is_at_min(&self) -> bool { self.keys.len() == Self::MINIMUM_KEY_LEN }
 
     /// Check a number of invariants of a non-root node in a btree, producing an
     /// error if any of them are violated. Should only be used while
