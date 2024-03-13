@@ -1201,7 +1201,7 @@ where
         V: DeserialWithState<S>, {
         // Safe to unwrap below, since the entry can only be `None`, using methods which
         // are consuming self.
-        let entry = unsafe { &mut *self.entry.get() }.as_mut().unwrap_abort();
+        let entry = unsafe { &mut *self.entry.get() };
         entry.move_to_start();
         V::deserial_with_state(&self.state_api, entry).unwrap_abort()
     }
@@ -1210,7 +1210,7 @@ where
     pub fn set(&mut self, new_val: V) {
         // Safe to unwrap below, since the entry can only be `None`, using methods which
         // are consuming self.
-        let entry = self.entry.get_mut().as_mut().unwrap_abort();
+        let entry = self.entry.get_mut();
         entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
         let _ = self.lazy_value.get_mut().insert(new_val);
@@ -1224,7 +1224,7 @@ where
         let lv = self.lazy_value.get_mut();
         // Safe to unwrap below, since the entry can only be `None`, using methods which
         // are consuming self.
-        let entry = self.entry.get_mut().as_mut().unwrap_abort();
+        let entry = self.entry.get_mut();
         let value = if let Some(v) = lv {
             v
         } else {
@@ -1244,22 +1244,14 @@ where
         if let Some(value) = self.lazy_value.get_mut() {
             // Safe to unwrap below, since the entry can only be `None`, using methods which
             // are consuming self.
-            let entry = self.entry.get_mut().as_mut().unwrap_abort();
+            let entry = self.entry.get_mut();
             entry.move_to_start();
             value.serial(entry).unwrap_abort();
         }
     }
 
-    /// Get the inner entry and value if loaded, while consuming the
-    /// [`StateRefMut`]. Mutations will not be written to the smart contract
-    /// key-store when this is dropped.
-    /// Neither will they be written as part of this, so make sure to run
-    /// `store_mutations` first.
-    pub(crate) fn into_raw_parts(mut self) -> (Option<V>, S::EntryType) {
-        let value = self.lazy_value.get_mut().take();
-        let entry = self.entry.get_mut().take().unwrap_abort();
-        (value, entry)
-    }
+    /// Drop the ref without storing mutations to the state entry.
+    pub(crate) fn drop_without_storing(mut self) { *self.lazy_value.get_mut() = None; }
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
@@ -2331,40 +2323,6 @@ where
         StateMap::open(state_api, prefix)
     }
 
-    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet).
-    pub fn new_btree_set<K>(&mut self) -> state_btree::StateBTreeSet<K, S> {
-        let (state_api, prefix) = self.new_state_container();
-        state_btree::StateBTreeSet::new(state_api, prefix)
-    }
-
-    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap).
-    pub fn new_btree_map<K, V>(&mut self) -> state_btree::StateBTreeMap<K, V, S> {
-        state_btree::StateBTreeMap {
-            map:         self.new_map(),
-            ordered_set: self.new_btree_set(),
-        }
-    }
-
-    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet), setting the
-    /// minimum degree `M` of the B-Tree explicitly.
-    pub fn new_btree_set_degree<const M: usize, K>(
-        &mut self,
-    ) -> state_btree::StateBTreeSet<K, S, M> {
-        let (state_api, prefix) = self.new_state_container();
-        state_btree::StateBTreeSet::new(state_api, prefix)
-    }
-
-    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
-    /// minimum degree `M` of the B-Tree explicitly.
-    pub fn new_btree_map_degree<const M: usize, K, V>(
-        &mut self,
-    ) -> state_btree::StateBTreeMap<K, V, S, M> {
-        state_btree::StateBTreeMap {
-            map:         self.new_map(),
-            ordered_set: self.new_btree_set_degree(),
-        }
-    }
-
     /// Create a new empty [`StateSet`].
     pub fn new_set<T>(&mut self) -> StateSet<T, S> {
         let (state_api, prefix) = self.new_state_container();
@@ -2437,6 +2395,40 @@ where
         next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
 
         collection_prefix.to_le_bytes()
+    }
+}
+
+impl StateBuilder<StateApi> {
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet).
+    pub fn new_btree_set<K>(&mut self) -> state_btree::StateBTreeSet<K> {
+        let (state_api, prefix) = self.new_state_container();
+        state_btree::StateBTreeSet::new(state_api, prefix)
+    }
+
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap).
+    pub fn new_btree_map<K, V>(&mut self) -> state_btree::StateBTreeMap<K, V> {
+        state_btree::StateBTreeMap {
+            key_value: self.new_map(),
+            key_order: self.new_btree_set(),
+        }
+    }
+
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet), setting the
+    /// minimum degree `M` of the B-Tree explicitly.
+    pub fn new_btree_set_degree<const M: usize, K>(&mut self) -> state_btree::StateBTreeSet<K, M> {
+        let (state_api, prefix) = self.new_state_container();
+        state_btree::StateBTreeSet::new(state_api, prefix)
+    }
+
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
+    /// minimum degree `M` of the B-Tree explicitly.
+    pub fn new_btree_map_degree<const M: usize, K, V>(
+        &mut self,
+    ) -> state_btree::StateBTreeMap<K, V, M> {
+        state_btree::StateBTreeMap {
+            key_value: self.new_map(),
+            key_order: self.new_btree_set_degree(),
+        }
     }
 }
 
@@ -3153,7 +3145,7 @@ mod tests {
     }
 }
 
-/// This test module rely on the runtime providing host functions and can only
+/// This test module relies on the runtime providing host functions and can only
 /// be run using `cargo concordium test`.
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test {
