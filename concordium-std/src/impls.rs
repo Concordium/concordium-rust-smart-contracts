@@ -939,6 +939,14 @@ where
 
     /// Inserts the value with the given key. If a value already exists at the
     /// given key it is replaced and the old value is returned.
+    ///
+    /// *Caution*: If `Option<V>` is to be deleted and contains a data structure
+    /// prefixed with `State` (such as [StateBox](crate::StateBox) or
+    /// [StateMap](crate::StateMap)), then it is important to call
+    /// [`Deletable::delete`](crate::Deletable::delete) on the value returned
+    /// when you're finished with it. Otherwise, it will remain in the
+    /// contract state.
+    #[must_use]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> { self.insert_borrowed(&key, value) }
 
     /// Get an entry for the given key.
@@ -3243,9 +3251,9 @@ mod wasm_test {
             .get(my_map_key)
             .expect("Could not get statemap")
             .expect("Deserializing statemap failed");
-        my_map.insert("abc".to_string(), "hello, world".to_string());
-        my_map.insert("def".to_string(), "hallo, Weld".to_string());
-        my_map.insert("ghi".to_string(), "hej, verden".to_string());
+        let _ = my_map.insert("abc".to_string(), "hello, world".to_string());
+        let _ = my_map.insert("def".to_string(), "hallo, Weld".to_string());
+        let _ = my_map.insert("ghi".to_string(), "hej, verden".to_string());
         claim_eq!(*my_map.get(&"abc".to_string()).unwrap(), "hello, world".to_string());
 
         let mut iter = my_map.iter();
@@ -3292,8 +3300,8 @@ mod wasm_test {
         let mut outer_map = state_builder.new_map::<u8, StateMap<u8, u8, _>>();
         let mut inner_map = state_builder.new_map::<u8, u8>();
 
-        inner_map.insert(key_to_value, value);
-        outer_map.insert(inner_map_key, inner_map);
+        let _ = inner_map.insert(key_to_value, value);
+        let _ = outer_map.insert(inner_map_key, inner_map);
 
         claim_eq!(*outer_map.get(&inner_map_key).unwrap().get(&key_to_value).unwrap(), value);
     }
@@ -3302,9 +3310,9 @@ mod wasm_test {
     fn statemap_iter_mut_works() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut map = state_builder.new_map();
-        map.insert(0u8, 1u8);
-        map.insert(1u8, 2u8);
-        map.insert(2u8, 3u8);
+        let _ = map.insert(0u8, 1u8);
+        let _ = map.insert(1u8, 2u8);
+        let _ = map.insert(2u8, 3u8);
         for (_, mut v) in map.iter_mut() {
             v.update(|old_value| *old_value += 10);
         }
@@ -3326,9 +3334,9 @@ mod wasm_test {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut outer_map = state_builder.new_map();
         let mut inner_map = state_builder.new_map();
-        inner_map.insert(0u8, 1u8);
-        inner_map.insert(1u8, 2u8);
-        outer_map.insert(99u8, inner_map);
+        let _ = inner_map.insert(0u8, 1u8);
+        let _ = inner_map.insert(1u8, 2u8);
+        let _ = outer_map.insert(99u8, inner_map);
         for (_, mut v_map) in outer_map.iter_mut() {
             v_map.update(|v_map| {
                 for (_, mut inner_v) in v_map.iter_mut() {
@@ -3358,8 +3366,8 @@ mod wasm_test {
     fn statemap_iterator_unlocks_tree_once_dropped() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut map = state_builder.new_map();
-        map.insert(0u8, 1u8);
-        map.insert(1u8, 2u8);
+        let _ = map.insert(0u8, 1u8);
+        let _ = map.insert(1u8, 2u8);
         {
             let _iter = map.iter();
             // Uncommenting these two lines (and making iter mutable) should
@@ -3368,7 +3376,7 @@ mod wasm_test {
             // map.insert(2u8, 3u8);
             // let n = iter.next();
         } // iter is dropped here, unlocking the subtree.
-        map.insert(2u8, 3u8);
+        let _ = map.insert(2u8, 3u8);
     }
 
     #[concordium_test]
@@ -3403,7 +3411,7 @@ mod wasm_test {
         let mut inner_set = state_builder.new_set::<u8>();
 
         inner_set.insert(value);
-        outer_map.insert(inner_set_key, inner_set);
+        let _ = outer_map.insert(inner_set_key, inner_set);
 
         claim!(outer_map.get(&inner_set_key).unwrap().contains(&value));
     }
@@ -3545,9 +3553,9 @@ mod wasm_test {
         let box2 = state_builder.new_box(2u8);
         let box3 = state_builder.new_box(3u8);
         let mut map = state_builder.new_map();
-        map.insert(1u8, box1);
-        map.insert(2u8, box2);
-        map.insert(3u8, box3);
+        let _ = map.insert(1u8, box1);
+        let _ = map.insert(2u8, box2);
+        let _ = map.insert(3u8, box3);
         map.clear();
         let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
@@ -3558,16 +3566,16 @@ mod wasm_test {
     fn clearing_nested_statemaps_works() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut inner_map_1 = state_builder.new_map();
-        inner_map_1.insert(1u8, 2u8);
-        inner_map_1.insert(2u8, 3u8);
-        inner_map_1.insert(3u8, 4u8);
+        let _ = inner_map_1.insert(1u8, 2u8);
+        let _ = inner_map_1.insert(2u8, 3u8);
+        let _ = inner_map_1.insert(3u8, 4u8);
         let mut inner_map_2 = state_builder.new_map();
-        inner_map_2.insert(11u8, 12u8);
-        inner_map_2.insert(12u8, 13u8);
-        inner_map_2.insert(13u8, 14u8);
+        let _ = inner_map_2.insert(11u8, 12u8);
+        let _ = inner_map_2.insert(12u8, 13u8);
+        let _ = inner_map_2.insert(13u8, 14u8);
         let mut outer_map = state_builder.new_map();
-        outer_map.insert(0u8, inner_map_1);
-        outer_map.insert(1u8, inner_map_2);
+        let _ = outer_map.insert(0u8, inner_map_1);
+        let _ = outer_map.insert(1u8, inner_map_2);
         outer_map.clear();
         let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
@@ -3578,7 +3586,7 @@ mod wasm_test {
     fn occupied_entry_truncates_leftover_data() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut map = state_builder.new_map();
-        map.insert(99u8, "A longer string that should be truncated".into());
+        let _ = map.insert(99u8, "A longer string that should be truncated".into());
         let a_short_string = "A short string".to_string();
         let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
         map.entry(99u8).and_modify(|v| *v = a_short_string);
