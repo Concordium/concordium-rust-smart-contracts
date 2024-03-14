@@ -1726,9 +1726,10 @@ mod wasm_test_btree {
         };
         use ::quickcheck::{Arbitrary, Gen, TestResult};
 
-        /// Quickcheck inserting random items.
+        /// Quickcheck inserting random items, check invariants on the tree and
+        /// query every item ensuring the tree contains it.
         #[concordium_quickcheck]
-        fn test_quickcheck_inserts(items: Vec<u32>) -> TestResult {
+        fn quickcheck_btree_inserts(items: Vec<u32>) -> TestResult {
             let mut state_builder = StateBuilder::open(StateApi::open());
             let mut tree = state_builder.new_btree_set_degree::<2, _>();
             for k in items.clone() {
@@ -1745,14 +1746,96 @@ mod wasm_test_btree {
             TestResult::passed()
         }
 
+        /// Quickcheck inserting random items, then we call query the tree for
+        /// higher and lower of every item validating the outcome.
+        #[concordium_quickcheck(num_tests = 500)]
+        fn quickcheck_btree_iter(mut items: Vec<u32>) -> TestResult {
+            let mut state_builder = StateBuilder::open(StateApi::open());
+            let mut tree = state_builder.new_btree_set_degree::<2, _>();
+            for k in items.clone() {
+                tree.insert(k);
+            }
+            if let Err(violation) = tree.check_invariants() {
+                return TestResult::error(format!("Invariant violated: {:?}", violation));
+            }
+
+            items.sort();
+            items.dedup();
+
+            for (value, expected) in tree.iter().zip(items.into_iter()) {
+                if *value != expected {
+                    return TestResult::error(format!("Got {} but expected {expected}", *value));
+                }
+            }
+
+            TestResult::passed()
+        }
+
+        /// Quickcheck inserting random items, then we call query the tree for
+        /// higher and lower of every item validating the outcome.
+        #[concordium_quickcheck(num_tests = 500)]
+        fn quickcheck_btree_higher_lower(mut items: Vec<u32>) -> TestResult {
+            let mut state_builder = StateBuilder::open(StateApi::open());
+            let mut tree = state_builder.new_btree_set_degree::<2, _>();
+            for k in items.clone() {
+                tree.insert(k);
+            }
+            if let Err(violation) = tree.check_invariants() {
+                return TestResult::error(format!("Invariant violated: {:?}", violation));
+            }
+
+            items.sort();
+            items.dedup();
+            for window in items.windows(2) {
+                let l = &window[0];
+                let r = &window[1];
+                let l_higher = tree.higher(l);
+                if l_higher.as_deref() != Some(r) {
+                    return TestResult::error(format!(
+                        "higher({l}) gave {:?} instead of the expected Some({r})",
+                        l_higher.as_deref()
+                    ));
+                }
+                let r_lower = tree.lower(r);
+                if r_lower.as_deref() != Some(l) {
+                    return TestResult::error(format!(
+                        "lower({r}) gave {:?} instead of the expected Some({l})",
+                        r_lower.as_deref()
+                    ));
+                }
+            }
+
+            if let Some(first) = items.first() {
+                let lower = tree.lower(first);
+                if lower.is_some() {
+                    return TestResult::error(format!(
+                        "lower({first}) gave {:?} instead of the expected None",
+                        lower.as_deref()
+                    ));
+                }
+            }
+
+            if let Some(last) = items.last() {
+                let higher = tree.higher(last);
+                if higher.is_some() {
+                    return TestResult::error(format!(
+                        "higher({last}) gave {:?} instead of the expected None",
+                        higher.as_deref()
+                    ));
+                }
+            }
+
+            TestResult::passed()
+        }
+
         /// Quickcheck random mutations see `Mutations` and `run_mutations` for
         /// the details.
         #[concordium_quickcheck(num_tests = 500)]
-        fn test_quickcheck_inserts_removes(mutations: Mutations<u32>) -> TestResult {
+        fn quickcheck_btree_inserts_removes(mutations: Mutations<u32>) -> TestResult {
             let mut state_builder = StateBuilder::open(StateApi::open());
             let mut tree = state_builder.new_btree_set_degree::<2, _>();
 
-            if let Err(err) = run_mutations(&mut tree, &mutations.0) {
+            if let Err(err) = run_mutations(&mut tree, &mutations.mutations) {
                 TestResult::error(format!("Error: {}, tree: {}", err, tree.debug()))
             } else {
                 TestResult::passed()
@@ -1761,7 +1844,10 @@ mod wasm_test_btree {
 
         /// Newtype wrapper for Vec to implement Arbitrary.
         #[derive(Debug, Clone)]
-        struct Mutations<K>(Vec<(K, Operation)>);
+        struct Mutations<K> {
+            expected_keys: crate::collections::BTreeSet<K>,
+            mutations:     Vec<(K, Operation)>,
+        }
 
         /// The different mutating operations to generate for the btree.
         #[derive(Debug, Clone, Copy)]
@@ -1872,35 +1958,41 @@ mod wasm_test_btree {
                     }
                 }
 
-                Self(mutations)
+                Self {
+                    expected_keys: crate::collections::BTreeSet::from_iter(
+                        inserted_keys.into_iter(),
+                    ),
+                    mutations,
+                }
             }
 
             fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
                 let pop = {
-                    let mut clone = self.0.clone();
-                    clone.pop();
-                    Self(clone)
+                    let mut clone = self.clone();
+                    clone.mutations.pop();
+                    clone
                 };
                 let mut v = vec![pop];
-                for (i, (k, op)) in self.0.iter().enumerate() {
+                for (i, (k, op)) in self.mutations.iter().enumerate() {
                     match op {
                         Operation::InsertKeyPresent | Operation::RemoveKeyNotPresent => {
-                            let mut clone = self.0.clone();
-                            clone.remove(i);
-                            v.push(Self(clone));
+                            let mut clone = self.clone();
+                            clone.mutations.remove(i);
+                            v.push(clone);
                         }
                         Operation::RemoveKeyPresent => {
-                            let mut clone = self.0.clone();
-                            let mut prev = self.0[0..i].iter().enumerate().rev();
-                            clone.remove(i);
+                            let mut clone = self.clone();
+                            let mut prev = self.mutations[0..i].iter().enumerate().rev();
+                            clone.mutations.remove(i);
+                            clone.expected_keys.remove(k);
                             loop {
                                 if let Some((j, (k2, op))) = prev.next() {
                                     match op {
                                         Operation::InsertKeyPresent if k == k2 => {
-                                            clone.remove(j);
+                                            clone.mutations.remove(j);
                                         }
                                         Operation::InsertKeyNotPresent if k == k2 => {
-                                            clone.remove(j);
+                                            clone.mutations.remove(j);
                                             break;
                                         }
                                         _ => {}
@@ -1909,7 +2001,7 @@ mod wasm_test_btree {
                                     fail!("No insertion found before")
                                 }
                             }
-                            v.push(Self(clone));
+                            v.push(clone);
                         }
                         _ => {}
                     }
