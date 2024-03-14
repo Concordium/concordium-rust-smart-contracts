@@ -108,6 +108,119 @@ struct State<S = StateApi> {
     nonces_registry: StateMap<PublicKeyEd25519, u64, S>,
 }
 
+// Functions for creating, updating and querying the contract state.
+impl State {
+    /// Creates a new state with no tokens.
+    fn empty(state_builder: &mut StateBuilder) -> Self {
+        State {
+            balances: state_builder.new_map(),
+            implementors: state_builder.new_map(),
+            nonces_registry: state_builder.new_map(),
+        }
+    }
+
+    /// Get the current balance of a given token ID for a given address.
+    /// Results in an error if the token ID does not exist in the state.
+    /// Since this contract only contains NFTs, the balance will always be
+    /// either 1 or 0.
+    fn balance(
+        &mut self,
+        public_key: PublicKeyEd25519,
+        contract_address: ContractAddress,
+        token_id: ContractTokenId,
+    ) -> ContractResult<ContractTokenAmount> {
+        let mut public_key_balances =
+            self.balances.entry(public_key).occupied_or(CustomContractError::InvalidPublicKey)?;
+
+        let mut contract_token_balances = public_key_balances
+            .token_balances
+            .entry(contract_address)
+            .occupied_or(CustomContractError::InvalidContractAddress)?;
+
+        let cis2_token_balance = contract_token_balances
+            .entry(token_id)
+            .occupied_or(CustomContractError::InvalidTokenId)?;
+
+        Ok(cis2_token_balance.0.into())
+    }
+
+    /// Update the state with a transfer of some token.
+    /// Results in an error if the token ID does not exist in the state or if
+    /// the from address have insufficient tokens to do the transfer.
+    fn transfer(
+        &mut self,
+        from_public_key: PublicKeyEd25519,
+        to_public_key: PublicKeyEd25519,
+        contract_address: ContractAddress,
+        token_id: ContractTokenId,
+        amount: ContractTokenAmount,
+    ) -> ContractResult<()> {
+        let zero_token_amount = TokenAmountU256 {
+            0: 0u8.into(),
+        };
+        // A zero transfer does not modify the state.
+        if amount == zero_token_amount {
+            return Ok(());
+        }
+
+        {
+            let mut from_public_key_balances = self
+                .balances
+                .entry(from_public_key)
+                .occupied_or(CustomContractError::InvalidPublicKey)?;
+
+            let mut from_contract_token_balances = from_public_key_balances
+                .token_balances
+                .entry(contract_address)
+                .occupied_or(CustomContractError::InvalidContractAddress)?;
+
+            let mut from_cis2_token_balance = from_contract_token_balances
+                .entry(token_id.clone())
+                .occupied_or(CustomContractError::InsufficientFunds)?;
+
+            ensure!(*from_cis2_token_balance >= amount, ContractError::InsufficientFunds);
+            *from_cis2_token_balance -= amount;
+        }
+
+        let mut to_public_key_balances = self
+            .balances
+            .entry(to_public_key)
+            .occupied_or(CustomContractError::InvalidPublicKey)?;
+
+        let mut to_contract_token_balances = to_public_key_balances
+            .token_balances
+            .entry(contract_address)
+            .occupied_or(CustomContractError::InvalidContractAddress)?;
+
+        let mut to_cis2_token_balance =
+            to_contract_token_balances.entry(token_id).or_insert(TokenAmountU256 {
+                0: 0u8.into(),
+            });
+
+        *to_cis2_token_balance += amount;
+
+        Ok(())
+    }
+
+    // /// Check if state contains any implementors for a given standard.
+    // fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+    //     if let Some(addresses) = self.implementors.get(std_id) {
+    //         SupportResult::SupportBy(addresses.to_vec())
+    //     } else {
+    //         SupportResult::NoSupport
+    //     }
+    // }
+
+    // /// Set implementors for a given standard.
+    // fn set_implementors(
+    //     &mut self,
+    //     std_id: StandardIdentifierOwned,
+    //     implementors: Vec<ContractAddress>,
+    // ) {
+    //     self.implementors.insert(std_id, implementors);
+    // }
+}
+
 /// The different errors the contract can produce.
 #[derive(Serialize, Debug, PartialEq, Eq, Reject, SchemaType)]
 pub enum CustomContractError {
@@ -120,21 +233,26 @@ pub enum CustomContractError {
     LogMalformed, // -3
     /// Invalid contract name.
     OnlyContract,
+    InvalidPublicKey,
+    InvalidContractAddress,
+    InvalidTokenId,
+    InsufficientFunds,
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
 
 pub type ContractResult<A> = Result<A, ContractError>;
 
+/// Mapping CustomContractError to ContractError
+impl From<CustomContractError> for ContractError {
+    fn from(c: CustomContractError) -> Self {
+        Cis2Error::Custom(c)
+    }
+}
+
 #[init(contract = "account-abstracted-smart-contract-wallet")]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
-    let state = State {
-        balances: state_builder.new_map(),
-        implementors: state_builder.new_map(),
-        nonces_registry: state_builder.new_map(),
-    };
-
-    Ok(state)
+    Ok(State::empty(state_builder))
 }
 
 ///
@@ -194,10 +312,107 @@ fn deposit_cis2_tokens(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveR
         .entry(contract_sender_address)
         .or_insert_with(|| builder.new_map());
 
-    let mut cis2_token_balance = contract_token_balances.entry(cis2_hook_param.token_id).or_insert_with(|| TokenAmountU256 {
-        0: 0u8.into(),
-    });
+    let mut cis2_token_balance = contract_token_balances
+        .entry(cis2_hook_param.token_id)
+        .or_insert_with(|| TokenAmountU256 {
+            0: 0u8.into(),
+        });
 
     *cis2_token_balance += cis2_hook_param.amount;
+    
+    Ok(())
+}
+
+///
+#[receive(
+    contract = "account-abstracted-smart-contract-wallet",
+    name = "internalTransferNativeCurrency",
+    parameter = "PublicKeyEd25519",
+    payable,
+    mutable
+)]
+fn internal_transfer_native_currency(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    amount: Amount,
+) -> ReceiveResult<()> {
+    let beneficiary: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
+
+    let (state, builder) = host.state_and_builder();
+
+    let mut public_key_balances =
+        state.balances.entry(beneficiary).or_insert_with(|| PublicKeyState::empty(builder));
+
+    public_key_balances.native_balance = amount;
+
+    Ok(())
+}
+
+/// The parameter type for the contract function `transfer`.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+#[concordium(transparent)]
+pub struct TransferParameter(#[concordium(size_length = 2)] pub Vec<Transfer>);
+
+/// A single transfer of some amount of a token.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+pub struct Transfer {
+    /// The address owning the tokens being transferred.
+    pub from_public_key: PublicKeyEd25519,
+    /// The address receiving the tokens being transferred.
+    pub to_public_key: PublicKeyEd25519,
+    ///
+    pub contract_address: ContractAddress,
+    /// The ID of the token being transferred.
+    pub token_id: ContractTokenId,
+    /// The amount of tokens being transferred.
+    pub amount: ContractTokenAmount,
+}
+
+///
+#[receive(
+    contract = "account-abstracted-smart-contract-wallet",
+    name = "internalTransferCis2Token",
+    parameter = "PublicKeyEd25519",
+    mutable
+)]
+fn internal_transfer_cis2_token(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+    // Parse the parameter.
+    let TransferParameter(transfers): TransferParameter = ctx.parameter_cursor().get()?;
+
+    for Transfer {
+        from_public_key,
+        to_public_key,
+        contract_address,
+        token_id,
+        amount,
+    } in transfers
+    {
+        // TODO: this needs to be authorized by the singer instead.
+        // Authenticate the sender for this transfer
+        // Get the sender who invoked this contract function.
+        // let sender = ctx.sender();
+        // ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+
+        // Update the contract state
+        host.state_mut().transfer(
+            from_public_key,
+            to_public_key,
+            contract_address,
+            token_id,
+            amount,
+        )?;
+
+        // TODO: add events
+        // // Log transfer event
+        // logger.log(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
+        //     token_id,
+        //     amount,
+        //     from,
+        //     to: to_address,
+        // })))?;
+    }
+
     Ok(())
 }
