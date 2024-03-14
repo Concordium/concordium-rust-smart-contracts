@@ -1504,6 +1504,52 @@ mod wasm_test_btree {
         claim_eq!(tree.lower(&8).as_deref(), Some(&7));
     }
 
+    /// Build a set and query `eq_or_higher` on each key plus some keys outside
+    /// of the set.
+    #[concordium_test]
+    fn test_btree_eq_or_higher() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
+        tree.insert(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(7);
+        claim_eq!(tree.eq_or_higher(&0).as_deref(), Some(&1));
+        claim_eq!(tree.eq_or_higher(&1).as_deref(), Some(&1));
+        claim_eq!(tree.eq_or_higher(&2).as_deref(), Some(&2));
+        claim_eq!(tree.eq_or_higher(&3).as_deref(), Some(&3));
+        claim_eq!(tree.eq_or_higher(&4).as_deref(), Some(&4));
+        claim_eq!(tree.eq_or_higher(&5).as_deref(), Some(&5));
+        claim_eq!(tree.eq_or_higher(&6).as_deref(), Some(&7));
+        claim_eq!(tree.eq_or_higher(&7).as_deref(), Some(&7));
+        claim_eq!(tree.eq_or_higher(&8).as_deref(), None);
+    }
+
+    /// Build a set and query `eq_or_lower` on each key plus some keys outside
+    /// of the set.
+    #[concordium_test]
+    fn test_btree_eq_or_lower() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut tree = state_builder.new_btree_set_degree::<2, _>();
+        tree.insert(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(7);
+        claim_eq!(tree.eq_or_lower(&0).as_deref(), None);
+        claim_eq!(tree.eq_or_lower(&1).as_deref(), Some(&1));
+        claim_eq!(tree.eq_or_lower(&2).as_deref(), Some(&2));
+        claim_eq!(tree.eq_or_lower(&3).as_deref(), Some(&3));
+        claim_eq!(tree.eq_or_lower(&4).as_deref(), Some(&4));
+        claim_eq!(tree.eq_or_lower(&5).as_deref(), Some(&5));
+        claim_eq!(tree.eq_or_lower(&6).as_deref(), Some(&5));
+        claim_eq!(tree.eq_or_lower(&7).as_deref(), Some(&7));
+        claim_eq!(tree.eq_or_lower(&8).as_deref(), Some(&7));
+    }
+
     /// Insert a large number of items.
     /// Check the set contains each item.
     /// Insert the same items again, checking the set is the same size
@@ -1802,6 +1848,29 @@ mod wasm_test_btree {
                         "lower({r}) gave {:?} instead of the expected Some({l})",
                         r_lower.as_deref()
                     ));
+                }
+
+                let space_between = r - l > 1;
+                if space_between {
+                    let l_eq_or_higher = tree.eq_or_higher(&(l + 1));
+                    if l_eq_or_higher.as_deref() != Some(r) {
+                        return TestResult::error(format!(
+                            "eq_or_higher({}) gave {:?} instead of the expected Some({r})",
+                            l + 1,
+                            l_higher.as_deref()
+                        ));
+                    }
+                }
+
+                if space_between {
+                    let r_eq_or_lower = tree.eq_or_lower(&(r - 1));
+                    if r_eq_or_lower.as_deref() != Some(l) {
+                        return TestResult::error(format!(
+                            "eq_or_lower({}) gave {:?} instead of the expected Some({l})",
+                            r - 1,
+                            l_higher.as_deref()
+                        ));
+                    }
                 }
             }
 
