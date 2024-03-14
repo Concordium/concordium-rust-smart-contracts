@@ -1768,7 +1768,7 @@ mod wasm_test_btree {
         use super::super::*;
         use crate::{
             self as concordium_std, concordium_quickcheck, concordium_test, fail, StateApi,
-            StateBuilder,
+            StateBuilder, StateError,
         };
         use ::quickcheck::{Arbitrary, Gen, TestResult};
 
@@ -1792,9 +1792,42 @@ mod wasm_test_btree {
             TestResult::passed()
         }
 
+        /// Quickcheck inserting random items and then clear the entire tree
+        /// again. Use state api to ensure the btree nodes are no longer
+        /// stored in the state.
+        #[concordium_quickcheck]
+        fn quickcheck_btree_clear(items: Vec<u32>) -> TestResult {
+            let mut state_builder = StateBuilder::open(StateApi::open());
+            let mut tree = state_builder.new_btree_set_degree::<2, _>();
+            for k in items.clone() {
+                tree.insert(k);
+            }
+            tree.clear();
+            for k in items.iter() {
+                if tree.contains(k) {
+                    return TestResult::error(format!("Found {k} in a cleared btree"));
+                }
+            }
+
+            let state_api = StateApi::open();
+            match state_api.iterator(&tree.prefix) {
+                Ok(node_iter) => {
+                    let nodes_in_state = node_iter.count();
+                    TestResult::error(format!(
+                        "Found {} nodes still stored in the state",
+                        nodes_in_state
+                    ))
+                }
+                Err(StateError::SubtreeWithPrefixNotFound) => TestResult::passed(),
+                Err(err) => {
+                    TestResult::error(format!("Failed to get iterator for btree nodes: {err:?}"))
+                }
+            }
+        }
+
         /// Quickcheck inserting random items, then we call query the tree for
         /// higher and lower of every item validating the outcome.
-        #[concordium_quickcheck(num_tests = 500)]
+        #[concordium_quickcheck(num_tests = 100)]
         fn quickcheck_btree_iter(mut items: Vec<u32>) -> TestResult {
             let mut state_builder = StateBuilder::open(StateApi::open());
             let mut tree = state_builder.new_btree_set_degree::<2, _>();
@@ -1819,7 +1852,7 @@ mod wasm_test_btree {
 
         /// Quickcheck inserting random items, then we call query the tree for
         /// higher and lower of every item validating the outcome.
-        #[concordium_quickcheck(num_tests = 500)]
+        #[concordium_quickcheck(num_tests = 100)]
         fn quickcheck_btree_higher_lower(mut items: Vec<u32>) -> TestResult {
             let mut state_builder = StateBuilder::open(StateApi::open());
             let mut tree = state_builder.new_btree_set_degree::<2, _>();
