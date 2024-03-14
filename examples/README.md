@@ -13,6 +13,7 @@ the logic of the contract is reasonable, or safe.
 
 The list of contracts is as follows:
 
+- [account-abstracted-smart-contract-wallet](./account-abstracted-smart-contract-wallet) An example of how to implement a smart contract wallet.
 - [account-signature-checks](./account-signature-checks) A simple contract that
   demonstrates how account signature checks can be performed in smart contracts.
 - [two-step-transfer](./two-step-transfer) A contract that acts like an account (can send, store and accept CCD),
