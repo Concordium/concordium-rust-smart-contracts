@@ -2196,9 +2196,8 @@ fn query_exchange_rates_worker() -> ExchangeRates {
 /// two extern hosts below.
 fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPublicKeysResult {
     let data: &[u8] = address.as_ref();
-    let response = unsafe {
-        prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr(), 32)
-    };
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr(), 32) };
     let mut return_value = parse_query_account_public_keys_response_code(response)?;
     Ok(crate::AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
 }
@@ -2214,11 +2213,7 @@ fn check_account_signature_worker(
     signatures.serial(&mut buffer).unwrap_abort();
 
     let response = unsafe {
-        prims::invoke(
-            INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG,
-            buffer.as_ptr(),
-            buffer.len() as u32,
-        )
+        prims::invoke(INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG, buffer.as_ptr(), buffer.len() as u32)
     };
     // Be explicit that the buffer must survive up to here.
     drop(buffer);
