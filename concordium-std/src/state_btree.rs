@@ -33,13 +33,12 @@ use crate::{
 /// - `V`: Values stored in the map. Most operations on the map require this to
 ///   implement [`Serial`](crate::Serial) and
 ///   [`DeserialWithState<StateApi>`](crate::DeserialWithState).
-/// - `S`: The low-level state implementation used, this allows for mocking the
-///   state API in unit tests, see
-///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
 /// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
 ///   _Must_ be a value of `2` or above for the tree to work. This can be used
 ///   to tweak the height of the tree vs size of each node in the tree. The
-///   default is set based on benchmarks.
+///   default is set to 8, which seems to perform well on benchmarks. These
+///   benchmarks ran operations on a collection of 1000 elements, some using
+///   keys of 4 bytes others 16 bytes.
 ///
 /// ## Usage
 ///
@@ -318,13 +317,12 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 ///   to the low-level state, such as types containing
 ///   [`StateBox`](crate::StateBox), [`StateMap`](crate::StateMap) and
 ///   [`StateSet`](crate::StateSet).
-/// - `S`: The low-level state implementation used, this allows for mocking the
-///   state API in unit tests, see
-///   [`TestStateApi`](crate::test_infrastructure::TestStateApi).
 /// - `M`: A `const usize` determining the _minimum degree_ of the B-tree.
 ///   _Must_ be a value of `2` or above for the tree to work. This can be used
 ///   to tweak the height of the tree vs size of each node in the tree. The
-///   default is set based on benchmarks.
+///   default is set to 8, which seems to perform well on benchmarks. These
+///   benchmarks ran operations on a collection of 1000 elements, some using
+///   keys of 4 bytes others 16 bytes.
 ///
 /// ## Usage
 ///
@@ -1199,7 +1197,7 @@ where
 #[derive(Debug, Copy, Clone, Serialize)]
 #[repr(transparent)]
 struct NodeId {
-    id: u32,
+    id: u64,
 }
 
 /// Byte size of the key used to store a BTree internal node in the smart
@@ -1208,7 +1206,7 @@ const BTREE_NODE_KEY_SIZE: usize = STATE_ITEM_PREFIX_SIZE + NodeId::SERIALIZED_B
 
 impl NodeId {
     /// Byte size of `NodeId` when serialized.
-    const SERIALIZED_BYTE_SIZE: usize = 4;
+    const SERIALIZED_BYTE_SIZE: usize = 8;
 
     /// Return a copy of the NodeId, then increments itself.
     fn copy_then_increment(&mut self) -> Self {
