@@ -290,7 +290,9 @@
 //!
 //! - You want to track which keys you have seen.
 //! - Arbitrary values are associated with each of the keys.
-//! - The keys have some _ordering_ which is relevant.
+//! - The keys have some _ordering_ which is relevant e.g. if you need the key
+//!   which is located right above/below another key using
+//!   [`higher`](StateBTreeMap::higher)/[`lower`](StateBTreeMap::lower).
 //!
 //! ### Use `StateSet` when:
 //!
@@ -301,7 +303,9 @@
 //!
 //! - You want to track which keys you have seen.
 //! - There is no meaningful value to associate with your keys.
-//! - The keys have some _ordering_ which is relevant.
+//! - The keys have some _ordering_ which is relevant e.g. if you need the key
+//!   which is located right above/below another key using
+//!   [`higher`](StateBTreeMap::higher)/[`lower`](StateBTreeMap::lower).
 //!
 //! # Deprecating the `test_infrastructure`
 //!
