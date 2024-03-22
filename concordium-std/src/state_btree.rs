@@ -46,15 +46,14 @@ use crate::{
 /// [`new_btree_map`](crate::StateBuilder::new_btree_map) method on the
 /// [`StateBuilder`](crate::StateBuilder).
 ///
-/// ```
+/// ```no_run
 /// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
+/// # let mut state_builder = StateBuilder::open(StateApi::open());
 /// /// In an init method:
 /// let mut map1 = state_builder.new_btree_map();
 /// # map1.insert(0u8, 1u8); // Specifies type of map.
 ///
-/// # let mut host = TestHost::new((), state_builder);
+/// # let mut host = ExternHost { state: (), state_builder };
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_btree_map();
 /// # map2.insert(0u16, 1u16);
@@ -330,15 +329,13 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 /// [`new_btree_set`](crate::StateBuilder::new_btree_set) method on the
 /// [`StateBuilder`](crate::StateBuilder).
 ///
-/// ```
+/// ```no_run
 /// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
+/// # let mut state_builder = StateBuilder::open(StateApi::open());
 /// /// In an init method:
 /// let mut map1 = state_builder.new_btree_set();
 /// # map1.insert(0u8); // Specifies type of map.
-///
-/// # let mut host = TestHost::new((), state_builder);
+/// # let mut host = ExternHost { state: (), state_builder };
 /// /// In a receive method:
 /// let mut map2 = host.state_builder().new_btree_set();
 /// # map2.insert(0u16);
@@ -351,8 +348,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// struct MyState<S: HasStateApi = StateApi> {
-///     inner: StateBTreeSet<u64, S>,
+/// struct MyState {
+///     inner: StateBTreeSet<u64>,
 /// }
 /// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     // The following is incorrect. The old value of `inner` is not properly deleted.
@@ -364,8 +361,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi = StateApi> {
-/// #    inner: StateBTreeSet<u64, S>
+/// # struct MyState {
+/// #    inner: StateBTreeSet<u64>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     state.inner.clear();

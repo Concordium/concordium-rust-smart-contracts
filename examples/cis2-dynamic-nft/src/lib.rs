@@ -196,7 +196,7 @@ impl<S: HasStateApi> State<S> {
         owner: &Address,
         state_builder: &mut StateBuilder<S>,
     ) {
-        self.tokens.insert(*token_id, TokenMetadataState {
+        let _ = self.tokens.insert(*token_id, TokenMetadataState {
             token_metadata_current_state_counter: 0,
             token_metadata_list:                  mint_param.metadata_url.clone(),
         });
@@ -368,7 +368,7 @@ impl<S: HasStateApi> State<S> {
         std_id: StandardIdentifierOwned,
         implementors: Vec<ContractAddress>,
     ) {
-        self.implementors.insert(std_id, implementors);
+        let _ = self.implementors.insert(std_id, implementors);
     }
 }
 

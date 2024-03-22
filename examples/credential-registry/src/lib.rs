@@ -314,7 +314,7 @@ impl<S: HasStateApi> State<S> {
         std_id: StandardIdentifierOwned,
         implementors: Vec<ContractAddress>,
     ) {
-        self.implementors.insert(std_id, implementors);
+        let _ = self.implementors.insert(std_id, implementors);
     }
 }
 

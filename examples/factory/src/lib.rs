@@ -269,7 +269,7 @@ pub mod factory {
         let state = host.state_mut();
         let next_product = state.next_product;
         state.next_product = next_product + 1;
-        state.products.insert(next_product, product_address);
+        let _ = state.products.insert(next_product, product_address);
         // Invoke the initialize entrypoint on the product passing in the index for this
         // product.
         host.invoke_contract(
