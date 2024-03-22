@@ -41,7 +41,7 @@ fn test_deposit_native_currency() {
     assert_eq!(balances.0, [Amount::zero(), Amount::zero()]);
 
     let send_amount = Amount::from_micro_ccd(100);
-    chain
+    let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       send_amount,
             receive_name: OwnedReceiveName::new_unchecked(
@@ -56,6 +56,15 @@ fn test_deposit_native_currency() {
     // Check that Alice now has 100 CCD and Bob has 0 CCD on their public keys.
     let balances = get_native_currency_balance_from_alice_and_bob(&chain, smart_contract_wallet);
     assert_eq!(balances.0, [send_amount, Amount::zero()]);
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
+        ccd_amount: send_amount,
+        from:       ALICE_ADDR,
+        to:         ALICE_PUBLIC_KEY,
+    })]);
 }
 
 /// Test depositing of cis2 tokens.
@@ -87,7 +96,7 @@ fn test_deposit_cis2_tokens() {
     );
     assert_eq!(balances.0, [TokenAmountU256(0u8.into()), TokenAmountU256(0u8.into())]);
 
-    chain
+    let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             receive_name: OwnedReceiveName::new_unchecked("cis2_multi.mint".to_string()),
@@ -108,6 +117,17 @@ fn test_deposit_cis2_tokens() {
         TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()),
         TokenAmountU256(0u8.into())
     ]);
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [Event::DepositCis2Tokens(DepositCis2TokensEvent {
+        token_amount: TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()),
+        token_id: TokenIdVec(vec![TOKEN_ID.0]),
+        cis2_token_contract_address,
+        from: Address::Contract(cis2_token_contract_address),
+        to: ALICE_PUBLIC_KEY
+    })]);
 }
 
 // Helpers:
@@ -166,12 +186,12 @@ fn get_cis2_tokens_balances_from_alice_and_bob(
     let balance_of_params = Cis2TokensBalanceOfParameter {
         queries: vec![
             Cis2TokensBalanceOfQuery {
-                token_id: TokenIdVec(vec![4]),
+                token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: ALICE_PUBLIC_KEY,
             },
             Cis2TokensBalanceOfQuery {
-                token_id: TokenIdVec(vec![4]),
+                token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: BOB_PUBLIC_KEY,
             },
@@ -225,9 +245,19 @@ fn get_native_currency_balance_from_alice_and_bob(
 }
 
 // /// Deserialize the events from an update.
-// fn deserialize_update_events(update: &ContractInvokeSuccess) ->
-// Vec<WccdEvent> {     update
-//         .events()
-//         .flat_map(|(_addr, events)| events.iter().map(|e|
-// e.parse().expect("Deserialize event")))         .collect()
-// }
+fn deserialize_update_events_of_specified_contract(
+    update: &ContractInvokeSuccess,
+    smart_contract_wallet: ContractAddress,
+) -> Vec<Event> {
+    update
+        .events()
+        .flat_map(|(addr, events)| {
+            if addr == smart_contract_wallet {
+                Some(events.iter().map(|e| e.parse().expect("Deserialize event")))
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .collect()
+}
