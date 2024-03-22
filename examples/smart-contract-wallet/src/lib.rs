@@ -169,18 +169,16 @@ pub struct NonceEvent {
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
-struct PublicKeyState<S = StateApi> {
+#[concordium(transparent)]
+struct ContractAddressState<S = StateApi> {
     /// The amount of tokens owned by this address.
-    token_balances: StateMap<ContractAddress, StateMap<ContractTokenId, ContractTokenAmount, S>, S>,
-    ///
-    native_balance: Amount,
+    balances: StateMap<ContractTokenId, StateMap<PublicKeyEd25519, ContractTokenAmount, S>, S>,
 }
 
-impl PublicKeyState {
+impl ContractAddressState {
     fn empty(state_builder: &mut StateBuilder) -> Self {
-        PublicKeyState {
-            token_balances: state_builder.new_map(),
-            native_balance: Amount::zero(),
+        ContractAddressState {
+            balances: state_builder.new_map(),
         }
     }
 }
@@ -193,7 +191,9 @@ impl PublicKeyState {
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     /// The state of addresses.
-    balances:        StateMap<PublicKeyEd25519, PublicKeyState<S>, S>,
+    token_balances:  StateMap<ContractAddress, ContractAddressState<S>, S>,
+    ///
+    native_balances: StateMap<PublicKeyEd25519, Amount, S>,
     /// A map with contract addresses providing implementations of additional
     /// standards.
     implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -211,7 +211,8 @@ impl State {
     /// Creates a new state with no tokens.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
-            balances:        state_builder.new_map(),
+            native_balances: state_builder.new_map(),
+            token_balances:  state_builder.new_map(),
             implementors:    state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
         }
@@ -230,12 +231,12 @@ impl State {
         let zero_token_amount = TokenAmountU256(0u8.into());
 
         Ok(self
-            .balances
-            .get(public_key)
+            .token_balances
+            .get(cis2_token_contract_address)
             .map(|a| {
-                a.token_balances
-                    .get(cis2_token_contract_address)
-                    .map(|s| s.get(token_id).map(|s| *s).unwrap_or_else(|| zero_token_amount))
+                a.balances
+                    .get(token_id)
+                    .map(|s| s.get(public_key).map(|s| *s).unwrap_or_else(|| zero_token_amount))
                     .unwrap_or_else(|| zero_token_amount)
             })
             .unwrap_or_else(|| zero_token_amount))
@@ -246,7 +247,7 @@ impl State {
     /// Since this contract only contains NFTs, the balance will always be
     /// either 1 or 0.
     fn balance_native_currency(&self, public_key: &PublicKeyEd25519) -> ContractResult<Amount> {
-        Ok(self.balances.get(public_key).map(|s| s.native_balance).unwrap_or_else(Amount::zero))
+        Ok(self.native_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero))
     }
 
     /// Update the state with a transfer of some token.
@@ -265,20 +266,20 @@ impl State {
 
         {
             let mut from_public_key_native_balance = self
-                .balances
+                .native_balances
                 .entry(from_public_key)
-                .occupied_or(CustomContractError::InvalidPublicKey)?
-                .native_balance;
+                .occupied_or(CustomContractError::InvalidPublicKey)
+                .map(|x| *x)?;
 
             ensure!(from_public_key_native_balance >= amount, ContractError::InsufficientFunds);
             from_public_key_native_balance -= amount;
         }
 
         let mut to_public_key_native_balance = self
-            .balances
+            .native_balances
             .entry(to_public_key)
-            .occupied_or(CustomContractError::InvalidPublicKey)?
-            .native_balance;
+            .occupied_or(CustomContractError::InvalidPublicKey)
+            .map(|x| *x)?;
 
         to_public_key_native_balance += amount;
 
@@ -302,37 +303,28 @@ impl State {
             return Ok(());
         }
 
-        {
-            let mut from_public_key_balances = self
-                .balances
-                .entry(from_public_key)
-                .occupied_or(CustomContractError::InvalidPublicKey)?;
-
-            let mut from_contract_token_balances = from_public_key_balances
-                .token_balances
-                .entry(contract_address)
-                .occupied_or(CustomContractError::InvalidContractAddress)?;
-
-            let mut from_cis2_token_balance = from_contract_token_balances
-                .entry(token_id.clone())
-                .occupied_or(CustomContractError::InsufficientFunds)?;
-
-            ensure!(*from_cis2_token_balance >= amount, ContractError::InsufficientFunds);
-            *from_cis2_token_balance -= amount;
-        }
-
-        let mut to_public_key_balances = self
-            .balances
-            .entry(to_public_key)
-            .occupied_or(CustomContractError::InvalidPublicKey)?;
-
-        let mut to_contract_token_balances = to_public_key_balances
+        let mut contract_balances = self
             .token_balances
             .entry(contract_address)
+            .occupied_or(CustomContractError::InvalidPublicKey)?;
+
+        let mut token_balances = contract_balances
+            .balances
+            .entry(token_id)
             .occupied_or(CustomContractError::InvalidContractAddress)?;
 
-        let mut to_cis2_token_balance =
-            to_contract_token_balances.entry(token_id).or_insert(TokenAmountU256(0u8.into()));
+        let mut from_cis2_token_balance = token_balances
+            .entry(from_public_key)
+            .occupied_or(CustomContractError::InsufficientFunds)?;
+
+        ensure!(*from_cis2_token_balance >= amount, ContractError::InsufficientFunds);
+        *from_cis2_token_balance -= amount;
+
+        drop(from_cis2_token_balance);
+
+        let mut to_cis2_token_balance = token_balances
+            .entry(to_public_key)
+            .occupied_or(CustomContractError::InsufficientFunds)?;
 
         *to_cis2_token_balance += amount;
 
@@ -409,12 +401,10 @@ fn deposit_native_currency(
 ) -> ReceiveResult<()> {
     let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
-    let (state, builder) = host.state_and_builder();
-
     let mut public_key_balances =
-        state.balances.entry(to).or_insert_with(|| PublicKeyState::empty(builder));
+        host.state_mut().native_balances.entry(to).or_insert_with(Amount::zero);
 
-    public_key_balances.native_balance = amount;
+    *public_key_balances = amount;
 
     logger.log(&Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
         ccd_amount: amount,
@@ -457,18 +447,18 @@ fn deposit_cis2_tokens(
 
     let (state, builder) = host.state_and_builder();
 
-    let mut public_key_balances = state
-        .balances
-        .entry(cis2_hook_param.data)
-        .or_insert_with(|| PublicKeyState::empty(builder));
-
-    let mut contract_token_balances = public_key_balances
+    let mut contract_balances = state
         .token_balances
         .entry(contract_sender_address)
+        .or_insert_with(|| ContractAddressState::empty(builder));
+
+    let mut contract_token_balances = contract_balances
+        .balances
+        .entry(cis2_hook_param.token_id.clone())
         .or_insert_with(|| builder.new_map());
 
     let mut cis2_token_balance = contract_token_balances
-        .entry(cis2_hook_param.token_id.clone())
+        .entry(cis2_hook_param.data)
         .or_insert_with(|| TokenAmountU256(0u8.into()));
 
     *cis2_token_balance += cis2_hook_param.amount;

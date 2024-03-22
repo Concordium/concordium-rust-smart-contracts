@@ -1,9 +1,9 @@
 //! Tests for the `cis2_wCCD` contract.
-use account_abstracted_smart_contract_wallet::*;
 use cis2_multi::MintParams;
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::PublicKeyEd25519;
+use smart_contract_wallet::*;
 
 /// The tests accounts.
 const ALICE: AccountAddress = AccountAddress([0; 32]);
