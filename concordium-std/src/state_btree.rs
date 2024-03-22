@@ -800,9 +800,9 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// Assumes:
     /// - The provided `node` is not a leaf and has a child at `index`.
     /// - The minimum degree `M` is at least 2 or more.
-    fn prepare_child_for_key_removal<'b, 'c>(
+    fn prepare_child_for_key_removal<'c>(
         &mut self,
-        mut node: StateRefMut<'b, Node<M, K>, StateApi>,
+        mut node: StateRefMut<Node<M, K>, StateApi>,
         index: usize,
     ) -> StateRefMut<'c, Node<M, K>, StateApi>
     where

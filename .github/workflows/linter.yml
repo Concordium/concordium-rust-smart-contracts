@@ -12,9 +12,9 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.66"
+  RUST_VERSION: "1.73"
   RUST_VERSION_TESTING_LIBRARY: "1.72"
-  CARGO_CONCORDIUM_VERSION: "3.2.0"
+  CARGO_CONCORDIUM_VERSION: "3.3.0-internal"
 
 jobs:
   rustfmt:
@@ -102,6 +102,35 @@ jobs:
         working-directory: ${{ matrix.crates }}
         run: |
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
+
+  # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
+  # can be executed without errors on the generated smart contracts.
+  std-internal-wasm-test:
+    name: concordium-std internal wasm tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
+      - name: Run internal wasm unit test
+        run: |
+          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
+          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
+          chmod +x $CARGO_CCD
+          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
+          cd concordium-std
+          cargo concordium test --only-unit-tests -- --features internal-wasm-test
 
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
