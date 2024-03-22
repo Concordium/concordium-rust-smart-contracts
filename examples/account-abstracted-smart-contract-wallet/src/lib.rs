@@ -112,22 +112,22 @@ impl State {
     /// either 1 or 0.
     fn balance_tokens(
         &self,
-        public_key: &PublicKeyEd25519,
-        contract_address: &ContractAddress,
         token_id: &ContractTokenId,
+        cis2_token_contract_address: &ContractAddress,
+        public_key: &PublicKeyEd25519,
     ) -> ContractResult<ContractTokenAmount> {
-        let public_key_balances =
-            self.balances.get(public_key).ok_or(CustomContractError::InvalidPublicKey)?;
+        let zero_token_amount = TokenAmountU256(0u8.into());
 
-        let contract_token_balances = public_key_balances
-            .token_balances
-            .get(contract_address)
-            .ok_or(CustomContractError::InvalidContractAddress)?;
-
-        let cis2_token_balance =
-            contract_token_balances.get(token_id).ok_or(CustomContractError::InvalidTokenId)?;
-
-        Ok(cis2_token_balance.0.into())
+        Ok(self
+            .balances
+            .get(public_key)
+            .map(|a| {
+                a.token_balances
+                    .get(cis2_token_contract_address)
+                    .map(|s| s.get(token_id).map(|s| *s).unwrap_or_else(|| zero_token_amount))
+                    .unwrap_or_else(|| zero_token_amount)
+            })
+            .unwrap_or_else(|| zero_token_amount))
     }
 
     /// Get the current balance of a given token ID for a given address.
@@ -135,10 +135,7 @@ impl State {
     /// Since this contract only contains NFTs, the balance will always be
     /// either 1 or 0.
     fn balance_native_currency(&self, public_key: &PublicKeyEd25519) -> ContractResult<Amount> {
-        let public_key_balances =
-            self.balances.get(public_key).ok_or(CustomContractError::InvalidPublicKey)?;
-
-        Ok(public_key_balances.native_balance)
+        Ok(self.balances.get(public_key).map(|s| s.native_balance).unwrap_or_else(Amount::zero))
     }
 
     /// Update the state with a transfer of some token.
@@ -262,11 +259,11 @@ pub enum CustomContractError {
     /// Failed logging: Log is malformed.
     LogMalformed, // -3
     /// Invalid contract name.
-    OnlyContract,
-    InvalidPublicKey,
-    InvalidContractAddress,
-    InvalidTokenId,
-    InsufficientFunds,
+    OnlyContract, // -4
+    InvalidPublicKey,       // -5
+    InvalidContractAddress, // -6
+    InvalidTokenId,         // -7
+    InsufficientFunds,      // -8
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -278,14 +275,14 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-#[init(contract = "smart-contract-wallet", error = "CustomContractError")]
+#[init(contract = "smart_contract_wallet", error = "CustomContractError")]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State::empty(state_builder))
 }
 
 ///
 #[receive(
-    contract = "smart-contract-wallet",
+    contract = "smart_contract_wallet",
     name = "depositNativeCurrency",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
@@ -313,9 +310,13 @@ fn deposit_native_currency(
 
 ///
 #[receive(
-    contract = "smart-contract-wallet",
+    contract = "smart_contract_wallet",
     name = "depositCis2Tokens",
-    parameter = "PublicKeyEd25519",
+    parameter = "OnReceivingCis2DataParams<
+    ContractTokenId,
+    ContractTokenAmount,
+    PublicKeyEd25519,
+>",
     error = "CustomContractError",
     mutable
 )]
@@ -357,7 +358,7 @@ fn deposit_cis2_tokens(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveR
 
 ///
 #[receive(
-    contract = "smart-contract-wallet",
+    contract = "smart_contract_wallet",
     name = "internalTransferNativeCurrency",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
@@ -413,7 +414,7 @@ pub struct Transfer {
 
 ///
 #[receive(
-    contract = "smart-contract-wallet",
+    contract = "smart_contract_wallet",
     name = "internalTransferCis2Tokens",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
@@ -500,13 +501,13 @@ impl From<Vec<Amount>> for NativeCurrencyBalanceOfResponse {
 /// - It fails to parse the parameter.
 /// - Any of the queried `token_id` does not exist.
 #[receive(
-    contract = "smart-contract-wallet",
+    contract = "smart_contract_wallet",
     name = "balanceOfNativeCurrency",
     parameter = "NativeCurrencyBalanceOfParameter",
     return_value = "NativeCurrencyBalanceOfResponse",
     error = "CustomContractError"
 )]
-fn contract_balance_of(
+fn contract_balance_of_native_currency(
     ctx: &ReceiveContext,
     host: &Host<State>,
 ) -> ContractResult<NativeCurrencyBalanceOfResponse> {
@@ -520,5 +521,73 @@ fn contract_balance_of(
         response.push(amount);
     }
     let result = NativeCurrencyBalanceOfResponse::from(response);
+    Ok(result)
+}
+
+/// A query for the balance of a given address for a given token.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+pub struct Cis2TokensBalanceOfQuery {
+    /// The ID of the token for which to query the balance of.
+    pub token_id:                    ContractTokenId,
+    ///
+    pub cis2_token_contract_address: ContractAddress,
+    /// The public key for which to query the balance of.
+    pub public_key:                  PublicKeyEd25519,
+}
+
+/// The parameter type for the contract function `balanceOf`.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct Cis2TokensBalanceOfParameter {
+    /// List of balance queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<Cis2TokensBalanceOfQuery>,
+}
+
+/// The response which is sent back when calling the contract function
+/// `balanceOf`.
+/// It consists of the list of results corresponding to the list of queries.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+#[concordium(transparent)]
+pub struct Cis2TokensBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<ContractTokenAmount>);
+
+impl From<Vec<ContractTokenAmount>> for Cis2TokensBalanceOfResponse {
+    fn from(results: Vec<ContractTokenAmount>) -> Self { Cis2TokensBalanceOfResponse(results) }
+}
+
+/// Get the balance of given token IDs and addresses.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+/// - Any of the queried `token_id` does not exist.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "balanceOfCis2Tokens",
+    parameter = "Cis2TokensBalanceOfParameter",
+    return_value = "Cis2TokensBalanceOfResponse",
+    error = "CustomContractError"
+)]
+fn contract_balance_of_cis2_tokens(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
+) -> ContractResult<Cis2TokensBalanceOfResponse> {
+    // Parse the parameter.
+    let params: Cis2TokensBalanceOfParameter = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for query in params.queries {
+        // Query the state for balance.
+        let amount = host.state().balance_tokens(
+            &query.token_id,
+            &query.cis2_token_contract_address,
+            &query.public_key,
+        )?;
+        response.push(amount);
+    }
+    let result = Cis2TokensBalanceOfResponse::from(response);
     Ok(result)
 }

@@ -313,12 +313,13 @@ fn test_permit_mint() {
 
     // Create input parameters for the `mint` function.
     let payload = MintParams {
-        owner:        ALICE_ADDR,
+        to:           Receiver::from_account(ALICE),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/2A".to_string(),
             hash: None,
         },
         token_id:     TOKEN_1,
+        data:         AdditionalData::empty(),
     };
 
     let update =
@@ -893,12 +894,13 @@ fn test_token_balance_of_blacklisted_address_can_not_change() {
 
     // Bob cannot mint tokens to its address.
     let mint_params = MintParams {
-        owner:        BOB_ADDR,
+        to:           Receiver::from_account(BOB),
         token_id:     TOKEN_0,
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/02".to_string(),
             hash: None,
         },
+        data:         AdditionalData::empty(),
     };
 
     let update = chain
@@ -1101,12 +1103,13 @@ fn test_no_execution_of_state_mutative_functions_when_paused() {
 
     // Try to mint tokens.
     let params = MintParams {
-        owner:        ALICE_ADDR,
+        to:           Receiver::from_account(ALICE),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/02".to_string(),
             hash: None,
         },
         token_id:     TOKEN_0,
+        data:         AdditionalData::empty(),
     };
 
     let update_operator = chain
@@ -1306,12 +1309,13 @@ fn initialize_contract_with_alice_tokens(
     let (mut chain, keypairs, contract_address, module_reference) = initialize_chain_and_contract();
 
     let mint_params = MintParams {
-        owner:        ALICE_ADDR,
+        to:           Receiver::from_account(ALICE),
         token_id:     TOKEN_0,
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/02".to_string(),
             hash: None,
         },
+        data:         AdditionalData::empty(),
     };
 
     // Mint/airdrop TOKEN_0 to Alice as the owner.
@@ -1325,12 +1329,13 @@ fn initialize_contract_with_alice_tokens(
         .expect("Mint tokens");
 
     let mint_params = MintParams {
-        owner:        ALICE_ADDR,
+        to:           Receiver::from_account(ALICE),
         token_id:     TOKEN_1,
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/2A".to_string(),
             hash: None,
         },
+        data:         AdditionalData::empty(),
     };
 
     // Mint/airdrop TOKEN_1 to Alice as the owner.
