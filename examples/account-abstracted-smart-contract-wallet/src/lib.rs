@@ -55,6 +55,117 @@ pub type ContractTokenId = TokenIdVec;
 /// most 1 and it is fine to use a small type for representing token amounts.
 pub type ContractTokenAmount = TokenAmountU256;
 
+/// Tagged events to be serialized for the event log.
+#[derive(Debug, Serial, Deserial, PartialEq, Eq, SchemaType)]
+#[concordium(repr(u8))]
+pub enum Event {
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 244)]
+    InternalCis2TokensTransfer(InternalCis2TokensTransferEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 245)]
+    InternalNativeCurrencyTransferEvent(InternalNativeCurrencyTransferEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 246)]
+    WithdrawCis2Tokens(WithdrawCis2TokensEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 247)]
+    WithdrawNativeCurrency(WithdrawNativeCurrencyEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 248)]
+    DepositCis2Tokens(DepositCis2TokensEvent),
+    /// The event tracks when a role is revoked from an address.
+    #[concordium(tag = 249)]
+    DepositNativeCurrency(DepositNativeCurrencyEvent),
+    /// Cis3 event.
+    /// The event tracks the nonce used by the signer of the `PermitMessage`
+    /// whenever the `permit` function is invoked.
+    #[concordium(tag = 250)]
+    Nonce(NonceEvent),
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct InternalCis2TokensTransferEvent {
+    /// Account that signed the `PermitMessage`.
+    pub token_amount: ContractTokenAmount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub token_id: ContractTokenId,
+    /// The nonce that was used in the `PermitMessage`.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from: PublicKeyEd25519,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to: PublicKeyEd25519,
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct InternalNativeCurrencyTransferEvent {
+    /// Account that signed the `PermitMessage`.
+    pub ccd_amount: Amount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from:       PublicKeyEd25519,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to:         PublicKeyEd25519,
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct WithdrawCis2TokensEvent {
+    /// Account that signed the `PermitMessage`.
+    pub token_amount: ContractTokenAmount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub token_id: ContractTokenId,
+    /// The nonce that was used in the `PermitMessage`.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from: PublicKeyEd25519,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to: Address,
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct WithdrawNativeCurrencyEvent {
+    /// Account that signed the `PermitMessage`.
+    pub ccd_amount: Amount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from:       PublicKeyEd25519,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to:         Address,
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct DepositCis2TokensEvent {
+    /// Account that signed the `PermitMessage`.
+    pub token_amount: ContractTokenAmount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub token_id: ContractTokenId,
+    /// The nonce that was used in the `PermitMessage`.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from: Address,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to: PublicKeyEd25519,
+}
+
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct DepositNativeCurrencyEvent {
+    /// Account that signed the `PermitMessage`.
+    pub ccd_amount: Amount,
+    /// The nonce that was used in the `PermitMessage`.
+    pub from:       Address,
+    /// The nonce that was used in the `PermitMessage`.
+    pub to:         PublicKeyEd25519,
+}
+
+/// The NonceEvent is logged when the `permit` function is invoked. The event
+/// tracks the nonce used by the signer of the `PermitMessage`.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct NonceEvent {
+    /// Account that signed the `PermitMessage`.
+    pub account: AccountAddress,
+    /// The nonce that was used in the `PermitMessage`.
+    pub nonce:   u64,
+}
+
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
@@ -275,7 +386,7 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
-#[init(contract = "smart_contract_wallet", error = "CustomContractError")]
+#[init(contract = "smart_contract_wallet", event = "Event", error = "CustomContractError")]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State::empty(state_builder))
 }
@@ -286,6 +397,7 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
     name = "depositNativeCurrency",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
+    enable_logger,
     payable,
     mutable
 )]
@@ -293,17 +405,22 @@ fn deposit_native_currency(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     amount: Amount,
+    logger: &mut impl HasLogger,
 ) -> ReceiveResult<()> {
-    let beneficiary: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
+    let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
     let (state, builder) = host.state_and_builder();
 
     let mut public_key_balances =
-        state.balances.entry(beneficiary).or_insert_with(|| PublicKeyState::empty(builder));
+        state.balances.entry(to).or_insert_with(|| PublicKeyState::empty(builder));
 
     public_key_balances.native_balance = amount;
 
-    // TODO: emit event
+    logger.log(&Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
+        ccd_amount: amount,
+        from: ctx.sender(),
+        to,
+    }))?;
 
     Ok(())
 }
@@ -318,9 +435,14 @@ fn deposit_native_currency(
     PublicKeyEd25519,
 >",
     error = "CustomContractError",
+    enable_logger,
     mutable
 )]
-fn deposit_cis2_tokens(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
+fn deposit_cis2_tokens(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+) -> ReceiveResult<()> {
     let cis2_hook_param: OnReceivingCis2DataParams<
         ContractTokenId,
         ContractTokenAmount,
@@ -346,12 +468,18 @@ fn deposit_cis2_tokens(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveR
         .or_insert_with(|| builder.new_map());
 
     let mut cis2_token_balance = contract_token_balances
-        .entry(cis2_hook_param.token_id)
+        .entry(cis2_hook_param.token_id.clone())
         .or_insert_with(|| TokenAmountU256(0u8.into()));
 
     *cis2_token_balance += cis2_hook_param.amount;
 
-    // TODO: emit event
+    logger.log(&Event::DepositCis2Tokens(DepositCis2TokensEvent {
+        token_amount: cis2_hook_param.amount,
+        token_id: cis2_hook_param.token_id,
+        cis2_token_contract_address: contract_sender_address,
+        from: cis2_hook_param.from,
+        to: cis2_hook_param.data,
+    }))?;
 
     Ok(())
 }
@@ -418,11 +546,13 @@ pub struct Transfer {
     name = "internalTransferCis2Tokens",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
+    enable_logger,
     mutable
 )]
 fn internal_transfer_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
+    logger: &mut impl HasLogger,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
     let TransferParameter(transfers): TransferParameter = ctx.parameter_cursor().get()?;
@@ -447,18 +577,17 @@ fn internal_transfer_cis2_tokens(
             from_public_key,
             to_public_key,
             contract_address,
-            token_id,
+            token_id.clone(),
             amount,
         )?;
 
-        // TODO: add events
-        // // Log transfer event
-        // logger.log(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
-        //     token_id,
-        //     amount,
-        //     from,
-        //     to: to_address,
-        // })))?;
+        logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+            token_amount: amount,
+            token_id,
+            cis2_token_contract_address: contract_address,
+            from: from_public_key,
+            to: to_public_key,
+        }))?;
     }
 
     Ok(())
