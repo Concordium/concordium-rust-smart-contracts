@@ -322,9 +322,8 @@ impl State {
 
         drop(from_cis2_token_balance);
 
-        let mut to_cis2_token_balance = token_balances
-            .entry(to_public_key)
-            .occupied_or(CustomContractError::InsufficientFunds)?;
+        let mut to_cis2_token_balance =
+            token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0u8.into()));
 
         *to_cis2_token_balance += amount;
 
@@ -508,33 +507,58 @@ fn internal_transfer_native_currency(
     Ok(())
 }
 
-/// The parameter type for the contract function `transfer`.
-#[derive(Debug, Serialize, Clone, SchemaType)]
-#[concordium(transparent)]
-pub struct TransferParameter(#[concordium(size_length = 2)] pub Vec<Transfer>);
-
 /// A single transfer of some amount of a token.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct Transfer {
+pub struct Cis2TokensInternalTransferBatch {
     /// The address owning the tokens being transferred.
-    pub from_public_key:  PublicKeyEd25519,
+    pub from: PublicKeyEd25519,
     /// The address receiving the tokens being transferred.
-    pub to_public_key:    PublicKeyEd25519,
-    ///
-    pub contract_address: ContractAddress,
-    /// The ID of the token being transferred.
-    pub token_id:         ContractTokenId,
+    pub to: PublicKeyEd25519,
     /// The amount of tokens being transferred.
-    pub amount:           ContractTokenAmount,
+    pub token_amount: ContractTokenAmount,
+    /// The ID of the token being transferred.
+    pub token_id: ContractTokenId,
+    ///
+    pub cis2_token_contract_address: ContractAddress,
+}
+
+#[derive(Debug, Serialize, Clone, SchemaType)]
+pub struct Cis2TokensInternalTransfer {
+    /// The address owning the tokens being transferred.
+    pub signer:                PublicKeyEd25519,
+    /// The address owning the tokens being transferred.
+    pub signature:             SignatureEd25519,
+    /// The address owning the tokens being transferred.
+    pub expiry_time:           Timestamp,
+    /// The address owning the tokens being transferred.
+    pub nonce:                 u64,
+    /// The address owning the tokens being transferred.
+    pub service_fee:           ContractTokenAmount,
+    /// The address owning the tokens being transferred.
+    pub service_fee_recipient: Address,
+    /// List of balance queries.
+    #[concordium(size_length = 2)]
+    pub simple_transfers:      Vec<Cis2TokensInternalTransferBatch>,
+}
+
+/// The parameter type for the contract function `balanceOfNativeCurrency`.
+// Note: For the serialization to be derived according to the CIS2
+// specification, the order of the fields cannot be changed.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct Cis2TokensInternalTransferParameter {
+    /// List of balance queries.
+    #[concordium(size_length = 2)]
+    pub transfers: Vec<Cis2TokensInternalTransfer>,
 }
 
 ///
 #[receive(
     contract = "smart_contract_wallet",
     name = "internalTransferCis2Tokens",
-    parameter = "PublicKeyEd25519",
+    parameter = "Cis2TokensInternalTransferParameter",
     error = "CustomContractError",
     enable_logger,
     mutable
@@ -545,15 +569,17 @@ fn internal_transfer_cis2_tokens(
     logger: &mut impl HasLogger,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
-    let TransferParameter(transfers): TransferParameter = ctx.parameter_cursor().get()?;
+    let param: Cis2TokensInternalTransferParameter = ctx.parameter_cursor().get()?;
 
-    for Transfer {
-        from_public_key,
-        to_public_key,
-        contract_address,
-        token_id,
-        amount,
-    } in transfers
+    for Cis2TokensInternalTransfer {
+        signer: _signer,
+        signature: _signature,
+        expiry_time: _expiry_time,
+        nonce: _nonce,
+        service_fee: _service_fee,
+        service_fee_recipient: _service_fee_recipient,
+        simple_transfers,
+    } in param.transfers
     {
         // TODO: this needs to be authorized by the singer instead.
         // Authenticate the sender for this transfer
@@ -562,22 +588,35 @@ fn internal_transfer_cis2_tokens(
         // ensure!(from == sender || state.is_operator(&sender, &from),
         // ContractError::Unauthorized);
 
-        // Update the contract state
-        host.state_mut().transfer_cis2_tokens(
-            from_public_key,
-            to_public_key,
-            contract_address,
-            token_id.clone(),
-            amount,
-        )?;
+        // TODO: Check signature and other parameters
 
-        logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
-            token_amount: amount,
+        // TODO: transfer service fee
+
+        for Cis2TokensInternalTransferBatch {
+            from,
+            to,
+            token_amount,
             token_id,
-            cis2_token_contract_address: contract_address,
-            from: from_public_key,
-            to: to_public_key,
-        }))?;
+            cis2_token_contract_address,
+        } in simple_transfers
+        {
+            // Update the contract state
+            host.state_mut().transfer_cis2_tokens(
+                from,
+                to,
+                cis2_token_contract_address,
+                token_id.clone(),
+                token_amount,
+            )?;
+
+            logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+                token_amount,
+                token_id,
+                cis2_token_contract_address,
+                from,
+                to,
+            }))?;
+        }
     }
 
     Ok(())
