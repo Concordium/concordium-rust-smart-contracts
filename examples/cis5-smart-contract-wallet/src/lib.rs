@@ -293,39 +293,49 @@ impl State {
         &mut self,
         from_public_key: PublicKeyEd25519,
         to_public_key: PublicKeyEd25519,
-        contract_address: ContractAddress,
+        cis2_token_contract_address: ContractAddress,
         token_id: ContractTokenId,
-        amount: ContractTokenAmount,
-    ) -> ContractResult<()> {
+        token_amount: ContractTokenAmount,
+        logger: &mut impl HasLogger,
+    ) -> ReceiveResult<()> {
         let zero_token_amount = TokenAmountU256(0u8.into());
         // A zero transfer does not modify the state.
-        if amount == zero_token_amount {
+        if token_amount == zero_token_amount {
             return Ok(());
         }
 
         let mut contract_balances = self
             .token_balances
-            .entry(contract_address)
+            .entry(cis2_token_contract_address)
             .occupied_or(CustomContractError::InvalidPublicKey)?;
 
         let mut token_balances = contract_balances
             .balances
-            .entry(token_id)
+            .entry(token_id.clone())
             .occupied_or(CustomContractError::InvalidContractAddress)?;
 
         let mut from_cis2_token_balance = token_balances
             .entry(from_public_key)
             .occupied_or(CustomContractError::InsufficientFunds)?;
 
-        ensure!(*from_cis2_token_balance >= amount, ContractError::InsufficientFunds);
-        *from_cis2_token_balance -= amount;
+        ensure!(*from_cis2_token_balance >= token_amount, ContractError::InsufficientFunds.into());
+        *from_cis2_token_balance -= token_amount;
 
         drop(from_cis2_token_balance);
 
         let mut to_cis2_token_balance =
             token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0u8.into()));
 
-        *to_cis2_token_balance += amount;
+        // CHECK: can overflow happen
+        *to_cis2_token_balance += token_amount;
+
+        logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+            token_amount,
+            token_id,
+            cis2_token_contract_address,
+            from: from_public_key,
+            to: to_public_key,
+        }))?;
 
         Ok(())
     }
@@ -527,20 +537,26 @@ pub struct Cis2TokensInternalTransferBatch {
 #[derive(Debug, Serialize, Clone, SchemaType)]
 pub struct Cis2TokensInternalTransfer {
     /// The address owning the tokens being transferred.
-    pub signer:                PublicKeyEd25519,
+    pub signer: PublicKeyEd25519,
     /// The address owning the tokens being transferred.
-    pub signature:             SignatureEd25519,
+    pub signature: SignatureEd25519,
     /// The address owning the tokens being transferred.
-    pub expiry_time:           Timestamp,
+    pub expiry_time: Timestamp,
     /// The address owning the tokens being transferred.
-    pub nonce:                 u64,
+    pub nonce: u64,
     /// The address owning the tokens being transferred.
-    pub service_fee:           ContractTokenAmount,
+    pub service_fee: ContractTokenAmount,
     /// The address owning the tokens being transferred.
-    pub service_fee_recipient: Address,
+    pub service_fee_recipient: PublicKeyEd25519,
+    /// The amount of tokens being transferred.
+    pub service_fee_token_amount: ContractTokenAmount,
+    /// The ID of the token being transferred.
+    pub service_fee_token_id: ContractTokenId,
+    ///
+    pub service_fee_cis2_token_contract_address: ContractAddress,
     /// List of balance queries.
     #[concordium(size_length = 2)]
-    pub simple_transfers:      Vec<Cis2TokensInternalTransferBatch>,
+    pub simple_transfers: Vec<Cis2TokensInternalTransferBatch>,
 }
 
 /// The parameter type for the contract function `balanceOfNativeCurrency`.
@@ -572,12 +588,15 @@ fn internal_transfer_cis2_tokens(
     let param: Cis2TokensInternalTransferParameter = ctx.parameter_cursor().get()?;
 
     for Cis2TokensInternalTransfer {
-        signer: _signer,
+        signer,
         signature: _signature,
         expiry_time: _expiry_time,
         nonce: _nonce,
         service_fee: _service_fee,
-        service_fee_recipient: _service_fee_recipient,
+        service_fee_recipient,
+        service_fee_token_amount,
+        service_fee_token_id,
+        service_fee_cis2_token_contract_address,
         simple_transfers,
     } in param.transfers
     {
@@ -590,7 +609,15 @@ fn internal_transfer_cis2_tokens(
 
         // TODO: Check signature and other parameters
 
-        // TODO: transfer service fee
+        // Transfer service fee
+        host.state_mut().transfer_cis2_tokens(
+            signer,
+            service_fee_recipient,
+            service_fee_cis2_token_contract_address,
+            service_fee_token_id.clone(),
+            service_fee_token_amount,
+            logger,
+        )?;
 
         for Cis2TokensInternalTransferBatch {
             from,
@@ -607,15 +634,8 @@ fn internal_transfer_cis2_tokens(
                 cis2_token_contract_address,
                 token_id.clone(),
                 token_amount,
+                logger,
             )?;
-
-            logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
-                token_amount,
-                token_id,
-                cis2_token_contract_address,
-                from,
-                to,
-            }))?;
         }
     }
 
