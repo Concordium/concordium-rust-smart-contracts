@@ -9,11 +9,10 @@ use smart_contract_wallet::*;
 const ALICE: AccountAddress = AccountAddress([0; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
-const SERVICE_FEE_RECIPIENT: AccountAddress = AccountAddress([2; 32]);
-const SERVICE_FEE_RECIPIENT_ADDR: Address = Address::Account(SERVICE_FEE_RECIPIENT);
 
 const ALICE_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([8; 32]);
 const BOB_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([9; 32]);
+const SERVICE_FEE_RECIPIENT_KEY: PublicKeyEd25519 = PublicKeyEd25519([4; 32]);
 
 const SIGNATURE: SignatureEd25519 = SignatureEd25519([
     68, 134, 96, 171, 184, 199, 1, 93, 76, 87, 144, 68, 55, 180, 93, 56, 107, 95, 127, 112, 24, 55,
@@ -98,19 +97,22 @@ fn test_internal_transfer_cis2_tokens() {
 
     let internal_transfer_param = Cis2TokensInternalTransferParameter {
         transfers: vec![Cis2TokensInternalTransfer {
-            signer:                ALICE_PUBLIC_KEY,
-            signature:             SIGNATURE,
-            expiry_time:           Timestamp::now(),
-            nonce:                 0u64,
-            service_fee:           service_fee_amount,
-            service_fee_recipient: SERVICE_FEE_RECIPIENT_ADDR,
-            simple_transfers:      vec![Cis2TokensInternalTransferBatch {
+            signer: ALICE_PUBLIC_KEY,
+            signature: SIGNATURE,
+            expiry_time: Timestamp::now(),
+            nonce: 0u64,
+            service_fee: service_fee_amount,
+            service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
+            simple_transfers: vec![Cis2TokensInternalTransferBatch {
                 from: ALICE_PUBLIC_KEY,
                 to: BOB_PUBLIC_KEY,
                 token_amount: transfer_amount,
                 token_id: contract_token_id.clone(),
                 cis2_token_contract_address,
             }],
+            service_fee_token_amount: service_fee_amount,
+            service_fee_token_id: contract_token_id.clone(),
+            service_fee_cis2_token_contract_address: cis2_token_contract_address,
         }],
     };
 
@@ -128,28 +130,36 @@ fn test_internal_transfer_cis2_tokens() {
 
     // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
     // keys.
-    // TODO: check balance of service fee as well.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob(
+    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
     );
     assert_eq!(balances.0, [
-        TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()) - transfer_amount,
-        TokenAmountU256(transfer_amount.into())
+        TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()) - transfer_amount - service_fee_amount,
+        TokenAmountU256(transfer_amount.into()),
+        TokenAmountU256(service_fee_amount.into())
     ]);
 
-    // TODO: there should be two events; check that serviceFee was transferred
-    // correctly to service_fee_recipient. Check that the logs are correct.
+    // Check that the logs are correct.
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
-    assert_eq!(events, [Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
-        token_amount: transfer_amount,
-        token_id: contract_token_id,
-        cis2_token_contract_address,
-        from: ALICE_PUBLIC_KEY,
-        to: BOB_PUBLIC_KEY
-    })]);
+    assert_eq!(events, [
+        Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+            token_amount: service_fee_amount,
+            token_id: contract_token_id.clone(),
+            cis2_token_contract_address,
+            from: ALICE_PUBLIC_KEY,
+            to: SERVICE_FEE_RECIPIENT_KEY
+        }),
+        Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+            token_amount: transfer_amount,
+            token_id: contract_token_id,
+            cis2_token_contract_address,
+            from: ALICE_PUBLIC_KEY,
+            to: BOB_PUBLIC_KEY
+        })
+    ]);
 }
 
 // Helpers:
@@ -200,7 +210,7 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
 }
 
 /// Get the token balances for Alice and Bob.
-fn get_cis2_tokens_balances_from_alice_and_bob(
+fn get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
     cis2_token_contract_address: ContractAddress,
@@ -216,6 +226,11 @@ fn get_cis2_tokens_balances_from_alice_and_bob(
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: BOB_PUBLIC_KEY,
+            },
+            Cis2TokensBalanceOfQuery {
+                token_id: TokenIdVec(vec![TOKEN_ID.0]),
+                cis2_token_contract_address,
+                public_key: SERVICE_FEE_RECIPIENT_KEY,
             },
         ],
     };
@@ -288,12 +303,16 @@ fn alice_deposits_cis2_tokens(
     };
 
     // Check that Alice has 0 tokens and Bob has 0 tokens on their public keys.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob(
+    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
     );
-    assert_eq!(balances.0, [TokenAmountU256(0u8.into()), TokenAmountU256(0u8.into())]);
+    assert_eq!(balances.0, [
+        TokenAmountU256(0u8.into()),
+        TokenAmountU256(0u8.into()),
+        TokenAmountU256(0u8.into())
+    ]);
 
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
@@ -307,14 +326,14 @@ fn alice_deposits_cis2_tokens(
 
     // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
     // keys.
-    // TODO: check service_fee
-    let balances = get_cis2_tokens_balances_from_alice_and_bob(
+    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
     );
     assert_eq!(balances.0, [
         TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()),
+        TokenAmountU256(0u8.into()),
         TokenAmountU256(0u8.into())
     ]);
 
