@@ -13,7 +13,7 @@ name: Clippy & fmt
 env:
   RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.73"
-  RUST_VERSION_TESTING_LIBRARY: "1.72"
+  RUST_VERSION_TESTING_LIBRARY: "1.73"
   CARGO_CONCORDIUM_VERSION: "3.3.0-internal"
 
 jobs:
@@ -589,18 +589,9 @@ jobs:
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
   check-std-no-std:
-    name: Build on nightly,
+    name: Build no-std on nightly,
     runs-on: ubuntu-latest
     needs: rustfmt
-    strategy:
-      matrix:
-        target:
-          - wasm32-unknown-unknown
-
-        crates:
-          - concordium-std/Cargo.toml
-          - concordium-cis2/Cargo.toml
-
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -615,11 +606,13 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Run cargo check with no-std
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features bump_alloc
+      - name: Run no-std build: concordium-std
+        working-directory: concordium-std
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features bump_alloc
+
+      - name: Run no-std build: concordium-cis2
+        working-directory: concordium-cis2
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features concordium-std/bump_alloc
 
   check-no-std-examples:
     name: Build on nightly,
