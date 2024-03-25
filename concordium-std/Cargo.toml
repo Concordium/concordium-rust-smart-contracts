@@ -41,6 +41,7 @@ bump_alloc = []
 p7 = []
 
 [lib]
+# cdylib is needed below to compile into a wasm module with internal unit tests.
 crate-type = ["cdylib", "rlib"]
 
 [profile.release]

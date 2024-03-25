@@ -619,7 +619,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features
+          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features bump_alloc
 
   check-no-std-examples:
     name: Build on nightly,

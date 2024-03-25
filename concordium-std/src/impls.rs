@@ -2418,10 +2418,18 @@ impl StateBuilder<StateApi> {
     }
 
     /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet), setting the
-    /// minimum degree `M` of the B-Tree explicitly.
+    /// minimum degree `M` of the B-Tree explicitly. `M` must be 2 or higher
+    /// otherwise constructing the B-Tree results in aborting.
     pub fn new_btree_set_degree<const M: usize, K>(&mut self) -> state_btree::StateBTreeSet<K, M> {
-        let (state_api, prefix) = self.new_state_container();
-        state_btree::StateBTreeSet::new(state_api, prefix)
+        if M >= 2 {
+            let (state_api, prefix) = self.new_state_container();
+            state_btree::StateBTreeSet::new(state_api, prefix)
+        } else {
+            crate::fail!(
+                "Invalid minimum degree used for StateBTreeSet, must be >=2 instead got {}",
+                M
+            )
+        }
     }
 
     /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
@@ -2429,9 +2437,16 @@ impl StateBuilder<StateApi> {
     pub fn new_btree_map_degree<const M: usize, K, V>(
         &mut self,
     ) -> state_btree::StateBTreeMap<K, V, M> {
-        state_btree::StateBTreeMap {
-            key_value: self.new_map(),
-            key_order: self.new_btree_set_degree(),
+        if M >= 2 {
+            state_btree::StateBTreeMap {
+                key_value: self.new_map(),
+                key_order: self.new_btree_set_degree(),
+            }
+        } else {
+            crate::fail!(
+                "Invalid minimum degree used for StateBTreeMap, must be >=2 instead got {}",
+                M
+            )
         }
     }
 }

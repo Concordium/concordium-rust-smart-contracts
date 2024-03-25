@@ -386,9 +386,6 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
     /// the entry without `StateRefMut` being mutable.
-    /// The `Option` allows for having an internal method destroying the
-    /// `StateRefMut` into its raw parts without `Drop` causing a write to the
-    /// contract state.
     pub(crate) entry:            UnsafeCell<S::EntryType>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,

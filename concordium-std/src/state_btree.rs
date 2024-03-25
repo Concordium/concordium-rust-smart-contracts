@@ -169,10 +169,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     where
         K: Serialize,
         V: Serial + DeserialWithState<StateApi>, {
-        // Minor optimization by first checking whether the collection is empty, since
-        // this information is kept at the root of the ordered set it is already loaded
-        // into memory. In the case of the empty collection we can then save a key
-        // lookup.
+        // Minor optimization in the case of the empty collection. Since the length is
+        // tracked by the ordered set, we can return early, saving a key lookup.
         if self.key_order.is_empty() {
             None
         } else {
@@ -185,10 +183,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     where
         K: Serialize,
         V: Serial + DeserialWithState<StateApi>, {
-        // Minor optimization by first checking whether the collection is empty, since
-        // this information is kept at the root of the ordered set it is already loaded
-        // into memory. In the case of the empty collection we can then save a key
-        // lookup.
+        // Minor optimization in the case of the empty collection. Since the length is
+        // tracked by the ordered set, we can return early, saving a key lookup.
         if self.key_order.is_empty() {
             None
         } else {
@@ -458,7 +454,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
             if node.is_leaf() {
                 return false;
             }
-            let child_node_id = node.children[child_index];
+            let child_node_id = unsafe { *node.children.get_unchecked(child_index) };
             node = self.get_node(child_node_id);
         }
     }
@@ -526,7 +522,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
                     higher_so_far = Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 }
 
-                let child_node_id = node.children[higher_key_index];
+                let child_node_id = unsafe { *node.children.get_unchecked(higher_key_index) };
                 node = self.get_node(child_node_id);
             }
         }
@@ -564,7 +560,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
                     higher_so_far = Some(StateRef::new(node.keys.swap_remove(higher_key_index)))
                 }
 
-                let child_node_id = node.children[higher_key_index];
+                let child_node_id = unsafe { *node.children.get_unchecked(higher_key_index) };
                 node = self.get_node(child_node_id);
             }
         }
@@ -895,7 +891,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         node.keys.swap_remove(0)
     }
 
-    /// Moving key at `index` from the node to the lower child and then merges
+    /// Move key at `index` from the node to the lower child and then merges
     /// this child with the content of its larger sibling, deleting the sibling.
     ///
     /// Assumes:
@@ -927,7 +923,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     ) -> (NodeId, StateRefMut<'b, Node<M, K>, StateApi>)
     where
         K: Serialize, {
-        let node_id = self.next_node_id.copy_then_increment();
+        let node_id = self.next_node_id.fetch_and_add();
         let node = Node {
             keys,
             children,
@@ -1037,71 +1033,6 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         let entry = self.state_api.lookup_entry(&key).unwrap_abort();
         StateRefMut::new(entry, self.state_api.clone())
     }
-
-    /// Construct a string for displaying the btree and debug information.
-    /// Should only be used while debugging and testing the btree itself.
-    #[cfg(feature = "internal-wasm-test")]
-    pub(crate) fn debug(&self) -> String
-    where
-        K: Serialize + std::fmt::Debug + Ord, {
-        let Some(root_node_id) = self.root else {
-            return format!("no root");
-        };
-        let mut string = String::new();
-        let root: Node<M, K> = self.get_node(root_node_id);
-        string.push_str(format!("root: {:#?}", root).as_str());
-        let mut stack = root.children;
-
-        while let Some(node_id) = stack.pop() {
-            let node: Node<M, K> = self.get_node(node_id);
-            string.push_str(
-                format!("node {} {:?}: {:#?},\n", node_id.id, node.check_invariants(), node)
-                    .as_str(),
-            );
-
-            stack.extend(node.children);
-        }
-        string
-    }
-
-    /// Check a number of invariants, producing an error if any of them are
-    /// violated. Should only be used while debugging and testing the btree
-    /// itself.
-    #[cfg(feature = "internal-wasm-test")]
-    pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
-    where
-        K: Serialize + Ord, {
-        use crate::ops::Deref;
-        let Some(root_node_id) = self.root else {
-            return if self.len == 0 {
-                Ok(())
-            } else {
-                Err(InvariantViolation::NonZeroLenWithNoRoot)
-            };
-        };
-        let root: Node<M, K> = self.get_node(root_node_id);
-        if root.keys.is_empty() {
-            return Err(InvariantViolation::ZeroKeysInRoot);
-        }
-
-        let mut stack = root.children;
-        while let Some(node_id) = stack.pop() {
-            let node: Node<M, K> = self.get_node(node_id);
-            node.check_invariants()?;
-            stack.extend(node.children);
-        }
-
-        let mut prev = None;
-        for key in self.iter() {
-            if let Some(p) = prev.as_deref() {
-                if p >= key.deref() {
-                    return Err(InvariantViolation::IterationOutOfOrder);
-                }
-            }
-            prev = Some(key);
-        }
-        Ok(())
-    }
 }
 
 /// An iterator over the entries of a [`StateBTreeSet`].
@@ -1149,7 +1080,8 @@ where
             self.next_node = Some(child_id);
         }
         if no_more_keys {
-            self.depth_first_stack.pop();
+            // This was the last key in the node, so remove the node from the stack.
+            let _ = self.depth_first_stack.pop();
         }
         self.length -= 1;
         Some(StateRef::new(key))
@@ -1206,7 +1138,7 @@ impl NodeId {
     const SERIALIZED_BYTE_SIZE: usize = 8;
 
     /// Return a copy of the NodeId, then increments itself.
-    fn copy_then_increment(&mut self) -> Self {
+    fn fetch_and_add(&mut self) -> Self {
         let current = *self;
         self.id += 1;
         current
@@ -1272,58 +1204,6 @@ impl<const M: usize, K> Node<M, K> {
     /// Check if the node holds the minimum number of keys.
     #[inline(always)]
     fn is_at_min(&self) -> bool { self.keys.len() == Self::MINIMUM_KEY_LEN }
-
-    /// Check a number of invariants of a non-root node in a btree, producing an
-    /// error if any of them are violated. Should only be used while
-    /// debugging and testing the btree itself.
-    #[cfg(feature = "internal-wasm-test")]
-    pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
-    where
-        K: Ord, {
-        for i in 1..self.keys.len() {
-            if &self.keys[i - 1] >= &self.keys[i] {
-                return Err(InvariantViolation::NodeKeysOutOfOrder);
-            }
-        }
-
-        if self.keys.len() < Self::MINIMUM_KEY_LEN {
-            return Err(InvariantViolation::KeysLenBelowMin);
-        }
-        if self.keys.len() > Self::MAXIMUM_KEY_LEN {
-            return Err(InvariantViolation::KeysLenAboveMax);
-        }
-
-        if self.is_leaf() {
-            if !self.children.is_empty() {
-                return Err(InvariantViolation::LeafWithChildren);
-            }
-        } else {
-            if self.children.len() < Self::MINIMUM_CHILD_LEN {
-                return Err(InvariantViolation::ChildrenLenBelowMin);
-            }
-            if self.children.len() > Self::MAXIMUM_CHILD_LEN {
-                return Err(InvariantViolation::ChildrenLenAboveMax);
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// The invariants to check in a btree.
-/// Should only be used while debugging and testing the btree itself.
-#[cfg(feature = "internal-wasm-test")]
-#[derive(Debug)]
-pub(crate) enum InvariantViolation {
-    NonZeroLenWithNoRoot,
-    ZeroKeysInRoot,
-    IterationOutOfOrder,
-    NodeKeysOutOfOrder,
-    KeysLenBelowMin,
-    KeysLenAboveMax,
-    LeafWithChildren,
-    ChildrenLenBelowMin,
-    ChildrenLenAboveMax,
 }
 
 /// Wrapper implement the exact same deserial as K, but wraps it in an
@@ -1394,7 +1274,137 @@ where
 /// be run using `cargo concordium test`.
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test_btree {
+    use super::*;
     use crate::{claim, claim_eq, concordium_test, StateApi, StateBuilder};
+
+    /// The invariants to check in a btree.
+    /// Should only be used while debugging and testing the btree itself.
+    #[derive(Debug)]
+    pub(crate) enum InvariantViolation {
+        /// The collection have length above 0, but no root.
+        NonZeroLenWithNoRoot,
+        /// The collection contain a root node, but this has no keys.
+        ZeroKeysInRoot,
+        /// Iterating the keys in the entire collection, is not in strictly
+        /// ascending order.
+        IterationOutOfOrder,
+        /// The keys in a node is not in strictly ascending order.
+        NodeKeysOutOfOrder,
+        /// The non-root node contains fewer keys than the minimum.
+        KeysLenBelowMin,
+        /// The non-root node contains more keys than the maximum.
+        KeysLenAboveMax,
+        /// The leaf node contains children nodes.
+        LeafWithChildren,
+        /// The non-root non-leaf node contains fewer children than the minimum.
+        ChildrenLenBelowMin,
+        /// The non-root non-leaf node contains more children than the maximum.
+        ChildrenLenAboveMax,
+    }
+
+    impl<K, const M: usize> StateBTreeSet<K, M> {
+        /// Check invariants, producing an error if any of them are
+        /// violated.
+        /// See [`InvariantViolation`] for the of list invariants being checked.
+        /// Should only be used while debugging and testing the btree itself.
+        fn check_invariants(&self) -> Result<(), InvariantViolation>
+        where
+            K: Serialize + Ord, {
+            use crate::ops::Deref;
+            let Some(root_node_id) = self.root else {
+                return if self.len == 0 {
+                    Ok(())
+                } else {
+                    Err(InvariantViolation::NonZeroLenWithNoRoot)
+                };
+            };
+            let root: Node<M, K> = self.get_node(root_node_id);
+            if root.keys.is_empty() {
+                return Err(InvariantViolation::ZeroKeysInRoot);
+            }
+
+            let mut stack = root.children;
+            while let Some(node_id) = stack.pop() {
+                let node: Node<M, K> = self.get_node(node_id);
+                node.check_invariants()?;
+                stack.extend(node.children);
+            }
+
+            let mut prev = None;
+            for key in self.iter() {
+                if let Some(p) = prev.as_deref() {
+                    if p > key.deref() {
+                        return Err(InvariantViolation::IterationOutOfOrder);
+                    }
+                }
+                prev = Some(key);
+            }
+            Ok(())
+        }
+
+        /// Construct a string for displaying the btree and debug information.
+        /// Should only be used while debugging and testing the btree itself.
+        pub(crate) fn debug(&self) -> String
+        where
+            K: Serialize + std::fmt::Debug + Ord, {
+            let Some(root_node_id) = self.root else {
+                return format!("no root");
+            };
+            let mut string = String::new();
+            let root: Node<M, K> = self.get_node(root_node_id);
+            string.push_str(format!("root: {:#?}", root).as_str());
+            let mut stack = root.children;
+
+            while let Some(node_id) = stack.pop() {
+                let node: Node<M, K> = self.get_node(node_id);
+                string.push_str(
+                    format!("node {} {:?}: {:#?},\n", node_id.id, node.check_invariants(), node)
+                        .as_str(),
+                );
+
+                stack.extend(node.children);
+            }
+            string
+        }
+    }
+
+    impl<const M: usize, K> Node<M, K> {
+        /// Check invariants of a non-root node in a btree, producing an error
+        /// if any of them are violated.
+        /// See [`InvariantViolation`] for the of list invariants being checked.
+        /// Should only be used while debugging and testing the btree itself.
+        pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
+        where
+            K: Ord, {
+            for i in 1..self.keys.len() {
+                if &self.keys[i - 1] >= &self.keys[i] {
+                    return Err(InvariantViolation::NodeKeysOutOfOrder);
+                }
+            }
+
+            if self.keys.len() < Self::MINIMUM_KEY_LEN {
+                return Err(InvariantViolation::KeysLenBelowMin);
+            }
+            if self.keys.len() > Self::MAXIMUM_KEY_LEN {
+                return Err(InvariantViolation::KeysLenAboveMax);
+            }
+
+            if self.is_leaf() {
+                if !self.children.is_empty() {
+                    return Err(InvariantViolation::LeafWithChildren);
+                }
+            } else {
+                if self.children.len() < Self::MINIMUM_CHILD_LEN {
+                    return Err(InvariantViolation::ChildrenLenBelowMin);
+                }
+                if self.children.len() > Self::MAXIMUM_CHILD_LEN {
+                    return Err(InvariantViolation::ChildrenLenAboveMax);
+                }
+            }
+
+            Ok(())
+        }
+    }
 
     /// Insert `2 * M` items such that the btree contains more than the root
     /// node. Checking that every item is contained in the collection.
@@ -1758,6 +1768,8 @@ mod wasm_test_btree {
         claim!(!tree.insert(1));
     }
 
+    // The module is using `concordium_quickcheck` which is located in a deprecated
+    // module.
     #[allow(deprecated)]
     mod quickcheck {
         use super::super::*;
@@ -2063,6 +2075,15 @@ mod wasm_test_btree {
                 }
             }
 
+            /// We attempt to produce several shrinked versions:
+            ///
+            /// - Simply remove the last mutation from the list of mutations.
+            /// - Remove mutations, which are not adding or removing keys
+            ///   (Remove non-present keys and inserting present keys), note
+            ///   these might still mutate the internal structure.
+            /// - Iterate the mutations and when a key is removed, we traverse
+            ///   back in the mutations and remove other mutations of the same
+            ///   key back to when it was inserted.
             fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
                 let pop = {
                     let mut clone = self.clone();
