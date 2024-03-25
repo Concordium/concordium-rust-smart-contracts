@@ -193,6 +193,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     }
 
     /// Returns `true` if the map contains a value for the specified key.
+    #[inline(always)]
     pub fn contains_key(&self, key: &K) -> bool
     where
         K: Serialize + Ord, {
@@ -201,6 +202,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns the smallest key in the map, which is strictly larger than the
     /// provided key. `None` meaning no such key is present in the map.
+    #[inline(always)]
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -209,6 +211,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns the smallest key in the map, which is equal or larger than the
     /// provided key. `None` meaning no such key is present in the map.
+    #[inline(always)]
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -217,6 +220,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns the largest key in the map, which is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the map.
+    #[inline(always)]
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -225,6 +229,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns the largest key in the map, which is equal or smaller than the
     /// provided key. `None` meaning no such key is present in the map.
+    #[inline(always)]
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -233,6 +238,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns a reference to the first key in the map, if any. This key is
     /// always the minimum of all keys in the map.
+    #[inline(always)]
     pub fn first_key(&self) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -241,6 +247,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 
     /// Returns a reference to the last key in the map, if any. This key is
     /// always the maximum of all keys in the map.
+    #[inline(always)]
     pub fn last_key(&self) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
@@ -248,13 +255,16 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     }
 
     /// Return the number of elements in the map.
+    #[inline(always)]
     pub fn len(&self) -> u32 { self.key_order.len() }
 
     /// Returns `true` is the map contains no elements.
+    #[inline(always)]
     pub fn is_empty(&self) -> bool { self.key_order.is_empty() }
 
     /// Create an iterator over the entries of [`StateBTreeMap`].
     /// Ordered by `K` ascending.
+    #[inline(always)]
     pub fn iter(&self) -> StateBTreeMapIter<K, V, M> {
         StateBTreeMapIter {
             key_iter: self.key_order.iter(),

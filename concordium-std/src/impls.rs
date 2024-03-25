@@ -2433,7 +2433,8 @@ impl StateBuilder<StateApi> {
     }
 
     /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
-    /// minimum degree `M` of the B-Tree explicitly.
+    /// minimum degree `M` of the B-Tree explicitly. `M` must be 2 or higher
+    /// otherwise constructing the B-Tree results in aborting.
     pub fn new_btree_map_degree<const M: usize, K, V>(
         &mut self,
     ) -> state_btree::StateBTreeMap<K, V, M> {
