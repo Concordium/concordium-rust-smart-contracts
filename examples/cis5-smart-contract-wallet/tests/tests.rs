@@ -9,6 +9,7 @@ use smart_contract_wallet::*;
 const ALICE: AccountAddress = AccountAddress([0; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB_ADDR: Address = Address::Account(BOB);
 const CHARLIE: AccountAddress = AccountAddress([2; 32]);
 const CHARLIE_ADDR: Address = Address::Account(CHARLIE);
 
@@ -97,6 +98,127 @@ fn test_deposit_cis2_tokens() {
         cis2_token_contract_address,
         ALICE_PUBLIC_KEY,
     );
+}
+
+/// Test withdraw of ccd.
+#[test]
+fn test_withdraw_ccd() {
+    let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
+        initialize_chain_and_contract();
+
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let rng = &mut rand::thread_rng();
+
+    // Construct message, verifying_key, and signature.
+    let signing_key = SigningKey::generate(rng);
+    let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
+
+    alice_deposits_ccd(&mut chain, smart_contract_wallet, alice_public_key);
+
+    let service_fee_amount: Amount = Amount::from_micro_ccd(1);
+    let transfer_amount: Amount = Amount::from_micro_ccd(5);
+
+    let message = WithdrawMessage {
+        entry_point:           OwnedEntrypointName::new_unchecked(
+            "withdrawNativeCurrency".to_string(),
+        ),
+        expiry_time:           Timestamp::now(),
+        nonce:                 0u64,
+        service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
+        simple_withdraws:      vec![WithdrawBatch {
+            to:              Receiver::Account(BOB),
+            withdraw_amount: SigningAmount::CCDAmount(transfer_amount),
+            data:            AdditionalData::empty(),
+        }],
+        service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
+    };
+
+    let mut withdraw_param = Withdraw {
+        signer:    alice_public_key,
+        signature: SIGNATURE,
+        message:   message.clone(),
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      smart_contract_wallet,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "smart_contract_wallet.viewWithdrawMessageHash".to_string(),
+            ),
+            message:      OwnedParameter::from_serial(&message)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewWithdrawMessageHash");
+
+    let signature = signing_key.sign(&invoke.return_value);
+
+    withdraw_param.signature = SignatureEd25519(signature.to_bytes());
+
+    let withdraw_param = WithdrawParameter {
+        transfers: vec![withdraw_param.clone()],
+    };
+
+    let ccd_balance_bob_before = chain.account_balance(BOB).unwrap().total;
+
+    let update = chain
+        .contract_update(
+            SIGNER,
+            CHARLIE,
+            CHARLIE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_wallet.withdrawNativeCurrency".to_string(),
+                ),
+                address:      smart_contract_wallet,
+                message:      OwnedParameter::from_serial(&withdraw_param)
+                    .expect("Internal transfer native currency params"),
+            },
+        )
+        .print_emitted_events()
+        .expect("Should be able to internally transfer native currency");
+
+    // Check that Alice now has 100 ccd and Bob has 0 ccd on their public
+    // keys.
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        alice_public_key,
+    );
+    assert_eq!(balances.0, [
+        AIRDROP_CCD_AMOUNT - transfer_amount - service_fee_amount,
+        Amount::zero(),
+        service_fee_amount
+    ]);
+
+    assert_eq!(
+        chain.account_balance(BOB).unwrap().total,
+        ccd_balance_bob_before.checked_add(transfer_amount).unwrap(),
+    );
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [
+        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+            ccd_amount: service_fee_amount,
+            from:       alice_public_key,
+            to:         SERVICE_FEE_RECIPIENT_KEY,
+        }),
+        Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
+            ccd_amount: transfer_amount,
+            from:       alice_public_key,
+            to:         BOB_ADDR,
+        }),
+        Event::Nonce(NonceEvent {
+            public_key: alice_public_key,
+            nonce:      0,
+        })
+    ]);
 }
 
 /// Test internal transfer of ccd.
