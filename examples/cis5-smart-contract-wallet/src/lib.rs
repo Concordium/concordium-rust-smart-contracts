@@ -5,6 +5,14 @@ use concordium_std::*;
 // TODO: look up genesis hash
 const GENESIS_HASH: [u8; 32] = [1u8; 32];
 
+/// The standard identifier for the CIS-5: Smart Contract Wallet Standard.
+pub const CIS5_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-5");
+
+/// List of supported standards by this contract address.
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
+    [CIS0_STANDARD_IDENTIFIER, CIS5_STANDARD_IDENTIFIER];
+
 /// Contract token ID type.
 pub type ContractTokenId = TokenIdVec;
 
@@ -306,24 +314,23 @@ impl State {
         Ok(())
     }
 
-    // /// Check if state contains any implementors for a given standard.
-    // fn have_implementors(&self, std_id: &StandardIdentifierOwned) ->
-    // SupportResult {     if let Some(addresses) =
-    // self.implementors.get(std_id) {
-    //         SupportResult::SupportBy(addresses.to_vec())
-    //     } else {
-    //         SupportResult::NoSupport
-    //     }
-    // }
+    /// Check if state contains any implementors for a given standard.
+    fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
+        if let Some(addresses) = self.implementors.get(std_id) {
+            SupportResult::SupportBy(addresses.to_vec())
+        } else {
+            SupportResult::NoSupport
+        }
+    }
 
-    // /// Set implementors for a given standard.
-    // fn set_implementors(
-    //     &mut self,
-    //     std_id: StandardIdentifierOwned,
-    //     implementors: Vec<ContractAddress>,
-    // ) {
-    //     self.implementors.insert(std_id, implementors);
-    // }
+    /// Set implementors for a given standard.
+    fn set_implementors(
+        &mut self,
+        std_id: StandardIdentifierOwned,
+        implementors: Vec<ContractAddress>,
+    ) {
+        self.implementors.insert(std_id, implementors);
+    }
 }
 
 /// The different errors the contract can produce.
@@ -774,6 +781,73 @@ fn internal_transfer_cis2_tokens(
     }
 
     Ok(())
+}
+
+/// The parameter type for the contract function `setImplementors`.
+/// Takes a standard identifier and list of contract addresses providing
+/// implementations of this standard.
+#[derive(Debug, Serialize, SchemaType)]
+struct SetImplementorsParams {
+    /// The identifier for the standard.
+    id:           StandardIdentifierOwned,
+    /// The addresses of the implementors of the standard.
+    implementors: Vec<ContractAddress>,
+}
+
+/// Set the addresses for an implementation given a standard identifier and a
+/// list of contract addresses.
+///
+/// It rejects if:
+/// - Sender is not the owner of the contract instance.
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "setImplementors",
+    parameter = "SetImplementorsParams",
+    error = "ContractError",
+    mutable
+)]
+fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
+    // Authorize the sender.
+    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    // Parse the parameter.
+    let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
+    // Update the implementors in the state
+    host.state_mut().set_implementors(params.id, params.implementors);
+
+    Ok(())
+}
+
+/// Get the supported standards or addresses for a implementation given list of
+/// standard identifiers.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "supports",
+    parameter = "SupportsQueryParams",
+    return_value = "SupportsQueryResponse",
+    error = "ContractError"
+)]
+fn contract_supports(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
+) -> ContractResult<SupportsQueryResponse> {
+    // Parse the parameter.
+    let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
+
+    // Build the response.
+    let mut response = Vec::with_capacity(params.queries.len());
+    for std_id in params.queries {
+        if SUPPORTS_STANDARDS.contains(&std_id.as_standard_identifier()) {
+            response.push(SupportResult::Support);
+        } else {
+            response.push(host.state().have_implementors(&std_id));
+        }
+    }
+    let result = SupportsQueryResponse::from(response);
+    Ok(result)
 }
 
 /// A query for the balance of a given address for a given token.
