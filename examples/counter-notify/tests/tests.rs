@@ -1,5 +1,6 @@
 use concordium_smart_contract_testing::*;
 use concordium_std_derive::account_address;
+use counter_notify::ReentryOccurance;
 
 const ACC_0: AccountAddress =
     account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
@@ -112,6 +113,6 @@ fn tests() {
     ] if rcv_name_1 == "counter-notify.just-increment" && rcv_name_2 == "reentrancy-attacker.call-just-increment" && rcv_name_3 == "counter-notify.increment-and-notify"));
 
     // Check that the contract observed the reentrancy attack.
-    let rv: bool = update.parse_return_value().unwrap();
-    assert!(rv, "Re-entrancy attack not observed.");
+    let rv: ReentryOccurance = update.parse_return_value().unwrap();
+    assert!(rv == ReentryOccurance::ReentryAttack, "Re-entrancy attack not observed.");
 }

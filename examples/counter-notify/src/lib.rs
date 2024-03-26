@@ -13,6 +13,12 @@ use concordium_std::*;
 
 type State = u64;
 
+#[derive(Serial, Deserial, PartialEq)]
+pub enum ReentryOccurance {
+    NoReentryAttack,
+    ReentryAttack,
+}
+
 #[init(contract = "counter-notify")]
 #[inline(always)]
 fn contract_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
@@ -29,9 +35,13 @@ fn just_increment(_ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResul
     contract = "counter-notify",
     name = "increment-and-notify",
     mutable,
-    parameter = "(ContractAddress, OwnedEntrypointName)"
+    parameter = "(ContractAddress, OwnedEntrypointName)",
+    return_value = "ReentryOccurance"
 )]
-fn increment_and_notify(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<bool> {
+fn increment_and_notify(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+) -> ReceiveResult<ReentryOccurance> {
     let (contract, entrypoint): (ContractAddress, OwnedEntrypointName) =
         ctx.parameter_cursor().get()?;
 
@@ -48,8 +58,13 @@ fn increment_and_notify(ctx: &ReceiveContext, host: &mut Host<State>) -> Receive
     )
     .unwrap_abort();
 
-    // This will be false if the reentrancy has occurred.
-    Ok(preinvoke_count == *host.state())
+    let is_reentry = if preinvoke_count != *host.state() {
+        ReentryOccurance::ReentryAttack
+    } else {
+        ReentryOccurance::NoReentryAttack
+    };
+
+    Ok(is_reentry)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
