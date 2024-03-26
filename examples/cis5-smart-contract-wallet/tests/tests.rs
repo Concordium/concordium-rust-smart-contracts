@@ -9,6 +9,8 @@ use smart_contract_wallet::*;
 const ALICE: AccountAddress = AccountAddress([0; 32]);
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const BOB: AccountAddress = AccountAddress([1; 32]);
+const CHARLIE: AccountAddress = AccountAddress([2; 32]);
+const CHARLIE_ADDR: Address = Address::Account(CHARLIE);
 
 const ALICE_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([8; 32]);
 const BOB_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([9; 32]);
@@ -80,7 +82,12 @@ fn test_deposit_cis2_tokens() {
     let (mut chain, smart_contract_wallet, cis2_token_contract_address) =
         initialize_chain_and_contract();
 
-    alice_deposits_cis2_tokens(&mut chain, smart_contract_wallet, cis2_token_contract_address);
+    alice_deposits_cis2_tokens(
+        &mut chain,
+        smart_contract_wallet,
+        cis2_token_contract_address,
+        ALICE_PUBLIC_KEY,
+    );
 }
 
 /// Test internal transfer of cis2 tokens.
@@ -89,43 +96,81 @@ fn test_internal_transfer_cis2_tokens() {
     let (mut chain, smart_contract_wallet, cis2_token_contract_address) =
         initialize_chain_and_contract();
 
-    alice_deposits_cis2_tokens(&mut chain, smart_contract_wallet, cis2_token_contract_address);
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let rng = &mut rand::thread_rng();
+
+    // Construct message, verifying_key, and signature.
+    let signing_key = SigningKey::generate(rng);
+    let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
+
+    alice_deposits_cis2_tokens(
+        &mut chain,
+        smart_contract_wallet,
+        cis2_token_contract_address,
+        alice_public_key,
+    );
 
     let service_fee_amount: TokenAmountU256 = TokenAmountU256(1.into());
     let transfer_amount: TokenAmountU256 = TokenAmountU256(5.into());
     let contract_token_id: TokenIdVec = TokenIdVec(vec![TOKEN_ID.0]);
 
-    let internal_transfer_param = Cis2TokensInternalTransferParameter {
-        transfers: vec![Cis2TokensInternalTransfer {
-            signer: ALICE_PUBLIC_KEY,
-            signature: SIGNATURE,
-            expiry_time: Timestamp::now(),
-            nonce: 0u64,
-            service_fee: service_fee_amount,
-            service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-            simple_transfers: vec![Cis2TokensInternalTransferBatch {
-                from: ALICE_PUBLIC_KEY,
-                to: BOB_PUBLIC_KEY,
-                token_amount: transfer_amount,
-                token_id: contract_token_id.clone(),
-                cis2_token_contract_address,
-            }],
-            service_fee_token_amount: service_fee_amount,
-            service_fee_token_id: contract_token_id.clone(),
-            service_fee_cis2_token_contract_address: cis2_token_contract_address,
+    let mut internal_transfer_param = Cis2TokensInternalTransfer {
+        signer: alice_public_key,
+        signature: SIGNATURE,
+        entry_point: OwnedEntrypointName::new_unchecked("internalTransferCis2Tokens".to_string()),
+        expiry_time: Timestamp::now(),
+        nonce: 0u64,
+        service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
+        simple_transfers: vec![Cis2TokensInternalTransferBatch {
+            to: BOB_PUBLIC_KEY,
+            token_amount: transfer_amount,
+            token_id: contract_token_id.clone(),
+            cis2_token_contract_address,
         }],
+        service_fee_token_amount: service_fee_amount,
+        service_fee_token_id: contract_token_id.clone(),
+        service_fee_cis2_token_contract_address: cis2_token_contract_address,
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      smart_contract_wallet,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "smart_contract_wallet.viewMessageHash".to_string(),
+            ),
+            message:      OwnedParameter::from_serial(&internal_transfer_param)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewMessageHash");
+
+    let signature = signing_key.sign(&invoke.return_value);
+
+    internal_transfer_param.signature = SignatureEd25519(signature.to_bytes());
+
+    let internal_transfer_param = Cis2TokensInternalTransferParameter {
+        transfers: vec![internal_transfer_param.clone()],
     };
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.internalTransferCis2Tokens".to_string(),
-            ),
-            address:      smart_contract_wallet,
-            message:      OwnedParameter::from_serial(&internal_transfer_param)
-                .expect("Internal transfer cis2 tokens params"),
-        })
+        .contract_update(
+            SIGNER,
+            CHARLIE,
+            CHARLIE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_wallet.internalTransferCis2Tokens".to_string(),
+                ),
+                address:      smart_contract_wallet,
+                message:      OwnedParameter::from_serial(&internal_transfer_param)
+                    .expect("Internal transfer cis2 tokens params"),
+            },
+        )
+        .print_emitted_events()
         .expect("Should be able to internally transfer cis2 tokens");
 
     // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
@@ -134,6 +179,7 @@ fn test_internal_transfer_cis2_tokens() {
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
+        alice_public_key,
     );
     assert_eq!(balances.0, [
         TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()) - transfer_amount - service_fee_amount,
@@ -149,14 +195,14 @@ fn test_internal_transfer_cis2_tokens() {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
-            from: ALICE_PUBLIC_KEY,
+            from: alice_public_key,
             to: SERVICE_FEE_RECIPIENT_KEY
         }),
         Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
             token_amount: transfer_amount,
             token_id: contract_token_id,
             cis2_token_contract_address,
-            from: ALICE_PUBLIC_KEY,
+            from: alice_public_key,
             to: BOB_PUBLIC_KEY
         })
     ]);
@@ -175,11 +221,13 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
     // Create some accounts on the chain.
     chain.create_account(Account::new(ALICE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
+    chain.create_account(Account::new(CHARLIE, ACC_INITIAL_BALANCE));
 
     // Load and deploy cis2 token module.
     let module =
         module_load_v1("../cis2-multi/concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment =
+        chain.module_deploy_v1_debug(SIGNER, ALICE, module, true).expect("Deploy valid module");
 
     // Initialize the auction contract.
     let cis2_token_contract_init = chain
@@ -194,7 +242,8 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment =
+        chain.module_deploy_v1_debug(SIGNER, ALICE, module, true).expect("Deploy valid module");
 
     // Initialize the auction contract.
     let smart_contract_wallet_init = chain
@@ -214,13 +263,14 @@ fn get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
     cis2_token_contract_address: ContractAddress,
+    alice_public_key: PublicKeyEd25519,
 ) -> Cis2TokensBalanceOfResponse {
     let balance_of_params = Cis2TokensBalanceOfParameter {
         queries: vec![
             Cis2TokensBalanceOfQuery {
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
-                public_key: ALICE_PUBLIC_KEY,
+                public_key: alice_public_key,
             },
             Cis2TokensBalanceOfQuery {
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
@@ -286,6 +336,7 @@ fn alice_deposits_cis2_tokens(
     chain: &mut Chain,
     smart_contract_wallet: ContractAddress,
     cis2_token_contract_address: ContractAddress,
+    alice_public_key: PublicKeyEd25519,
 ) {
     let new_metadata_url = "https://new-url.com".to_string();
 
@@ -299,7 +350,7 @@ fn alice_deposits_cis2_tokens(
             hash: None,
         },
         token_id:     TOKEN_ID,
-        data:         AdditionalData::from(to_bytes(&ALICE_PUBLIC_KEY)),
+        data:         AdditionalData::from(to_bytes(&alice_public_key)),
     };
 
     // Check that Alice has 0 tokens and Bob has 0 tokens on their public keys.
@@ -307,6 +358,7 @@ fn alice_deposits_cis2_tokens(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
+        alice_public_key,
     );
     assert_eq!(balances.0, [
         TokenAmountU256(0u8.into()),
@@ -330,6 +382,7 @@ fn alice_deposits_cis2_tokens(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
+        alice_public_key,
     );
     assert_eq!(balances.0, [
         TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()),
@@ -345,7 +398,7 @@ fn alice_deposits_cis2_tokens(
         token_id: TokenIdVec(vec![TOKEN_ID.0]),
         cis2_token_contract_address,
         from: Address::Contract(cis2_token_contract_address),
-        to: ALICE_PUBLIC_KEY
+        to: alice_public_key
     })]);
 }
 
