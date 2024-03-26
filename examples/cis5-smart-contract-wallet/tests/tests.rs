@@ -28,6 +28,7 @@ const TOKEN_ID: TokenIdU8 = TokenIdU8(4);
 const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 
 const AIRDROP_TOKEN_AMOUNT: TokenAmountU64 = TokenAmountU64(100);
+const AIRDROP_CCD_AMOUNT: Amount = Amount::from_micro_ccd(100);
 
 /// A signer for all the transactions.
 const SIGNER: Signer = Signer::with_one_key();
@@ -46,8 +47,12 @@ fn test_deposit_native_currency() {
         initialize_chain_and_contract();
 
     // Check that Alice has 0 CCD and Bob has 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob(&chain, smart_contract_wallet);
-    assert_eq!(balances.0, [Amount::zero(), Amount::zero()]);
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        ALICE_PUBLIC_KEY,
+    );
+    assert_eq!(balances.0, [Amount::zero(), Amount::zero(), Amount::zero()]);
 
     let send_amount = Amount::from_micro_ccd(100);
     let update = chain
@@ -63,8 +68,12 @@ fn test_deposit_native_currency() {
         .expect("Should be able to deposit CCD");
 
     // Check that Alice now has 100 CCD and Bob has 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob(&chain, smart_contract_wallet);
-    assert_eq!(balances.0, [send_amount, Amount::zero()]);
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        ALICE_PUBLIC_KEY,
+    );
+    assert_eq!(balances.0, [send_amount, Amount::zero(), Amount::zero()]);
 
     // Check that the logs are correct.
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
@@ -88,6 +97,119 @@ fn test_deposit_cis2_tokens() {
         cis2_token_contract_address,
         ALICE_PUBLIC_KEY,
     );
+}
+
+/// Test internal transfer of ccd.
+#[test]
+fn test_internal_transfer_ccd() {
+    let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
+        initialize_chain_and_contract();
+
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let rng = &mut rand::thread_rng();
+
+    // Construct message, verifying_key, and signature.
+    let signing_key = SigningKey::generate(rng);
+    let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
+
+    alice_deposits_ccd(&mut chain, smart_contract_wallet, alice_public_key);
+
+    let service_fee_amount: Amount = Amount::from_micro_ccd(1);
+    let transfer_amount: Amount = Amount::from_micro_ccd(5);
+
+    let message = InternalTransferMessage {
+        entry_point:           OwnedEntrypointName::new_unchecked(
+            "internalTransferNativeCurrency".to_string(),
+        ),
+        expiry_time:           Timestamp::now(),
+        nonce:                 0u64,
+        service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
+        simple_transfers:      vec![InternalTransferBatch {
+            to:              BOB_PUBLIC_KEY,
+            transfer_amount: SigningAmount::CCDAmount(transfer_amount),
+        }],
+        service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
+    };
+
+    let mut internal_transfer_param = InternalTransfer {
+        signer:    alice_public_key,
+        signature: SIGNATURE,
+        message:   message.clone(),
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      smart_contract_wallet,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "smart_contract_wallet.viewInternalTransferMessageHash".to_string(),
+            ),
+            message:      OwnedParameter::from_serial(&message)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query viewInternalTransferMessageHash");
+
+    let signature = signing_key.sign(&invoke.return_value);
+
+    internal_transfer_param.signature = SignatureEd25519(signature.to_bytes());
+
+    let internal_transfer_param = InternalTransferParameter {
+        transfers: vec![internal_transfer_param.clone()],
+    };
+
+    let update = chain
+        .contract_update(
+            SIGNER,
+            CHARLIE,
+            CHARLIE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_wallet.internalTransferNativeCurrency".to_string(),
+                ),
+                address:      smart_contract_wallet,
+                message:      OwnedParameter::from_serial(&internal_transfer_param)
+                    .expect("Internal transfer native currency params"),
+            },
+        )
+        .print_emitted_events()
+        .expect("Should be able to internally transfer native currency");
+
+    // Check that Alice now has 100 ccd and Bob has 0 ccd on their public
+    // keys.
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        alice_public_key,
+    );
+    assert_eq!(balances.0, [
+        AIRDROP_CCD_AMOUNT - transfer_amount - service_fee_amount,
+        transfer_amount,
+        service_fee_amount
+    ]);
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [
+        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+            ccd_amount: service_fee_amount,
+            from:       alice_public_key,
+            to:         SERVICE_FEE_RECIPIENT_KEY,
+        }),
+        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+            ccd_amount: transfer_amount,
+            from:       alice_public_key,
+            to:         BOB_PUBLIC_KEY,
+        }),
+        Event::Nonce(NonceEvent {
+            public_key: alice_public_key,
+            nonce:      0,
+        })
+    ]);
 }
 
 /// Test internal transfer of cis2 tokens.
@@ -115,23 +237,29 @@ fn test_internal_transfer_cis2_tokens() {
     let transfer_amount: TokenAmountU256 = TokenAmountU256(5.into());
     let contract_token_id: TokenIdVec = TokenIdVec(vec![TOKEN_ID.0]);
 
-    let message = Cis2TokensInternalTransferMessage {
-        entry_point: OwnedEntrypointName::new_unchecked("internalTransferCis2Tokens".to_string()),
-        expiry_time: Timestamp::now(),
-        nonce: 0u64,
+    let message = InternalTransferMessage {
+        entry_point:           OwnedEntrypointName::new_unchecked(
+            "internalTransferCis2Tokens".to_string(),
+        ),
+        expiry_time:           Timestamp::now(),
+        nonce:                 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_transfers: vec![Cis2TokensInternalTransferBatch {
-            to: BOB_PUBLIC_KEY,
-            token_amount: transfer_amount,
+        service_fee_amount:    SigningAmount::TokenAmount(TokenAmount {
+            token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
+        }),
+        simple_transfers:      vec![InternalTransferBatch {
+            to:              BOB_PUBLIC_KEY,
+            transfer_amount: SigningAmount::TokenAmount(TokenAmount {
+                token_amount: transfer_amount,
+                token_id: contract_token_id.clone(),
+                cis2_token_contract_address,
+            }),
         }],
-        service_fee_token_amount: service_fee_amount,
-        service_fee_token_id: contract_token_id.clone(),
-        service_fee_cis2_token_contract_address: cis2_token_contract_address,
     };
 
-    let mut internal_transfer_param = Cis2TokensInternalTransfer {
+    let mut internal_transfer_param = InternalTransfer {
         signer:    alice_public_key,
         signature: SIGNATURE,
         message:   message.clone(),
@@ -143,18 +271,18 @@ fn test_internal_transfer_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewMessageHash".to_string(),
+                "smart_contract_wallet.viewInternalTransferMessageHash".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewMessageHash");
+        .expect("Should be able to query viewInternalTransferMessageHash");
 
     let signature = signing_key.sign(&invoke.return_value);
 
     internal_transfer_param.signature = SignatureEd25519(signature.to_bytes());
 
-    let internal_transfer_param = Cis2TokensInternalTransferParameter {
+    let internal_transfer_param = InternalTransferParameter {
         transfers: vec![internal_transfer_param.clone()],
     };
 
@@ -309,17 +437,21 @@ fn get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
 }
 
 /// Get the native currency balances for Alice and Bob.
-fn get_native_currency_balance_from_alice_and_bob(
+fn get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
+    alice_public_key: PublicKeyEd25519,
 ) -> NativeCurrencyBalanceOfResponse {
     let balance_of_params = NativeCurrencyBalanceOfParameter {
         queries: vec![
             NativeCurrencyBalanceOfQuery {
-                public_key: ALICE_PUBLIC_KEY,
+                public_key: alice_public_key,
             },
             NativeCurrencyBalanceOfQuery {
                 public_key: BOB_PUBLIC_KEY,
+            },
+            NativeCurrencyBalanceOfQuery {
+                public_key: SERVICE_FEE_RECIPIENT_KEY,
             },
         ],
     };
@@ -407,6 +539,50 @@ fn alice_deposits_cis2_tokens(
         cis2_token_contract_address,
         from: Address::Contract(cis2_token_contract_address),
         to: alice_public_key
+    })]);
+}
+
+/// Get the token balances for Alice and Bob.
+fn alice_deposits_ccd(
+    chain: &mut Chain,
+    smart_contract_wallet: ContractAddress,
+    alice_public_key: PublicKeyEd25519,
+) {
+    // Check that Alice has 0 CCD and Bob has 0 CCD on their public keys.
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        alice_public_key,
+    );
+    assert_eq!(balances.0, [Amount::zero(), Amount::zero(), Amount::zero()]);
+
+    let update = chain
+        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       AIRDROP_CCD_AMOUNT,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "smart_contract_wallet.depositNativeCurrency".to_string(),
+            ),
+            address:      smart_contract_wallet,
+            message:      OwnedParameter::from_serial(&alice_public_key)
+                .expect("Deposit native currency params"),
+        })
+        .expect("Should be able to deposit CCD");
+
+    // Check that Alice now has 100 CCD and Bob has 0 CCD on their public keys.
+    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        alice_public_key,
+    );
+    assert_eq!(balances.0, [AIRDROP_CCD_AMOUNT, Amount::zero(), Amount::zero()]);
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
+        ccd_amount: AIRDROP_CCD_AMOUNT,
+        from:       ALICE_ADDR,
+        to:         alice_public_key,
     })]);
 }
 
