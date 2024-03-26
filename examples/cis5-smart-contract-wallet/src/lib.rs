@@ -2,6 +2,9 @@
 use concordium_cis2::*;
 use concordium_std::*;
 
+// TODO: look up genesis hash
+const GENESIS_HASH: [u8; 32] = [1u8; 32];
+
 #[derive(SchemaType, Serialize)]
 pub struct VerificationParameter {
     pub public_key: PublicKeyEd25519,
@@ -376,6 +379,12 @@ pub enum CustomContractError {
     InvalidContractAddress, // -6
     InvalidTokenId,         // -7
     InsufficientFunds,      // -8
+    WrongSignature,         // -9
+    NonceMismatch,          // -10
+    WrongContract,          // -11
+    Expired,                // -12
+    WrongEntryPoint,        // -13
+    UnAuthorized,           // -14
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -522,8 +531,6 @@ fn internal_transfer_native_currency(
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType)]
 pub struct Cis2TokensInternalTransferBatch {
-    /// The address owning the tokens being transferred.
-    pub from: PublicKeyEd25519,
     /// The address receiving the tokens being transferred.
     pub to: PublicKeyEd25519,
     /// The amount of tokens being transferred.
@@ -541,11 +548,11 @@ pub struct Cis2TokensInternalTransfer {
     /// The address owning the tokens being transferred.
     pub signature: SignatureEd25519,
     /// The address owning the tokens being transferred.
+    pub entry_point: OwnedEntrypointName,
+    /// The address owning the tokens being transferred.
     pub expiry_time: Timestamp,
     /// The address owning the tokens being transferred.
     pub nonce: u64,
-    /// The address owning the tokens being transferred.
-    pub service_fee: ContractTokenAmount,
     /// The address owning the tokens being transferred.
     pub service_fee_recipient: PublicKeyEd25519,
     /// The amount of tokens being transferred.
@@ -570,12 +577,70 @@ pub struct Cis2TokensInternalTransferParameter {
     pub transfers: Vec<Cis2TokensInternalTransfer>,
 }
 
+#[derive(Serialize)]
+pub struct Cis2TokensInternalTransferPartial {
+    /// The address owning the tokens being transferred.
+    pub signer:    PublicKeyEd25519,
+    /// The address owning the tokens being transferred.
+    pub signature: SignatureEd25519,
+}
+
+fn calculate_message_hash_from_bytes(
+    message_bytes: &[u8],
+    crypto_primitives: &impl HasCryptoPrimitives,
+    ctx: &ReceiveContext,
+) -> ContractResult<[u8; 32]> {
+    // We prepend the message with a context string consistent of the genesis_hash
+    // and this contract address.
+    let mut msg_prepend = [0; 32 + 16];
+    msg_prepend[0..32].copy_from_slice(GENESIS_HASH.as_ref());
+    msg_prepend[32..40].copy_from_slice(&ctx.self_address().index.to_le_bytes());
+    msg_prepend[40..48].copy_from_slice(&ctx.self_address().subindex.to_le_bytes());
+
+    // Calculate the message hash.
+    Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], &message_bytes].concat()).0)
+}
+
+/// Helper function to calculate the `message_hash`.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "viewMessageHash",
+    parameter = "Cis2TokensInternalTransfer",
+    return_value = "[u8;32]",
+    error = "ContractError",
+    crypto_primitives,
+    mutable
+)]
+fn contract_view_message_hash(
+    ctx: &ReceiveContext,
+    _host: &mut Host<State>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let mut cursor = ctx.parameter_cursor();
+    // The input parameter is `PermitParam` but we only read the initial part of it
+    // with `PermitParamPartial`. I.e. we read the `signature` and the
+    // `signer`, but not the `message` here.
+    let _param: Cis2TokensInternalTransferPartial = cursor.get()?;
+
+    // The input parameter is `PermitParam` but we have only read the initial part
+    // of it with `PermitParamPartial` so far. We read in the `message` now.
+    // `(cursor.size() - cursor.cursor_position()` is the length of the message in
+    // bytes.
+    let mut message_bytes = vec![0; (cursor.size() - cursor.cursor_position()) as usize];
+
+    cursor.read_exact(&mut message_bytes)?;
+
+    calculate_message_hash_from_bytes(&message_bytes, crypto_primitives, ctx)
+}
+
 ///
 #[receive(
     contract = "smart_contract_wallet",
     name = "internalTransferCis2Tokens",
     parameter = "Cis2TokensInternalTransferParameter",
     error = "CustomContractError",
+    crypto_primitives,
     enable_logger,
     mutable
 )]
@@ -583,31 +648,57 @@ fn internal_transfer_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
     let param: Cis2TokensInternalTransferParameter = ctx.parameter_cursor().get()?;
 
-    for Cis2TokensInternalTransfer {
-        signer,
-        signature: _signature,
-        expiry_time: _expiry_time,
-        nonce: _nonce,
-        service_fee: _service_fee,
-        service_fee_recipient,
-        service_fee_token_amount,
-        service_fee_token_id,
-        service_fee_cis2_token_contract_address,
-        simple_transfers,
-    } in param.transfers
-    {
-        // TODO: this needs to be authorized by the singer instead.
-        // Authenticate the sender for this transfer
-        // Get the sender who invoked this contract function.
-        // let sender = ctx.sender();
-        // ensure!(from == sender || state.is_operator(&sender, &from),
-        // ContractError::Unauthorized);
+    for cis2_tokens_internal_transfer in param.transfers {
+        let Cis2TokensInternalTransfer {
+            signer,
+            signature,
+            entry_point,
+            expiry_time,
+            nonce,
+            service_fee_recipient,
+            service_fee_token_amount,
+            service_fee_token_id,
+            service_fee_cis2_token_contract_address,
+            simple_transfers,
+        } = cis2_tokens_internal_transfer.clone();
 
-        // TODO: Check signature and other parameters
+        // Update the nonce.
+        let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
+
+        // Get the current nonce.
+        let nonce_state = *entry;
+        // Bump nonce.
+        *entry += 1;
+        drop(entry);
+
+        // Check the nonce to prevent replay attacks.
+        ensure_eq!(nonce, nonce_state, CustomContractError::NonceMismatch.into());
+
+        ensure_eq!(
+            entry_point,
+            "internalTransferCis2Tokens",
+            CustomContractError::WrongEntryPoint.into()
+        );
+
+        // Check signature is not expired.
+        ensure!(expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+
+        // We start message_bytes at 96 to remove signature and signer
+        let message_bytes = &to_bytes(&cis2_tokens_internal_transfer)[96..];
+
+        // Calculate the message hash.
+        let message_hash =
+            calculate_message_hash_from_bytes(message_bytes, crypto_primitives, ctx)?;
+
+        // Check signature.
+        let valid_signature =
+            crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
+        ensure!(valid_signature, CustomContractError::WrongSignature.into());
 
         // Transfer service fee
         host.state_mut().transfer_cis2_tokens(
@@ -620,7 +711,6 @@ fn internal_transfer_cis2_tokens(
         )?;
 
         for Cis2TokensInternalTransferBatch {
-            from,
             to,
             token_amount,
             token_id,
@@ -629,7 +719,7 @@ fn internal_transfer_cis2_tokens(
         {
             // Update the contract state
             host.state_mut().transfer_cis2_tokens(
-                from,
+                signer,
                 to,
                 cis2_token_contract_address,
                 token_id.clone(),
