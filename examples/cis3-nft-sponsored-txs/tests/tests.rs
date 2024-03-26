@@ -8,15 +8,19 @@ use concordium_std::{
     AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519,
     Timestamp,
 };
+use concordium_std_derive::{account_address, signature_ed25519};
 use std::collections::BTreeMap;
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB_ADDR: Address = Address::Account(BOB);
-const CHARLIE: AccountAddress = AccountAddress([2u8; 32]);
-const NON_EXISTING_ACCOUNT: AccountAddress = AccountAddress([3u8; 32]);
+const CHARLIE: AccountAddress =
+    account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
+const NON_EXISTING_ACCOUNT: AccountAddress =
+    account_address!("2y57FyMyqAfY7X1SuSWJ5VMt1Z3ZgxbKt9w5mGoTwqA7YcpbXr");
 
 /// Token IDs.
 const TOKEN_0: ContractTokenId = TokenIdU32(1);
@@ -34,23 +38,11 @@ const PUBLIC_KEY: [u8; 32] = [
     253, 29, 192, 126, 199, 208, 39, 69, 4, 246, 32,
 ];
 
-const SIGNATURE_TRANSFER: SignatureEd25519 = SignatureEd25519([
-    68, 134, 96, 171, 184, 199, 1, 93, 76, 87, 144, 68, 55, 180, 93, 56, 107, 95, 127, 112, 24, 55,
-    162, 131, 165, 91, 133, 104, 2, 5, 78, 224, 214, 21, 66, 0, 44, 108, 52, 4, 108, 10, 123, 75,
-    21, 68, 42, 79, 106, 106, 87, 125, 122, 77, 154, 114, 208, 145, 171, 47, 108, 96, 221, 13,
-]);
+const SIGNATURE_TRANSFER: SignatureEd25519 = signature_ed25519!("448660ABB8C7015D4C57904437B45D386B5F7F701837A283A55B856802054EE0D61542002C6C34046C0A7B4B15442A4F6A6A577D7A4D9A72D091AB2F6C60DD0D");
 
-const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = SignatureEd25519([
-    199, 250, 51, 48, 15, 210, 20, 180, 70, 191, 98, 217, 109, 67, 115, 94, 195, 81, 16, 157, 59,
-    26, 36, 147, 91, 196, 254, 133, 149, 27, 148, 124, 130, 206, 68, 195, 139, 189, 244, 43, 253,
-    12, 58, 17, 102, 63, 203, 35, 159, 54, 94, 59, 12, 193, 48, 78, 144, 112, 245, 149, 12, 181,
-    74, 10,
-]);
+const SIGNATURE_UPDATE_OPERATOR: SignatureEd25519 = signature_ed25519!("C7FA33300FD214B446BF62D96D43735EC351109D3B1A24935BC4FE85951B947C82CE44C38BBDF42BFD0C3A11663FCB239F365E3B0CC1304E9070F5950CB54A0A");
 
-const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
+const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
 
 /// Test permit update operator function. The signature is generated in the test
 /// case. ALICE adds BOB as an operator.

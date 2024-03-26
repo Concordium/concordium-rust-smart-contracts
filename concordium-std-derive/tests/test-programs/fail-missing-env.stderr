@@ -1,0 +1,5 @@
+error: Environment variable error: NotPresent
+ --> tests/test-programs/fail-missing-env.rs:6:50
+  |
+6 | const ACC: AccountAddress = account_address_env!("TEST");
+  |                                                  ^^^^^^

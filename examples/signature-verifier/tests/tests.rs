@@ -1,10 +1,12 @@
 //! Tests for the signature-verifier contract.
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519};
+use concordium_std_derive::*;
 use signature_verifier::*;
 use std::str::FromStr;
 
-const ALICE: AccountAddress = AccountAddress([0u8; 32]);
+const ALICE: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const ALICE_ADDR: Address = Address::Account(ALICE);
 const SIGNER: Signer = Signer::with_one_key();
 

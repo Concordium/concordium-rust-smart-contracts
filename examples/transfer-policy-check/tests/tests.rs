@@ -1,11 +1,13 @@
 //! Tests for the transfer-policy-check contract.
 use concordium_smart_contract_testing::*;
 use concordium_std::{attributes, OwnedPolicy};
+use concordium_std_derive::*;
 use transfer_policy_check::*;
 
 /// Constants.
-const ALICE: AccountAddress = AccountAddress([0u8; 32]);
-const BOB: AccountAddress = AccountAddress([1u8; 32]);
+const ALICE: AccountAddress =
+    account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
+const BOB: AccountAddress = account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 const BOB_ADDR: Address = Address::Account(BOB);
 
 const SIGNER: Signer = Signer::with_one_key();

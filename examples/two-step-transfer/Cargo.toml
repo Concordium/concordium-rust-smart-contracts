@@ -21,9 +21,9 @@ path = "../../concordium-std"
 default-features = false
 features = ["concordium-quickcheck"]
 
-[dev-dependencies.concordium-std]
-version = "*"
-path = "../../concordium-std"
+[dev-dependencies]
+concordium-std = { version = "*", path = "../../concordium-std" }
+concordium-std-derive = { path = "../../concordium-std-derive" }
 
 [lib]
 crate-type = ["cdylib", "rlib"]

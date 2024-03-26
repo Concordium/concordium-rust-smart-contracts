@@ -2,6 +2,8 @@
 
 ## Unreleased changes
 
+- Bump MSRV to 1.72
+
 ## concordium-cis2 6.1.0 (2024-02-22)
 
 - Support version 10 of concordium-std.

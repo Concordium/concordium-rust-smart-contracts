@@ -1,0 +1,7 @@
+error: Expected a string literal of a hex-encoded account address
+ --> tests/test-programs/fail-acc-multiple-arguments.rs:6:29
+  |
+6 | ...ss = account_address!("3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G", "3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G");
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `account_address` (in Nightly builds, run with -Z macro-backtrace for more info)
