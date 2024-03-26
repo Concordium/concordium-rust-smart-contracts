@@ -12,8 +12,8 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.72"
-  RUST_VERSION_TESTING_LIBRARY: "1.72"
+  RUST_VERSION: "1.73"
+  RUST_VERSION_TESTING_LIBRARY: "1.73"
   CARGO_CONCORDIUM_VERSION: "3.2.0"
 
 jobs:
@@ -403,6 +403,7 @@ jobs:
           sed -i "s/version = \"10.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"10.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/version = \"6.1\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"6.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/concordium-smart-contract-testing = \"4.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-std-derive = \"6.0\"/concordium-std-derive = {path = \"..\/..\/concordium-std-derive\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/credential-registry/tests/tests.rs

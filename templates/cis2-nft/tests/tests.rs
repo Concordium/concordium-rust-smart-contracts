@@ -5,9 +5,10 @@ use concordium_smart_contract_testing::*;
 use concordium_std::collections::BTreeSet;
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress = 
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB_ADDR: Address = Address::Account(BOB);
 
 /// Token IDs.
