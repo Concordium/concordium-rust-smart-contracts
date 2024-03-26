@@ -115,9 +115,7 @@ fn test_internal_transfer_cis2_tokens() {
     let transfer_amount: TokenAmountU256 = TokenAmountU256(5.into());
     let contract_token_id: TokenIdVec = TokenIdVec(vec![TOKEN_ID.0]);
 
-    let mut internal_transfer_param = Cis2TokensInternalTransfer {
-        signer: alice_public_key,
-        signature: SIGNATURE,
+    let message = Cis2TokensInternalTransferMessage {
         entry_point: OwnedEntrypointName::new_unchecked("internalTransferCis2Tokens".to_string()),
         expiry_time: Timestamp::now(),
         nonce: 0u64,
@@ -133,6 +131,12 @@ fn test_internal_transfer_cis2_tokens() {
         service_fee_cis2_token_contract_address: cis2_token_contract_address,
     };
 
+    let mut internal_transfer_param = Cis2TokensInternalTransfer {
+        signer:    alice_public_key,
+        signature: SIGNATURE,
+        message:   message.clone(),
+    };
+
     // Get the message hash to be signed.
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
@@ -141,7 +145,7 @@ fn test_internal_transfer_cis2_tokens() {
             receive_name: OwnedReceiveName::new_unchecked(
                 "smart_contract_wallet.viewMessageHash".to_string(),
             ),
-            message:      OwnedParameter::from_serial(&internal_transfer_param)
+            message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
         .expect("Should be able to query viewMessageHash");
@@ -204,6 +208,10 @@ fn test_internal_transfer_cis2_tokens() {
             cis2_token_contract_address,
             from: alice_public_key,
             to: BOB_PUBLIC_KEY
+        }),
+        Event::Nonce(NonceEvent {
+            public_key: alice_public_key,
+            nonce:      0,
         })
     ]);
 }
