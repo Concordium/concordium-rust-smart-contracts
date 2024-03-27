@@ -200,7 +200,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
         self.key_order.contains(key)
     }
 
-    /// Returns the smallest key in the map, which is strictly larger than the
+    /// Returns the smallest key in the map that is strictly larger than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
@@ -209,7 +209,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
         self.key_order.higher(key)
     }
 
-    /// Returns the smallest key in the map, which is equal or larger than the
+    /// Returns the smallest key in the map that is equal or larger than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
@@ -218,7 +218,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
         self.key_order.eq_or_higher(key)
     }
 
-    /// Returns the largest key in the map, which is strictly smaller than the
+    /// Returns the largest key in the map that is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
@@ -227,7 +227,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
         self.key_order.lower(key)
     }
 
-    /// Returns the largest key in the map, which is equal or smaller than the
+    /// Returns the largest key in the map that is equal or smaller than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
@@ -500,7 +500,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         self.state_api.delete_prefix(&self.prefix).unwrap_abort();
     }
 
-    /// Returns the smallest key in the set, which is strictly larger than the
+    /// Returns the smallest key in the set that is strictly larger than the
     /// provided key. `None` meaning no such key is present in the set.
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
@@ -538,7 +538,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         }
     }
 
-    /// Returns the smallest key in the set, which is equal or larger than the
+    /// Returns the smallest key in the set that is equal or larger than the
     /// provided key. `None` meaning no such key is present in the set.
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
     where
@@ -576,7 +576,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         }
     }
 
-    /// Returns the largest key in the set, which is strictly smaller than the
+    /// Returns the largest key in the set that is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the set.
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
@@ -609,7 +609,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         }
     }
 
-    /// Returns the largest key in the set, which is equal or smaller than the
+    /// Returns the largest key in the set that is equal or smaller than the
     /// provided key. `None` meaning no such key is present in the set.
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
     where
@@ -1291,7 +1291,7 @@ mod wasm_test_btree {
     /// Should only be used while debugging and testing the btree itself.
     #[derive(Debug)]
     pub(crate) enum InvariantViolation {
-        /// The collection have length above 0, but no root.
+        /// The collection has length above 0, but no root.
         NonZeroLenWithNoRoot,
         /// The collection contain a root node, but this has no keys.
         ZeroKeysInRoot,
@@ -1337,9 +1337,28 @@ mod wasm_test_btree {
                 return Err(InvariantViolation::ZeroKeysInRoot);
             }
 
-            if !root.is_leaf() && root.children.len() != root.keys.len() + 1 {
-                return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+            for i in 1..root.keys.len() {
+                if &root.keys[i - 1] >= &root.keys[i] {
+                    return Err(InvariantViolation::NodeKeysOutOfOrder);
+                }
             }
+            if root.keys.len() > Node::<M, K>::MAXIMUM_KEY_LEN {
+                return Err(InvariantViolation::KeysLenAboveMax);
+            }
+
+            if root.is_leaf() {
+                if !root.children.is_empty() {
+                    return Err(InvariantViolation::LeafWithChildren);
+                }
+            } else {
+                if root.children.len() != root.keys.len() + 1 {
+                    return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+                }
+                if root.children.len() > Node::<M, K>::MAXIMUM_CHILD_LEN {
+                    return Err(InvariantViolation::ChildrenLenAboveMax);
+                }
+            }
+
             let mut stack = vec![(0usize, root.children)];
             let mut leaf_depth = None;
             while let Some((node_level, mut nodes)) = stack.pop() {
