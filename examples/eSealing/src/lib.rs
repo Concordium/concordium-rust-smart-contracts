@@ -84,7 +84,7 @@ impl State {
 
     /// Add a new file hash (replaces existing file if present).
     fn add_file(&mut self, file_hash: HashSha2256, timestamp: Timestamp, witness: AccountAddress) {
-        self.files.insert(file_hash, FileState {
+        let _ = self.files.insert(file_hash, FileState {
             timestamp,
             witness,
         });

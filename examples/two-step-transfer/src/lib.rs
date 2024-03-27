@@ -232,7 +232,7 @@ fn contract_receive_message<S: HasStateApi>(
             // Persist the active requests
             host.state_mut().requests = host.state_builder().new_map();
             for (key, req) in active_requests.iter() {
-                host.state_mut().requests.insert(*key, req.clone());
+                let _ = host.state_mut().requests.insert(*key, req.clone());
             }
 
             // Check if a request already exists
@@ -264,7 +264,7 @@ fn contract_receive_message<S: HasStateApi>(
                 supporters,
             };
 
-            host.state_mut().requests.insert(req_id, new_request);
+            let _ = host.state_mut().requests.insert(req_id, new_request);
             Ok(())
         }
 
@@ -467,7 +467,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let mut requests = state_builder.new_map();
-        requests.insert(request_id, request);
+        let _ = requests.insert(request_id, request);
         let state = State {
             init_params,
             requests,
@@ -534,7 +534,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let mut requests = state_builder.new_map();
-        requests.insert(request_id, request);
+        let _ = requests.insert(request_id, request);
         let state = State {
             init_params,
             requests,
@@ -601,7 +601,7 @@ mod tests {
         supporters.insert(account1);
 
         // Outdated request
-        requests.insert(request_id_outdated, TransferRequest {
+        let _ = requests.insert(request_id_outdated, TransferRequest {
             transfer_amount,
             target_account,
             times_out_at: ctx
@@ -613,7 +613,7 @@ mod tests {
         });
 
         // Active request
-        requests.insert(request_id_active, TransferRequest {
+        let _ = requests.insert(request_id_active, TransferRequest {
             transfer_amount,
             target_account,
             times_out_at: ctx
@@ -696,7 +696,7 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
         let mut requests = state_builder.new_map();
-        requests.insert(request_id, request);
+        let _ = requests.insert(request_id, request);
         let state = State {
             init_params,
             requests,

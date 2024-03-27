@@ -642,7 +642,7 @@ impl State {
     ) -> MetadataUrl {
         let token_metadata = self.tokens.get(token_id).map(|x| x.to_owned());
         if token_metadata.is_none() {
-            self.tokens.insert(*token_id, metadata_url.to_owned());
+            let _ = self.tokens.insert(*token_id, metadata_url.to_owned());
         }
 
         let mut owner_state =
@@ -788,7 +788,7 @@ impl State {
         std_id: StandardIdentifierOwned,
         implementors: Vec<ContractAddress>,
     ) {
-        self.implementors.insert(std_id, implementors);
+        let _ = self.implementors.insert(std_id, implementors);
     }
 
     /// Grant role to an address.
