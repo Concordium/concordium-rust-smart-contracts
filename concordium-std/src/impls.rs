@@ -3521,7 +3521,7 @@ mod wasm_test {
         claim!(state.iterator(&key).is_ok(), "Iterator should be present");
         claim!(
             state.delete_entry(sub_entry).is_err(),
-            "Should not be able to create an entry under a locked subtree"
+            "Should not be able to delete entry under a locked subtree"
         );
     }
 
@@ -3542,7 +3542,7 @@ mod wasm_test {
         claim!(state.iterator(&key).is_ok(), "Iterator should be present");
         claim!(
             state.delete_entry(entry2).is_ok(),
-            "Failed to create a new entry under a different subtree"
+            "Should be able to delete entry under a different subtree"
         );
     }
 

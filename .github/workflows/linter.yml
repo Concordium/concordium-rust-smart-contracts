@@ -103,8 +103,7 @@ jobs:
         run: |
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
-  # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
-  # can be executed without errors on the generated smart contracts.
+  # Run unit-tests for concordium-std compiled to wasm using cargo concordium test.
   std-internal-wasm-test:
     name: concordium-std internal wasm tests
     runs-on: ubuntu-latest

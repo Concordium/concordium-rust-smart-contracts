@@ -104,7 +104,7 @@ pub struct StateBTreeMap<K, V, const M: usize = 8> {
     /// Each key in this map must also be in the `key_order` set.
     pub(crate) key_value: StateMap<K, V, StateApi>,
     /// A set for tracking the order of the inserted keys.
-    /// Each key in this set mush also have an associated value in the
+    /// Each key in this set must also have an associated value in the
     /// `key_value` map.
     pub(crate) key_order: StateBTreeSet<K, M>,
 }
@@ -1298,8 +1298,12 @@ mod wasm_test_btree {
         /// Iterating the keys in the entire collection, is not in strictly
         /// ascending order.
         IterationOutOfOrder,
-        /// The keys in a node is not in strictly ascending order.
+        /// Leaf node found at different depths.
+        LeafAtDifferentDepth,
+        /// The keys in a node are not in strictly ascending order.
         NodeKeysOutOfOrder,
+        /// The non-leaf node does not contain `keys.len() + 1` children.
+        MismatchingChildrenLenKeyLen,
         /// The non-root node contains fewer keys than the minimum.
         KeysLenBelowMin,
         /// The non-root node contains more keys than the maximum.
@@ -1333,11 +1337,24 @@ mod wasm_test_btree {
                 return Err(InvariantViolation::ZeroKeysInRoot);
             }
 
-            let mut stack = root.children;
-            while let Some(node_id) = stack.pop() {
-                let node: Node<M, K> = self.get_node(node_id);
-                node.check_invariants()?;
-                stack.extend(node.children);
+            if !root.is_leaf() && root.children.len() != root.keys.len() + 1 {
+                return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+            }
+            let mut stack = vec![(0usize, root.children)];
+            let mut leaf_depth = None;
+            while let Some((node_level, mut nodes)) = stack.pop() {
+                while let Some(node_id) = nodes.pop() {
+                    let node: Node<M, K> = self.get_node(node_id);
+                    node.check_invariants()?;
+                    if node.is_leaf() {
+                        let depth = leaf_depth.get_or_insert(node_level);
+                        if *depth != node_level {
+                            return Err(InvariantViolation::LeafAtDifferentDepth);
+                        }
+                    } else {
+                        stack.push((node_level + 1, node.children));
+                    }
+                }
             }
 
             let mut prev = None;
@@ -1404,6 +1421,9 @@ mod wasm_test_btree {
                     return Err(InvariantViolation::LeafWithChildren);
                 }
             } else {
+                if self.children.len() != self.keys.len() + 1 {
+                    return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+                }
                 if self.children.len() < Self::MINIMUM_CHILD_LEN {
                     return Err(InvariantViolation::ChildrenLenBelowMin);
                 }
@@ -1733,7 +1753,7 @@ mod wasm_test_btree {
     /// from its lower child.
     ///
     /// - Builds a tree of the form: [[0, 1], 2, [3]]
-    /// - Remove 1
+    /// - Remove 2
     /// - Expecting a tree of the form: [[0], 1, [3]]
     #[concordium_test]
     fn test_btree_remove_from_root_in_three_node_taking_key_from_lower_child() {
@@ -1760,12 +1780,12 @@ mod wasm_test_btree {
         claim_eq!(keys, iter_keys);
     }
 
-    /// Testcase for dublicate keys in the set bug. Due to an edgecase where the
+    /// Testcase for duplicate keys in the set. Due to an edge case where the
     /// key moved up as part of splitting a child node, is equal to the
     /// inserted key.
     ///
     /// - Builds a tree of the form: [[0, 1, 2], 3, [4]]
-    /// - Insert 1 (again) causing the [0,1,2] to split, moving 1 up to the
+    /// - Insert 1 (again) causing the [0, 1, 2] to split, moving 1 up to the
     ///   root.
     /// - Expecting a tree of the form: [[0], 1, [2], 3, [4]]
     #[concordium_test]
