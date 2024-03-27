@@ -21,6 +21,8 @@ pub type ContractTokenId = TokenIdVec;
 /// most 1 and it is fine to use a small type for representing token amounts.
 pub type ContractTokenAmount = TokenAmountU256;
 
+type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq, SchemaType)]
 #[concordium(repr(u8))]
@@ -900,6 +902,144 @@ fn withdraw_native_currency(
 
             logger.log(&Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
                 ccd_amount,
+                from: signer,
+                to: to_address,
+            }))?;
+        }
+
+        logger.log(&Event::Nonce(NonceEvent {
+            public_key: signer,
+            nonce,
+        }))?;
+    }
+
+    Ok(())
+}
+
+///
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "withdrawCis2Tokens",
+    parameter = "WithdrawParameter",
+    error = "CustomContractError",
+    crypto_primitives,
+    enable_logger,
+    mutable
+)]
+fn withdraw_cis2_tokens(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ReceiveResult<()> {
+    // Parse the parameter.
+    let param: WithdrawParameter = ctx.parameter_cursor().get()?;
+
+    for internal_transfer in param.transfers {
+        let Withdraw {
+            signer,
+            signature,
+            message,
+        } = internal_transfer.clone();
+
+        let WithdrawMessage {
+            entry_point,
+            expiry_time: _,
+            nonce,
+            service_fee_recipient,
+            service_fee_amount,
+            simple_withdraws,
+        } = message.clone();
+
+        ensure_eq!(entry_point, "withdrawCis2Tokens", CustomContractError::WrongEntryPoint.into());
+
+        let service_fee = match service_fee_amount {
+            SigningAmount::CCDAmount(_) => {
+                bail!(CustomContractError::WrongSigningAmountType.into())
+            }
+            SigningAmount::TokenAmount(ref token_amount) => token_amount,
+        };
+
+        validate_signature_and_increase_nonce_withdraw_message(
+            message.clone(),
+            signer,
+            signature,
+            host,
+            crypto_primitives,
+            ctx,
+        )?;
+
+        // Transfer service fee
+        host.state_mut().transfer_cis2_tokens(
+            signer,
+            service_fee_recipient,
+            service_fee.cis2_token_contract_address,
+            service_fee.token_id.clone(),
+            service_fee.token_amount,
+            logger,
+        )?;
+
+        for WithdrawBatch {
+            to,
+            withdraw_amount,
+            data,
+        } in simple_withdraws
+        {
+            let single_withdraw = match withdraw_amount {
+                SigningAmount::CCDAmount(_) => {
+                    bail!(CustomContractError::WrongSigningAmountType.into())
+                }
+                SigningAmount::TokenAmount(ref single_withdraw) => single_withdraw,
+            };
+
+            // Update the contract state
+            {
+                let mut contract_balances = host
+                    .state_mut()
+                    .token_balances
+                    .entry(single_withdraw.cis2_token_contract_address)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                let mut token_balances = contract_balances
+                    .balances
+                    .entry(single_withdraw.token_id.clone())
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                let mut from_cis2_token_balance = token_balances
+                    .entry(signer)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                ensure!(
+                    *from_cis2_token_balance >= single_withdraw.token_amount,
+                    ContractError::InsufficientFunds.into()
+                );
+                *from_cis2_token_balance -= single_withdraw.token_amount;
+            }
+
+            let data: TransferParameter = TransferParams(vec![Transfer {
+                token_id: single_withdraw.token_id.clone(),
+                amount: single_withdraw.token_amount,
+                from: Address::Contract(ctx.self_address()),
+                to: to.clone(),
+                data,
+            }]);
+
+            host.invoke_contract(
+                &single_withdraw.cis2_token_contract_address,
+                &data,
+                EntrypointName::new_unchecked("transfer"),
+                Amount::zero(),
+            )?;
+
+            let to_address = match to {
+                Receiver::Account(account_address) => Address::Account(account_address),
+                Receiver::Contract(contract_address, _) => Address::Contract(contract_address),
+            };
+
+            logger.log(&Event::WithdrawCis2Tokens(WithdrawCis2TokensEvent {
+                token_amount: single_withdraw.token_amount,
+                token_id: single_withdraw.token_id.clone(),
+                cis2_token_contract_address: single_withdraw.cis2_token_contract_address,
                 from: signer,
                 to: to_address,
             }))?;
