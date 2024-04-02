@@ -1,9 +1,49 @@
-//! #
+//! A smart contract wallet.
+//!
+//! This contract implements the CIS-5 (Concordium standard interface 5) that
+//! defines a smart contract wallet that can hold and transfer native currency
+//! and CIS-2 tokens. https://proposals.concordium.software/CIS/cis-5.html
+//!
+//! Native currency/CIS-2 tokens can be deposited into the smart contract wallet
+//! by specifying to which public key (PublicKeyEd25519 schema) the deposit
+//! should be assigned. Authorization for token and currency transfers from the
+//! smart contract's assigned public key balance is exclusively granted to the
+//! holder of the corresponding private key, ensuring self-custodial control
+//! over the assets.
+//!
+//! Transfers of native currency and CIS-2 token balances do not require
+//! on-chain transaction submissions. Instead, the holder of the corresponding
+//! private key can generate a valid signature and identify a third party to
+//! submit the transaction on-chain, potentially incentivizing the third-party
+//! involvement through a service fees. The `withdraw` and `internalTransfer`
+//! functions transfer (authorized as part of the message that was signed) the
+//! amount of service fee to the service fee recipient's public key.
+//!
+//! Any withdrawal (native currency or CIS-2 tokens) to a smart contract will
+//! invoke a `receiveHook` function on that smart contract.
+//!
+//! The three main actions in the smart contract wallet that can be taken are:
+//! - *deposit*: assigns the balance to a public key within the smart contract
+//!   wallet.
+//! - *internal transfer*: assigns the balance to a new public key within the
+//!   smart contract wallet.
+//! - *withdraw*: withdraws the balance out of the smart contract wallet to a
+//!   native account or smart contract.
+//!
+//! The goal of this standard is to simplify the account creation onboarding
+//! flow on Concordium. Users can hold/transfer native currency/CIS-2 tokens
+//! without a valid account as a starting point (no KYC required). Once users
+//! are ready to go through the KYC process to create a valid account on
+//! Concordium, they can withdraw assets out of the smart contract wallet.
 use concordium_cis2::*;
 use concordium_std::*;
 
-// TODO: look up genesis hash
-const GENESIS_HASH: [u8; 32] = [1u8; 32];
+// The testnet genesis hash is:
+// 0x4221332d34e1694168c2a0c0b3fd0f273809612cb13d000d5c2e00e85f50f796
+const TESTNET_GENESIS_HASH: [u8; 32] = [
+    66, 33, 51, 45, 52, 225, 105, 65, 104, 194, 160, 192, 179, 253, 15, 39, 56, 9, 97, 44, 177, 61,
+    0, 13, 92, 46, 0, 232, 95, 80, 247, 150,
+];
 
 /// The standard identifier for the CIS-5: Smart Contract Wallet Standard.
 pub const CIS5_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
@@ -17,133 +57,150 @@ const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
 pub type ContractTokenId = TokenIdVec;
 
 /// Contract token amount.
-/// Since the tokens are non-fungible the total supply of any token will be at
-/// most 1 and it is fine to use a small type for representing token amounts.
+/// Since the wallet should be able to hold the balance of any CIS-2 token
+/// contract, we use the largest TokenAmount.
 pub type ContractTokenAmount = TokenAmountU256;
-
-type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 
 /// Tagged events to be serialized for the event log.
 #[derive(Debug, Serial, Deserial, PartialEq, Eq, SchemaType)]
 #[concordium(repr(u8))]
 pub enum Event {
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 244)]
-    InternalCis2TokensTransfer(InternalCis2TokensTransferEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 245)]
-    InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 246)]
-    WithdrawCis2Tokens(WithdrawCis2TokensEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 247)]
-    WithdrawNativeCurrency(WithdrawNativeCurrencyEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 248)]
-    DepositCis2Tokens(DepositCis2TokensEvent),
-    /// The event tracks when a role is revoked from an address.
-    #[concordium(tag = 249)]
-    DepositNativeCurrency(DepositNativeCurrencyEvent),
-    /// Cis3 event.
-    /// The event tracks the nonce used by the signer of the `PermitMessage`
-    /// whenever the `permit` function is invoked.
+    /// The event tracks the nonce used in the message that was signed.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
+    /// The event tracks ever time a CCD amount received by the contract is
+    /// assigned to a public key.
+    #[concordium(tag = 249)]
+    DepositNativeCurrency(DepositNativeCurrencyEvent),
+    /// The event tracks ever time a token amount received by the contract is
+    /// assigned to a public key.
+    #[concordium(tag = 248)]
+    DepositCis2Tokens(DepositCis2TokensEvent),
+    /// The event tracks ever time a CCD amount held by a public key is
+    /// withdrawn to an address.
+    #[concordium(tag = 247)]
+    WithdrawNativeCurrency(WithdrawNativeCurrencyEvent),
+    /// The event tracks ever time a token amount held by a public key is
+    /// withdrawn to an address.
+    #[concordium(tag = 246)]
+    WithdrawCis2Tokens(WithdrawCis2TokensEvent),
+    /// The event tracks ever time a CCD amount held by a public key is
+    /// transferred to another public key within the contract.
+    #[concordium(tag = 245)]
+    InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent),
+    /// The event tracks ever time a token amount held by a public key is
+    /// transferred to another public key within the contract.
+    #[concordium(tag = 244)]
+    InternalCis2TokensTransfer(InternalCis2TokensTransferEvent),
 }
 
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct InternalCis2TokensTransferEvent {
-    /// Account that signed the `PermitMessage`.
-    pub token_amount: ContractTokenAmount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub token_id: ContractTokenId,
-    /// The nonce that was used in the `PermitMessage`.
-    pub cis2_token_contract_address: ContractAddress,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from: PublicKeyEd25519,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to: PublicKeyEd25519,
-}
-
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct InternalNativeCurrencyTransferEvent {
-    /// Account that signed the `PermitMessage`.
-    pub ccd_amount: Amount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from:       PublicKeyEd25519,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to:         PublicKeyEd25519,
-}
-
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct WithdrawCis2TokensEvent {
-    /// Account that signed the `PermitMessage`.
-    pub token_amount: ContractTokenAmount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub token_id: ContractTokenId,
-    /// The nonce that was used in the `PermitMessage`.
-    pub cis2_token_contract_address: ContractAddress,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from: PublicKeyEd25519,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to: Address,
-}
-
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct WithdrawNativeCurrencyEvent {
-    /// Account that signed the `PermitMessage`.
-    pub ccd_amount: Amount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from:       PublicKeyEd25519,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to:         Address,
-}
-
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct DepositCis2TokensEvent {
-    /// Account that signed the `PermitMessage`.
-    pub token_amount: ContractTokenAmount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub token_id: ContractTokenId,
-    /// The nonce that was used in the `PermitMessage`.
-    pub cis2_token_contract_address: ContractAddress,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from: Address,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to: PublicKeyEd25519,
-}
-
-#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct DepositNativeCurrencyEvent {
-    /// Account that signed the `PermitMessage`.
-    pub ccd_amount: Amount,
-    /// The nonce that was used in the `PermitMessage`.
-    pub from:       Address,
-    /// The nonce that was used in the `PermitMessage`.
-    pub to:         PublicKeyEd25519,
-}
-
-/// The NonceEvent is logged when the `permit` function is invoked. The event
-/// tracks the nonce used by the signer of the `PermitMessage`.
+/// The `NonceEvent` is logged whenever a signature is checked. The event
+/// tracks the nonce used by the signer of the message.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
-    /// Account that signed the `PermitMessage`.
+    /// Account that signed the message.
     pub public_key: PublicKeyEd25519,
-    /// The nonce that was used in the `PermitMessage`.
+    /// The nonce that was used in the message.
     pub nonce:      u64,
 }
 
-/// The state for each address.
+/// The `DepositNativeCurrencyEvent` is logged whenever a CCD amount received by
+/// the contract is assigned to a public key.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct DepositNativeCurrencyEvent {
+    /// The CCD amount assigned to a public key.
+    pub ccd_amount: Amount,
+    /// The address that invoked the deposit entrypoint.
+    pub from:       Address,
+    /// The public key that the CCD amount is assigned to.
+    pub to:         PublicKeyEd25519,
+}
+
+/// The `DepositCis2TokensEvent` is logged whenever a token amount received by
+/// the contract is assigned to a public key.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct DepositCis2TokensEvent {
+    /// The token amount assigned to a public key.
+    pub token_amount: ContractTokenAmount,
+    /// The token id of the token deposit.
+    pub token_id: ContractTokenId,
+    /// The token contract address of the token deposit.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The address that invoked the deposit entrypoint.
+    pub from: Address,
+    /// The public key that the CCD amount is assigned to.
+    pub to: PublicKeyEd25519,
+}
+
+/// The `WithdrawNativeCurrencyEvent` is logged whenever a CCD amount held by a
+/// public key is withdrawn to an address.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct WithdrawNativeCurrencyEvent {
+    /// The CCD amount withdrawn.
+    pub ccd_amount: Amount,
+    /// The public key that the CCD amount will be withdrawn from.
+    pub from:       PublicKeyEd25519,
+    /// The address that the CCD amount is withdrawn to.
+    pub to:         Address,
+}
+
+/// The `WithdrawCis2TokensEvent` is logged whenever a token amount held by a
+/// public key is withdrawn to an address.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct WithdrawCis2TokensEvent {
+    /// The token amount withdrawn.
+    pub token_amount: ContractTokenAmount,
+    /// The token id of the token withdrawn.
+    pub token_id: ContractTokenId,
+    /// The token contract address of the token withdrawn.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The public key that the token amount will be withdrawn from.
+    pub from: PublicKeyEd25519,
+    /// The address that the token amount is withdrawn to.
+    pub to: Address,
+}
+
+/// The `InternalNativeCurrencyTransferEvent` is logged whenever a CCD amount
+/// held by a public key is transferred to another public key within the
+/// contract.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct InternalNativeCurrencyTransferEvent {
+    /// The CCD amount transferred.
+    pub ccd_amount: Amount,
+    /// The public key that the CCD amount will be transferred from.
+    pub from:       PublicKeyEd25519,
+    /// The public key that the CCD amount is transferred to.
+    pub to:         PublicKeyEd25519,
+}
+
+/// The `InternalCis2TokensTransferEvent` is logged whenever a token amount held
+/// by a public key is transferred to another public key within the contract.
+#[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
+pub struct InternalCis2TokensTransferEvent {
+    /// The token amount transferred.
+    pub token_amount: ContractTokenAmount,
+    /// The token id of the token transferred.
+    pub token_id: ContractTokenId,
+    /// The token contract address of the token transferred.
+    pub cis2_token_contract_address: ContractAddress,
+    /// The public key that the token amount will be transferred from.
+    pub from: PublicKeyEd25519,
+    /// The public key that the token amount is transferred to.
+    pub to: PublicKeyEd25519,
+}
+
+/// The token balances stored in the state for each token id.
 #[derive(Serial, DeserialWithState, Deletable)]
 #[concordium(state_parameter = "S")]
 #[concordium(transparent)]
 struct ContractAddressState<S = StateApi> {
-    /// The amount of tokens owned by this address.
+    /// The amount of tokens owned by public keys mapped for each token id.
     balances: StateMap<ContractTokenId, StateMap<PublicKeyEd25519, ContractTokenAmount, S>, S>,
 }
 
+// Implementation of the `ContractAddressState`.
 impl ContractAddressState {
+    // Creates an new `ContractAddressState` with emtpy balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         ContractAddressState {
             balances: state_builder.new_map(),
@@ -151,32 +208,29 @@ impl ContractAddressState {
     }
 }
 
-/// The contract state,
-///
-/// Note: The specification does not specify how to structure the contract state
-/// and this could be structured in a more space-efficient way.
+/// The contract state.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
-    /// The state of addresses.
+    /// The token balances stored in the state.
     token_balances:  StateMap<ContractAddress, ContractAddressState<S>, S>,
-    ///
+    /// The CCD balances stored in the state.
     native_balances: StateMap<PublicKeyEd25519, Amount, S>,
     /// A map with contract addresses providing implementations of additional
     /// standards.
     implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
-    /// A registry to link an account to its next nonce. The nonce is used to
+    /// A registry to link a public key to its next nonce. The nonce is used to
     /// prevent replay attacks of the signed message. The nonce is increased
     /// sequentially every time a signed message (corresponding to the
-    /// account) is successfully executed in the `permit` function. This
+    /// public key) is successfully executed. This
     /// mapping keeps track of the next nonce that needs to be used by the
-    /// account to generate a signature.
+    /// public key to generate a signature.
     nonces_registry: StateMap<PublicKeyEd25519, u64, S>,
 }
 
 // Functions for creating, updating and querying the contract state.
 impl State {
-    /// Creates a new state with no tokens.
+    /// Creates a new state with emtpy balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
             native_balances: state_builder.new_map(),
@@ -186,41 +240,38 @@ impl State {
         }
     }
 
-    /// Get the current balance of a given token ID for a given address.
-    /// Results in an error if the token ID does not exist in the state.
-    /// Since this contract only contains NFTs, the balance will always be
-    /// either 1 or 0.
+    /// Gets the current native currency balance of a given public key.
+    /// Returns a balance of 0 if the public key does not exist in the state.
+    fn balance_native_currency(&self, public_key: &PublicKeyEd25519) -> ContractResult<Amount> {
+        Ok(self.native_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero))
+    }
+
+    /// Gets the current balance of a given token ID, a given token contract,
+    /// and a given public key. Returns a balance of 0 if the token
+    /// contract, token id or public key does not exist in the state.
     fn balance_tokens(
         &self,
         token_id: &ContractTokenId,
         cis2_token_contract_address: &ContractAddress,
         public_key: &PublicKeyEd25519,
     ) -> ContractResult<ContractTokenAmount> {
-        let zero_token_amount = TokenAmountU256(0u8.into());
-
         Ok(self
             .token_balances
             .get(cis2_token_contract_address)
             .map(|a| {
                 a.balances
                     .get(token_id)
-                    .map(|s| s.get(public_key).map(|s| *s).unwrap_or_else(|| zero_token_amount))
-                    .unwrap_or_else(|| zero_token_amount)
+                    .map(|b| {
+                        b.get(public_key).map(|c| *c).unwrap_or_else(|| TokenAmountU256(0.into()))
+                    })
+                    .unwrap_or_else(|| TokenAmountU256(0.into()))
             })
-            .unwrap_or_else(|| zero_token_amount))
+            .unwrap_or_else(|| TokenAmountU256(0.into())))
     }
 
-    /// Get the current balance of a given token ID for a given address.
-    /// Results in an error if the token ID does not exist in the state.
-    /// Since this contract only contains NFTs, the balance will always be
-    /// either 1 or 0.
-    fn balance_native_currency(&self, public_key: &PublicKeyEd25519) -> ContractResult<Amount> {
-        Ok(self.native_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero))
-    }
-
-    /// Update the state with a transfer of some token.
-    /// Results in an error if the token ID does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
+    /// Updates the state with a transfer of CCD amount and logs an
+    /// `InternalNativeCurrencyTransfer` event. Results in an error if the
+    /// from public key has insufficient balance to do the transfer.
     fn transfer_native_currency(
         &mut self,
         from_public_key: PublicKeyEd25519,
@@ -261,9 +312,10 @@ impl State {
         Ok(())
     }
 
-    /// Update the state with a transfer of some token.
-    /// Results in an error if the token ID does not exist in the state or if
-    /// the from address have insufficient tokens to do the transfer.
+    /// Updates the state with a transfer of some tokens and logs an
+    /// `InternalCis2TokensTransfer` event. Results in an error if the token
+    /// contract, or the token id does not exist in the state or the from public
+    /// key has insufficient balance to do the transfer.
     fn transfer_cis2_tokens(
         &mut self,
         from_public_key: PublicKeyEd25519,
@@ -273,9 +325,8 @@ impl State {
         token_amount: ContractTokenAmount,
         logger: &mut impl HasLogger,
     ) -> ReceiveResult<()> {
-        let zero_token_amount = TokenAmountU256(0u8.into());
         // A zero transfer does not modify the state.
-        if token_amount != zero_token_amount {
+        if token_amount != TokenAmountU256(0.into()) {
             let mut contract_balances = self
                 .token_balances
                 .entry(cis2_token_contract_address)
@@ -299,7 +350,7 @@ impl State {
             drop(from_cis2_token_balance);
 
             let mut to_cis2_token_balance =
-                token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0u8.into()));
+                token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0.into()));
 
             // CHECK: can overflow happen
             *to_cis2_token_balance += token_amount;
@@ -316,7 +367,7 @@ impl State {
         Ok(())
     }
 
-    /// Check if state contains any implementors for a given standard.
+    /// Checks if the state contains any implementors for a given standard.
     fn have_implementors(&self, std_id: &StandardIdentifierOwned) -> SupportResult {
         if let Some(addresses) = self.implementors.get(std_id) {
             SupportResult::SupportBy(addresses.to_vec())
@@ -325,7 +376,7 @@ impl State {
         }
     }
 
-    /// Set implementors for a given standard.
+    /// Sets implementors for a given standard.
     fn set_implementors(
         &mut self,
         std_id: StandardIdentifierOwned,
@@ -345,20 +396,28 @@ pub enum CustomContractError {
     LogFull, // -2
     /// Failed logging: Log is malformed.
     LogMalformed, // -3
-    /// Invalid contract name.
+    /// Failed because an account cannot call the entry point.
     OnlyContract, // -4
-    InsufficientFunds,      // -5
-    WrongSignature,         // -6
-    NonceMismatch,          // -7
-    WrongContract,          // -8
-    Expired,                // -9
-    WrongEntryPoint,        // -10
-    UnAuthorized,           // -11
-    WrongSigningAmountType, // -12
+    /// Failed because the public key has an insufficient balance.
+    InsufficientFunds, // -5
+    /// Failed because the signature is invalid.
+    WrongSignature, // -6
+    /// Failed because the nonce is wrong in the message.
+    NonceMismatch, // -7
+    /// Failed because the signature is expired.
+    Expired, // -8
+    /// Failed because the message was intended for a different entry point.
+    WrongEntryPoint, // -9
+    /// Failed because the sender is unauthorized to invoke the entry point.
+    UnAuthorized, // -10
+    /// Failed because the signed amount type is wrong.
+    WrongSigningAmountType, // -11
 }
 
+/// ContractError type.
 pub type ContractError = Cis2Error<CustomContractError>;
 
+/// ContractResult type.
 pub type ContractResult<A> = Result<A, ContractError>;
 
 /// Mapping CustomContractError to ContractError
@@ -366,12 +425,17 @@ impl From<CustomContractError> for ContractError {
     fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
 }
 
+// Contract functions
+
+/// Initializes the contract instance with no balances.
 #[init(contract = "smart_contract_wallet", event = "Event", error = "CustomContractError")]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State::empty(state_builder))
 }
 
-///
+/// The function is payable and deposits/assigns the send CCD amount
+/// (native currency) to a public key.
+/// Logs a `DepositNativeCurrency` event.
 #[receive(
     contract = "smart_contract_wallet",
     name = "depositNativeCurrency",
@@ -389,10 +453,11 @@ fn deposit_native_currency(
 ) -> ReceiveResult<()> {
     let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
-    let mut public_key_balances =
+    let mut public_key_balance =
         host.state_mut().native_balances.entry(to).or_insert_with(Amount::zero);
 
-    *public_key_balances = amount;
+    // CHECK: overflow can happen
+    *public_key_balance += amount;
 
     logger.log(&Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
         ccd_amount: amount,
@@ -403,11 +468,15 @@ fn deposit_native_currency(
     Ok(())
 }
 
-///
+/// The function should be called through the receive hook mechanism of a CIS-2
+/// token contract. The function deposits/assigns the sent CIS-2 tokens to a
+/// public key. Logs a `DepositCis2Tokens` event.
+/// It rejects if:
+/// - Sender is not a contract.
 #[receive(
     contract = "smart_contract_wallet",
     name = "depositCis2Tokens",
-    parameter = "OnReceivingCis2DataParams<ContractTokenId,ContractTokenAmount,PublicKeyEd25519,>",
+    parameter = "OnReceivingCis2DataParams<ContractTokenId,ContractTokenAmount,PublicKeyEd25519>",
     error = "CustomContractError",
     enable_logger,
     mutable
@@ -423,9 +492,9 @@ fn deposit_cis2_tokens(
         PublicKeyEd25519,
     > = ctx.parameter_cursor().get()?;
 
-    // Ensure that only contracts can call this hook function
-    let contract_sender_address = match ctx.sender() {
-        Address::Contract(contract_sender_address) => contract_sender_address,
+    // Ensures that only contracts can call this hook function.
+    let sender_contract_address = match ctx.sender() {
+        Address::Contract(sender_contract_address) => sender_contract_address,
         Address::Account(_) => bail!(CustomContractError::OnlyContract.into()),
     };
 
@@ -433,7 +502,7 @@ fn deposit_cis2_tokens(
 
     let mut contract_balances = state
         .token_balances
-        .entry(contract_sender_address)
+        .entry(sender_contract_address)
         .or_insert_with(|| ContractAddressState::empty(builder));
 
     let mut contract_token_balances = contract_balances
@@ -443,14 +512,15 @@ fn deposit_cis2_tokens(
 
     let mut cis2_token_balance = contract_token_balances
         .entry(cis2_hook_param.data)
-        .or_insert_with(|| TokenAmountU256(0u8.into()));
+        .or_insert_with(|| TokenAmountU256(0.into()));
 
+    // CHECK: overflow can happen
     *cis2_token_balance += cis2_hook_param.amount;
 
     logger.log(&Event::DepositCis2Tokens(DepositCis2TokensEvent {
         token_amount: cis2_hook_param.amount,
         token_id: cis2_hook_param.token_id,
-        cis2_token_contract_address: contract_sender_address,
+        cis2_token_contract_address: sender_contract_address,
         from: cis2_hook_param.from,
         to: cis2_hook_param.data,
     }))?;
@@ -458,70 +528,83 @@ fn deposit_cis2_tokens(
     Ok(())
 }
 
+/// The native currency or CIS-2 token amount signed in the message.
 #[derive(Debug, Serialize, Clone, SchemaType)]
 pub enum SigningAmount {
+    /// The CCD amount signed in the message.
     CCDAmount(Amount),
+    /// The token amount signed in the message.
     TokenAmount(TokenAmount),
 }
 
+/// The token amount signed in the message.
 #[derive(Debug, Serialize, Clone, SchemaType)]
 pub struct TokenAmount {
+    /// The token amount signed in the message.
     pub token_amount:                ContractTokenAmount,
-    /// The ID of the token being transferred.
+    /// The token id of the token signed in the message.
     pub token_id:                    ContractTokenId,
-    ///
+    /// The token contract of the token signed in the message.
     pub cis2_token_contract_address: ContractAddress,
 }
 
-/// A single transfer of some amount of a token.
-// Note: For the serialization to be derived according to the CIS2
-// specification, the order of the fields cannot be changed.
+/// A single withdrawal of native currency or some amount of tokens.
 #[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct InternalTransferBatch {
-    /// The address receiving the tokens being transferred.
-    pub to:              PublicKeyEd25519,
-    /// The amount of tokens being transferred.
-    pub transfer_amount: SigningAmount,
+pub struct Withdraw {
+    /// The address receiving the native currency or tokens being withdrawn.
+    pub to:              Receiver,
+    /// The amount being withdrawn.
+    pub withdraw_amount: SigningAmount,
+    /// Some additional data for the receive hook function.
+    pub data:            AdditionalData,
 }
 
+/// The withdraw message that is signed by the signer.
 #[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct InternalTransferMessage {
-    /// The address owning the tokens being transferred.
+pub struct WithdrawMessage {
+    /// The entry_point that the signature is intended for.
     pub entry_point:           OwnedEntrypointName,
-    /// The address owning the tokens being transferred.
+    /// A timestamp to make the signatures expire.
     pub expiry_time:           Timestamp,
-    /// The address owning the tokens being transferred.
+    /// A nonce to prevent replay attacks.
     pub nonce:                 u64,
-    /// The address owning the tokens being transferred.
+    /// The recipient public key of the service fee.
     pub service_fee_recipient: PublicKeyEd25519,
-    /// The amount of tokens being transferred.
+    /// The amount of native currency or tokens to be received as a service fee.
     pub service_fee_amount:    SigningAmount,
-    /// List of balance queries.
+    /// List of withdrawals.
     #[concordium(size_length = 2)]
-    pub simple_transfers:      Vec<InternalTransferBatch>,
+    pub simple_withdraws:      Vec<Withdraw>,
 }
 
+/// A batch of withdrawals signed by a signer.
 #[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct InternalTransfer {
-    /// The address owning the tokens being transferred.
+pub struct WithdrawBatch {
+    /// The signer public key.
     pub signer:    PublicKeyEd25519,
-    /// The address owning the tokens being transferred.
+    /// The signature.
     pub signature: SignatureEd25519,
-    ///
-    pub message:   InternalTransferMessage,
+    /// The message being signed.
+    pub message:   WithdrawMessage,
 }
 
-/// The parameter type for the contract function `balanceOfNativeCurrency`.
-// Note: For the serialization to be derived according to the CIS2
-// specification, the order of the fields cannot be changed.
+/// The parameter type for the contract functions
+/// `withdrawNativeCurrency/withdrawCis2Tokens`.
 #[derive(Debug, Serialize, SchemaType)]
 #[concordium(transparent)]
-pub struct InternalTransferParameter {
-    /// List of balance queries.
+pub struct WithdrawParameter {
+    /// List of withdraw batches.
     #[concordium(size_length = 2)]
-    pub transfers: Vec<InternalTransfer>,
+    pub withdraws: Vec<WithdrawBatch>,
 }
 
+/// The `TransferParameter` type for the `transfer` function in the CIS-2 token
+/// contract.
+type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
+
+/// Calculates the message hash from the message bytes.
+/// It prepends the message bytes with a context string consisting of the
+/// `genesis_hash` and this contract address.
 fn calculate_message_hash_from_bytes(
     message_bytes: &[u8],
     crypto_primitives: &impl HasCryptoPrimitives,
@@ -530,7 +613,7 @@ fn calculate_message_hash_from_bytes(
     // We prepend the message with a context string consistent of the genesis_hash
     // and this contract address.
     let mut msg_prepend = [0; 32 + 16];
-    msg_prepend[0..32].copy_from_slice(GENESIS_HASH.as_ref());
+    msg_prepend[0..32].copy_from_slice(TESTNET_GENESIS_HASH.as_ref());
     msg_prepend[32..40].copy_from_slice(&ctx.self_address().index.to_le_bytes());
     msg_prepend[40..48].copy_from_slice(&ctx.self_address().subindex.to_le_bytes());
 
@@ -538,6 +621,420 @@ fn calculate_message_hash_from_bytes(
     Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], &message_bytes].concat()).0)
 }
 
+/// Validates the withdraw message signature and increases the public key nonce.
+///
+/// It rejects if:
+/// - If the message is expired.
+/// - If the signature is invalid.
+/// - If the nonce is wrong.
+fn validate_signature_and_increase_nonce_withdraw_message(
+    message: WithdrawMessage,
+    signer: PublicKeyEd25519,
+    signature: SignatureEd25519,
+    host: &mut Host<State>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+    ctx: &ReceiveContext,
+) -> ContractResult<()> {
+    // Check that the signature is not expired.
+    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+
+    // Calculate the message hash.
+    let message_hash: [u8; 32] =
+        calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
+
+    // Check the signature.
+    let valid_signature =
+        crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
+    ensure!(valid_signature, CustomContractError::WrongSignature.into());
+
+    // Update the nonce.
+    let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
+
+    // Check the nonce to prevent replay attacks.
+    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch.into());
+
+    // Bump nonce.
+    *entry += 1;
+
+    Ok(())
+}
+
+/// Helper function to calculate the `WithdrawMessageHash`.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "viewWithdrawMessageHash",
+    parameter = "WithdrawMessage",
+    return_value = "[u8;32]",
+    error = "ContractError",
+    crypto_primitives,
+    mutable
+)]
+fn contract_view_withdraw_message_hash(
+    ctx: &ReceiveContext,
+    _host: &mut Host<State>,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ContractResult<[u8; 32]> {
+    // Parse the parameter.
+    let param: WithdrawMessage = ctx.parameter_cursor().get()?;
+
+    calculate_message_hash_from_bytes(&to_bytes(&param), crypto_primitives, ctx)
+}
+
+/// The function executes a list of CCDs (native currency) withdrawals
+/// to native accounts and/or smart contracts.
+/// When withdrawing CCD to a contract address, a CCD receive hook function is
+/// triggered.
+///
+/// The function logs `WithdrawNativeCurrency`, `InternalNativeCurrencyTransfer`
+/// and `Nonce` events.
+///
+/// It rejects if:
+/// - If fails to parse the parameter.
+/// - If the message was intended for a different entry point.
+/// - If the `SigningAmountType` is not CCD for the service fee transfer or for
+///   any withdrawal.
+/// - If the message is expired.
+/// - If the signature is invalid.
+/// - If the nonce is wrong.
+/// - If the `signer` has an insufficient balance.
+/// - If the CCD receive hook function reverts for any withdrawal.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "withdrawNativeCurrency",
+    parameter = "WithdrawParameter",
+    error = "CustomContractError",
+    crypto_primitives,
+    enable_logger,
+    mutable
+)]
+fn withdraw_native_currency(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ReceiveResult<()> {
+    // Parse the parameter.
+    let param: WithdrawParameter = ctx.parameter_cursor().get()?;
+
+    for withdraw_batch in param.withdraws {
+        let WithdrawBatch {
+            signer,
+            signature,
+            message,
+        } = withdraw_batch;
+
+        let WithdrawMessage {
+            entry_point,
+            expiry_time: _,
+            nonce,
+            service_fee_recipient,
+            service_fee_amount,
+            simple_withdraws,
+        } = message.clone();
+
+        ensure_eq!(
+            entry_point,
+            "withdrawNativeCurrency",
+            CustomContractError::WrongEntryPoint.into()
+        );
+
+        let service_fee_ccd_amount = match service_fee_amount {
+            SigningAmount::CCDAmount(ccd_amount) => ccd_amount,
+            SigningAmount::TokenAmount(_) => {
+                bail!(CustomContractError::WrongSigningAmountType.into())
+            }
+        };
+
+        validate_signature_and_increase_nonce_withdraw_message(
+            message,
+            signer,
+            signature,
+            host,
+            crypto_primitives,
+            ctx,
+        )?;
+
+        // Transfer service fee
+        host.state_mut().transfer_native_currency(
+            signer,
+            service_fee_recipient,
+            service_fee_ccd_amount,
+            logger,
+        )?;
+
+        for Withdraw {
+            to,
+            withdraw_amount,
+            data,
+        } in simple_withdraws
+        {
+            let ccd_amount = match withdraw_amount {
+                SigningAmount::CCDAmount(ccd_amount) => ccd_amount,
+                SigningAmount::TokenAmount(_) => {
+                    bail!(CustomContractError::WrongSigningAmountType.into())
+                }
+            };
+
+            // Update the contract state
+            {
+                let mut from_public_key_native_balance = host
+                    .state_mut()
+                    .native_balances
+                    .entry(signer)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                ensure!(
+                    *from_public_key_native_balance >= ccd_amount,
+                    ContractError::InsufficientFunds.into()
+                );
+                *from_public_key_native_balance -= ccd_amount;
+            }
+
+            // Withdraw CCD out of the contract.
+            let to_address = match to {
+                Receiver::Account(account_address) => {
+                    host.invoke_transfer(&account_address, ccd_amount)?;
+                    Address::Account(account_address)
+                }
+                Receiver::Contract(contract_address, function) => {
+                    // If the receiver is a contract: invoke the receive hook function.
+                    host.invoke_contract(
+                        &contract_address,
+                        &data,
+                        function.as_entrypoint_name(),
+                        ccd_amount,
+                    )?;
+                    Address::Contract(contract_address)
+                }
+            };
+
+            logger.log(&Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
+                ccd_amount,
+                from: signer,
+                to: to_address,
+            }))?;
+        }
+
+        logger.log(&Event::Nonce(NonceEvent {
+            public_key: signer,
+            nonce,
+        }))?;
+    }
+
+    Ok(())
+}
+
+/// The function executes a list of token withdrawals to native accounts and/or
+/// smart contracts. This function calls the `transfer` function on the CIS-2
+/// token contract for every withdrawal.
+///
+/// The function logs `WithdrawCis2Tokens`, `InternalNativeCurrencyTransfer`
+/// and `Nonce` events.
+///
+/// It rejects if:
+/// - If fails to parse the parameter.
+/// - If the message was intended for a different entry point.
+/// - If the `SigningAmountType` is not a CIS-2 token for the service fee
+///   transfer or for any withdrawal.
+/// - If the message is expired.
+/// - If the signature is invalid.
+/// - If the nonce is wrong.
+/// - If the `signer` has an insufficient balance.
+/// - If the `transfer` function on the CIS-2 contract reverts for any
+///   withdrawal.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "withdrawCis2Tokens",
+    parameter = "WithdrawParameter",
+    error = "CustomContractError",
+    crypto_primitives,
+    enable_logger,
+    mutable
+)]
+fn withdraw_cis2_tokens(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut impl HasLogger,
+    crypto_primitives: &impl HasCryptoPrimitives,
+) -> ReceiveResult<()> {
+    // Parse the parameter.
+    let param: WithdrawParameter = ctx.parameter_cursor().get()?;
+
+    for withdraw_batch in param.withdraws {
+        let WithdrawBatch {
+            signer,
+            signature,
+            message,
+        } = withdraw_batch;
+
+        let WithdrawMessage {
+            entry_point,
+            expiry_time: _,
+            nonce,
+            service_fee_recipient,
+            service_fee_amount,
+            simple_withdraws,
+        } = message.clone();
+
+        ensure_eq!(entry_point, "withdrawCis2Tokens", CustomContractError::WrongEntryPoint.into());
+
+        let service_fee = match service_fee_amount {
+            SigningAmount::CCDAmount(_) => {
+                bail!(CustomContractError::WrongSigningAmountType.into())
+            }
+            SigningAmount::TokenAmount(ref token_amount) => token_amount,
+        };
+
+        validate_signature_and_increase_nonce_withdraw_message(
+            message,
+            signer,
+            signature,
+            host,
+            crypto_primitives,
+            ctx,
+        )?;
+
+        // Transfer service fee
+        host.state_mut().transfer_cis2_tokens(
+            signer,
+            service_fee_recipient,
+            service_fee.cis2_token_contract_address,
+            service_fee.token_id.clone(),
+            service_fee.token_amount,
+            logger,
+        )?;
+
+        for Withdraw {
+            to,
+            withdraw_amount,
+            data,
+        } in simple_withdraws
+        {
+            let single_withdraw = match withdraw_amount {
+                SigningAmount::CCDAmount(_) => {
+                    bail!(CustomContractError::WrongSigningAmountType.into())
+                }
+                SigningAmount::TokenAmount(ref single_withdraw) => single_withdraw,
+            };
+
+            // Update the contract state
+            {
+                let mut contract_balances = host
+                    .state_mut()
+                    .token_balances
+                    .entry(single_withdraw.cis2_token_contract_address)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                let mut token_balances = contract_balances
+                    .balances
+                    .entry(single_withdraw.token_id.clone())
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                let mut from_cis2_token_balance = token_balances
+                    .entry(signer)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
+
+                ensure!(
+                    *from_cis2_token_balance >= single_withdraw.token_amount,
+                    ContractError::InsufficientFunds.into()
+                );
+                *from_cis2_token_balance -= single_withdraw.token_amount;
+            }
+
+            // Create Transfer parameter.
+            let data: TransferParameter = TransferParams(vec![Transfer {
+                token_id: single_withdraw.token_id.clone(),
+                amount: single_withdraw.token_amount,
+                from: Address::Contract(ctx.self_address()),
+                to: to.clone(),
+                data,
+            }]);
+
+            // Invoke the `transfer` function on the CIS-2 token contract.
+            host.invoke_contract(
+                &single_withdraw.cis2_token_contract_address,
+                &data,
+                EntrypointName::new_unchecked("transfer"),
+                Amount::zero(),
+            )?;
+
+            let to_address = match to {
+                Receiver::Account(account_address) => Address::Account(account_address),
+                Receiver::Contract(contract_address, _) => Address::Contract(contract_address),
+            };
+
+            logger.log(&Event::WithdrawCis2Tokens(WithdrawCis2TokensEvent {
+                token_amount: single_withdraw.token_amount,
+                token_id: single_withdraw.token_id.clone(),
+                cis2_token_contract_address: single_withdraw.cis2_token_contract_address,
+                from: signer,
+                to: to_address,
+            }))?;
+        }
+
+        logger.log(&Event::Nonce(NonceEvent {
+            public_key: signer,
+            nonce,
+        }))?;
+    }
+
+    Ok(())
+}
+
+/// A single transfer of native currency or some amount of tokens.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+pub struct InternalTransfer {
+    /// The public key receiving the tokens being transferred.
+    pub to:              PublicKeyEd25519,
+    /// The amount of tokens being transferred.
+    pub transfer_amount: SigningAmount,
+}
+
+/// The transfer message that is signed by the signer.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+pub struct InternalTransferMessage {
+    /// The entry_point that the signature is intended for.
+    pub entry_point:           OwnedEntrypointName,
+    /// A timestamp to make the signatures expire.
+    pub expiry_time:           Timestamp,
+    /// A nonce to prevent replay attacks.
+    pub nonce:                 u64,
+    /// The recipient public key of the service fee.
+    pub service_fee_recipient: PublicKeyEd25519,
+    /// The amount of native currency or tokens to be received as a service fee.
+    pub service_fee_amount:    SigningAmount,
+    /// List of transfers.
+    #[concordium(size_length = 2)]
+    pub simple_transfers:      Vec<InternalTransfer>,
+}
+
+/// A batch of transfers signed by a signer.
+#[derive(Debug, Serialize, Clone, SchemaType)]
+pub struct InternalTransferBatch {
+    /// The signer public key.
+    pub signer:    PublicKeyEd25519,
+    /// The signature.
+    pub signature: SignatureEd25519,
+    /// The message being signed.
+    pub message:   InternalTransferMessage,
+}
+
+/// The parameter type for the contract functions
+/// `internalTransferNativeCurrency/internalTransferCis2Tokens`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct InternalTransferParameter {
+    /// List of transfer batches.
+    #[concordium(size_length = 2)]
+    pub transfers: Vec<InternalTransferBatch>,
+}
+
+/// Validates the transfer message signature and increases the public key nonce.
+///
+/// It rejects if:
+/// - If the message is expired.
+/// - If the signature is invalid.
+/// - If the nonce is wrong.
 fn validate_signature_and_increase_nonce_internal_transfer_message(
     message: InternalTransferMessage,
     signer: PublicKeyEd25519,
@@ -546,14 +1043,14 @@ fn validate_signature_and_increase_nonce_internal_transfer_message(
     crypto_primitives: &impl HasCryptoPrimitives,
     ctx: &ReceiveContext,
 ) -> ContractResult<()> {
-    // Check signature is not expired.
+    // Check that the signature is not expired.
     ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
 
     // Calculate the message hash.
     let message_hash =
         calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
 
-    // Check signature.
+    // Check the signature.
     let valid_signature =
         crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
     ensure!(valid_signature, CustomContractError::WrongSignature.into());
@@ -561,18 +1058,16 @@ fn validate_signature_and_increase_nonce_internal_transfer_message(
     // Update the nonce.
     let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
 
-    // Get the current nonce.
-    let nonce_state = *entry;
+    // Check the nonce to prevent replay attacks.
+    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch.into());
+
     // Bump nonce.
     *entry += 1;
-
-    // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, nonce_state, CustomContractError::NonceMismatch.into());
 
     Ok(())
 }
 
-/// Helper function to calculate the `message_hash`.
+/// Helper function to calculate the `InternalTransferMessageHash`.
 #[receive(
     contract = "smart_contract_wallet",
     name = "viewInternalTransferMessageHash",
@@ -594,6 +1089,10 @@ fn contract_view_internal_transfer_message_hash(
 }
 
 ///
+///
+///
+///
+///
 #[receive(
     contract = "smart_contract_wallet",
     name = "internalTransferNativeCurrency",
@@ -613,7 +1112,7 @@ fn internal_transfer_native_currency(
     let param: InternalTransferParameter = ctx.parameter_cursor().get()?;
 
     for internal_transfer in param.transfers {
-        let InternalTransfer {
+        let InternalTransferBatch {
             signer,
             signature,
             message,
@@ -658,7 +1157,7 @@ fn internal_transfer_native_currency(
             logger,
         )?;
 
-        for InternalTransferBatch {
+        for InternalTransfer {
             to,
             transfer_amount,
         } in simple_transfers
@@ -672,377 +1171,6 @@ fn internal_transfer_native_currency(
 
             // Update the contract state
             host.state_mut().transfer_native_currency(signer, to, ccd_amount, logger)?;
-        }
-
-        logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
-            nonce,
-        }))?;
-    }
-
-    Ok(())
-}
-
-/// A single transfer of some amount of a token.
-// Note: For the serialization to be derived according to the CIS2
-// specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct WithdrawBatch {
-    /// The address receiving the tokens being transferred.
-    pub to:              Receiver,
-    /// The amount of tokens being transferred.
-    pub withdraw_amount: SigningAmount,
-    ///
-    pub data:            AdditionalData,
-}
-
-#[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct WithdrawMessage {
-    /// The address owning the tokens being transferred.
-    pub entry_point:           OwnedEntrypointName,
-    /// The address owning the tokens being transferred.
-    pub expiry_time:           Timestamp,
-    /// The address owning the tokens being transferred.
-    pub nonce:                 u64,
-    /// The address owning the tokens being transferred.
-    pub service_fee_recipient: PublicKeyEd25519,
-    /// The amount of tokens being transferred.
-    pub service_fee_amount:    SigningAmount,
-    /// List of balance queries.
-    #[concordium(size_length = 2)]
-    pub simple_withdraws:      Vec<WithdrawBatch>,
-}
-
-#[derive(Debug, Serialize, Clone, SchemaType)]
-pub struct Withdraw {
-    /// The address owning the tokens being transferred.
-    pub signer:    PublicKeyEd25519,
-    /// The address owning the tokens being transferred.
-    pub signature: SignatureEd25519,
-    ///
-    pub message:   WithdrawMessage,
-}
-
-/// The parameter type for the contract function `balanceOfNativeCurrency`.
-// Note: For the serialization to be derived according to the CIS2
-// specification, the order of the fields cannot be changed.
-#[derive(Debug, Serialize, SchemaType)]
-#[concordium(transparent)]
-pub struct WithdrawParameter {
-    /// List of balance queries.
-    #[concordium(size_length = 2)]
-    pub transfers: Vec<Withdraw>,
-}
-
-fn validate_signature_and_increase_nonce_withdraw_message(
-    message: WithdrawMessage,
-    signer: PublicKeyEd25519,
-    signature: SignatureEd25519,
-    host: &mut Host<State>,
-    crypto_primitives: &impl HasCryptoPrimitives,
-    ctx: &ReceiveContext,
-) -> ContractResult<()> {
-    // Check signature is not expired.
-    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
-
-    // Calculate the message hash.
-    let message_hash =
-        calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
-
-    // Check signature.
-    let valid_signature =
-        crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
-    ensure!(valid_signature, CustomContractError::WrongSignature.into());
-
-    // Update the nonce.
-    let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
-
-    // Get the current nonce.
-    let nonce_state = *entry;
-    // Bump nonce.
-    *entry += 1;
-
-    // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, nonce_state, CustomContractError::NonceMismatch.into());
-
-    Ok(())
-}
-
-/// Helper function to calculate the `message_hash`.
-#[receive(
-    contract = "smart_contract_wallet",
-    name = "viewWithdrawMessageHash",
-    parameter = "WithdrawMessage",
-    return_value = "[u8;32]",
-    error = "ContractError",
-    crypto_primitives,
-    mutable
-)]
-fn contract_view_withdraw_message_hash(
-    ctx: &ReceiveContext,
-    _host: &mut Host<State>,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ContractResult<[u8; 32]> {
-    // Parse the parameter.
-    let param: WithdrawMessage = ctx.parameter_cursor().get()?;
-
-    calculate_message_hash_from_bytes(&to_bytes(&param), crypto_primitives, ctx)
-}
-
-///
-#[receive(
-    contract = "smart_contract_wallet",
-    name = "withdrawNativeCurrency",
-    parameter = "WithdrawParameter",
-    error = "CustomContractError",
-    crypto_primitives,
-    enable_logger,
-    mutable
-)]
-fn withdraw_native_currency(
-    ctx: &ReceiveContext,
-    host: &mut Host<State>,
-    logger: &mut impl HasLogger,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ReceiveResult<()> {
-    // Parse the parameter.
-    let param: WithdrawParameter = ctx.parameter_cursor().get()?;
-
-    for internal_transfer in param.transfers {
-        let Withdraw {
-            signer,
-            signature,
-            message,
-        } = internal_transfer.clone();
-
-        let WithdrawMessage {
-            entry_point,
-            expiry_time: _,
-            nonce,
-            service_fee_recipient,
-            service_fee_amount,
-            simple_withdraws,
-        } = message.clone();
-
-        ensure_eq!(
-            entry_point,
-            "withdrawNativeCurrency",
-            CustomContractError::WrongEntryPoint.into()
-        );
-
-        let service_fee_ccd_amount = match service_fee_amount {
-            SigningAmount::CCDAmount(ccd_amount) => ccd_amount,
-            SigningAmount::TokenAmount(_) => {
-                bail!(CustomContractError::WrongSigningAmountType.into())
-            }
-        };
-
-        validate_signature_and_increase_nonce_withdraw_message(
-            message.clone(),
-            signer,
-            signature,
-            host,
-            crypto_primitives,
-            ctx,
-        )?;
-
-        // Transfer service fee
-        host.state_mut().transfer_native_currency(
-            signer,
-            service_fee_recipient,
-            service_fee_ccd_amount,
-            logger,
-        )?;
-
-        for WithdrawBatch {
-            to,
-            withdraw_amount,
-            data,
-        } in simple_withdraws
-        {
-            let ccd_amount = match withdraw_amount {
-                SigningAmount::CCDAmount(ccd_amount) => ccd_amount,
-                SigningAmount::TokenAmount(_) => {
-                    bail!(CustomContractError::WrongSigningAmountType.into())
-                }
-            };
-
-            // Update the contract state
-            {
-                let mut from_public_key_native_balance = host
-                    .state_mut()
-                    .native_balances
-                    .entry(signer)
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                ensure!(
-                    *from_public_key_native_balance >= ccd_amount,
-                    ContractError::InsufficientFunds.into()
-                );
-                *from_public_key_native_balance -= ccd_amount;
-            }
-
-            // If the receiver is a contract: invoke the receive hook function.
-            // Withdraw ccd out of the contract
-            let to_address = match to {
-                Receiver::Account(account_address) => {
-                    host.invoke_transfer(&account_address, ccd_amount)?;
-                    Address::Account(account_address)
-                }
-                Receiver::Contract(contract_address, function) => {
-                    host.invoke_contract(
-                        &contract_address,
-                        &data,
-                        function.as_entrypoint_name(),
-                        ccd_amount,
-                    )?;
-                    Address::Contract(contract_address)
-                }
-            };
-
-            logger.log(&Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
-                ccd_amount,
-                from: signer,
-                to: to_address,
-            }))?;
-        }
-
-        logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
-            nonce,
-        }))?;
-    }
-
-    Ok(())
-}
-
-///
-#[receive(
-    contract = "smart_contract_wallet",
-    name = "withdrawCis2Tokens",
-    parameter = "WithdrawParameter",
-    error = "CustomContractError",
-    crypto_primitives,
-    enable_logger,
-    mutable
-)]
-fn withdraw_cis2_tokens(
-    ctx: &ReceiveContext,
-    host: &mut Host<State>,
-    logger: &mut impl HasLogger,
-    crypto_primitives: &impl HasCryptoPrimitives,
-) -> ReceiveResult<()> {
-    // Parse the parameter.
-    let param: WithdrawParameter = ctx.parameter_cursor().get()?;
-
-    for internal_transfer in param.transfers {
-        let Withdraw {
-            signer,
-            signature,
-            message,
-        } = internal_transfer.clone();
-
-        let WithdrawMessage {
-            entry_point,
-            expiry_time: _,
-            nonce,
-            service_fee_recipient,
-            service_fee_amount,
-            simple_withdraws,
-        } = message.clone();
-
-        ensure_eq!(entry_point, "withdrawCis2Tokens", CustomContractError::WrongEntryPoint.into());
-
-        let service_fee = match service_fee_amount {
-            SigningAmount::CCDAmount(_) => {
-                bail!(CustomContractError::WrongSigningAmountType.into())
-            }
-            SigningAmount::TokenAmount(ref token_amount) => token_amount,
-        };
-
-        validate_signature_and_increase_nonce_withdraw_message(
-            message.clone(),
-            signer,
-            signature,
-            host,
-            crypto_primitives,
-            ctx,
-        )?;
-
-        // Transfer service fee
-        host.state_mut().transfer_cis2_tokens(
-            signer,
-            service_fee_recipient,
-            service_fee.cis2_token_contract_address,
-            service_fee.token_id.clone(),
-            service_fee.token_amount,
-            logger,
-        )?;
-
-        for WithdrawBatch {
-            to,
-            withdraw_amount,
-            data,
-        } in simple_withdraws
-        {
-            let single_withdraw = match withdraw_amount {
-                SigningAmount::CCDAmount(_) => {
-                    bail!(CustomContractError::WrongSigningAmountType.into())
-                }
-                SigningAmount::TokenAmount(ref single_withdraw) => single_withdraw,
-            };
-
-            // Update the contract state
-            {
-                let mut contract_balances = host
-                    .state_mut()
-                    .token_balances
-                    .entry(single_withdraw.cis2_token_contract_address)
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                let mut token_balances = contract_balances
-                    .balances
-                    .entry(single_withdraw.token_id.clone())
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                let mut from_cis2_token_balance = token_balances
-                    .entry(signer)
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                ensure!(
-                    *from_cis2_token_balance >= single_withdraw.token_amount,
-                    ContractError::InsufficientFunds.into()
-                );
-                *from_cis2_token_balance -= single_withdraw.token_amount;
-            }
-
-            let data: TransferParameter = TransferParams(vec![Transfer {
-                token_id: single_withdraw.token_id.clone(),
-                amount: single_withdraw.token_amount,
-                from: Address::Contract(ctx.self_address()),
-                to: to.clone(),
-                data,
-            }]);
-
-            host.invoke_contract(
-                &single_withdraw.cis2_token_contract_address,
-                &data,
-                EntrypointName::new_unchecked("transfer"),
-                Amount::zero(),
-            )?;
-
-            let to_address = match to {
-                Receiver::Account(account_address) => Address::Account(account_address),
-                Receiver::Contract(contract_address, _) => Address::Contract(contract_address),
-            };
-
-            logger.log(&Event::WithdrawCis2Tokens(WithdrawCis2TokensEvent {
-                token_amount: single_withdraw.token_amount,
-                token_id: single_withdraw.token_id.clone(),
-                cis2_token_contract_address: single_withdraw.cis2_token_contract_address,
-                from: signer,
-                to: to_address,
-            }))?;
         }
 
         logger.log(&Event::Nonce(NonceEvent {
@@ -1074,7 +1202,7 @@ fn internal_transfer_cis2_tokens(
     let param: InternalTransferParameter = ctx.parameter_cursor().get()?;
 
     for cis2_tokens_internal_transfer in param.transfers {
-        let InternalTransfer {
+        let InternalTransferBatch {
             signer,
             signature,
             message,
@@ -1121,7 +1249,7 @@ fn internal_transfer_cis2_tokens(
             logger,
         )?;
 
-        for InternalTransferBatch {
+        for InternalTransfer {
             to,
             transfer_amount,
         } in simple_transfers

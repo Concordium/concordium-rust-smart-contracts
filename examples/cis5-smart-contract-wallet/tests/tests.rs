@@ -126,7 +126,7 @@ fn test_withdraw_ccd() {
         expiry_time:           Timestamp::now(),
         nonce:                 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_withdraws:      vec![WithdrawBatch {
+        simple_withdraws:      vec![Withdraw {
             to:              Receiver::Account(BOB),
             withdraw_amount: SigningAmount::CCDAmount(transfer_amount),
             data:            AdditionalData::empty(),
@@ -134,7 +134,7 @@ fn test_withdraw_ccd() {
         service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
     };
 
-    let mut withdraw = Withdraw {
+    let mut withdraw = WithdrawBatch {
         signer:    alice_public_key,
         signature: SIGNATURE,
         message:   message.clone(),
@@ -158,7 +158,7 @@ fn test_withdraw_ccd() {
     withdraw.signature = SignatureEd25519(signature.to_bytes());
 
     let withdraw_param = WithdrawParameter {
-        transfers: vec![withdraw.clone()],
+        withdraws: vec![withdraw.clone()],
     };
 
     let ccd_balance_bob_before = chain.account_balance(BOB).unwrap().total;
@@ -251,7 +251,7 @@ fn test_withdraw_cis2_tokens() {
         expiry_time:           Timestamp::now(),
         nonce:                 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_withdraws:      vec![WithdrawBatch {
+        simple_withdraws:      vec![Withdraw {
             to:              Receiver::Account(BOB),
             withdraw_amount: SigningAmount::TokenAmount(TokenAmount {
                 token_amount: transfer_amount,
@@ -267,7 +267,7 @@ fn test_withdraw_cis2_tokens() {
         }),
     };
 
-    let mut withdraw = Withdraw {
+    let mut withdraw = WithdrawBatch {
         signer:    alice_public_key,
         signature: SIGNATURE,
         message:   message.clone(),
@@ -291,7 +291,7 @@ fn test_withdraw_cis2_tokens() {
     withdraw.signature = SignatureEd25519(signature.to_bytes());
 
     let withdraw_param = WithdrawParameter {
-        transfers: vec![withdraw.clone()],
+        withdraws: vec![withdraw.clone()],
     };
 
     // Check balances in state.
@@ -388,14 +388,14 @@ fn test_internal_transfer_ccd() {
         expiry_time:           Timestamp::now(),
         nonce:                 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_transfers:      vec![InternalTransferBatch {
+        simple_transfers:      vec![InternalTransfer {
             to:              BOB_PUBLIC_KEY,
             transfer_amount: SigningAmount::CCDAmount(transfer_amount),
         }],
         service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
     };
 
-    let mut internal_transfer = InternalTransfer {
+    let mut internal_transfer = InternalTransferBatch {
         signer:    alice_public_key,
         signature: SIGNATURE,
         message:   message.clone(),
@@ -512,7 +512,7 @@ fn test_internal_transfer_cis2_tokens() {
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
         }),
-        simple_transfers:      vec![InternalTransferBatch {
+        simple_transfers:      vec![InternalTransfer {
             to:              BOB_PUBLIC_KEY,
             transfer_amount: SigningAmount::TokenAmount(TokenAmount {
                 token_amount: transfer_amount,
@@ -522,7 +522,7 @@ fn test_internal_transfer_cis2_tokens() {
         }],
     };
 
-    let mut internal_transfer = InternalTransfer {
+    let mut internal_transfer = InternalTransferBatch {
         signer:    alice_public_key,
         signature: SIGNATURE,
         message:   message.clone(),
