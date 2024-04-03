@@ -1,4 +1,4 @@
-//! Tests for the `cis2_wCCD` contract.
+//! Tests for the `smart_contract_wallet` contract.
 use cis2_multi::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, MintParams};
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
@@ -13,33 +13,26 @@ const BOB_ADDR: Address = Address::Account(BOB);
 const CHARLIE: AccountAddress = AccountAddress([2; 32]);
 const CHARLIE_ADDR: Address = Address::Account(CHARLIE);
 
-const ALICE_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([8; 32]);
-const BOB_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([9; 32]);
-const SERVICE_FEE_RECIPIENT_KEY: PublicKeyEd25519 = PublicKeyEd25519([4; 32]);
+const ALICE_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([7; 32]);
+const BOB_PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([8; 32]);
+const SERVICE_FEE_RECIPIENT_KEY: PublicKeyEd25519 = PublicKeyEd25519([9; 32]);
 
-const SIGNATURE: SignatureEd25519 = SignatureEd25519([
+/// Initial balance of the accounts.
+const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
+
+const TOKEN_ID: TokenIdU8 = TokenIdU8(4);
+
+const AIRDROP_TOKEN_AMOUNT: TokenAmountU64 = TokenAmountU64(100);
+const AIRDROP_CCD_AMOUNT: Amount = Amount::from_micro_ccd(200);
+
+const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
     68, 134, 96, 171, 184, 199, 1, 93, 76, 87, 144, 68, 55, 180, 93, 56, 107, 95, 127, 112, 24, 55,
     162, 131, 165, 91, 133, 104, 2, 5, 78, 224, 214, 21, 66, 0, 44, 108, 52, 4, 108, 10, 123, 75,
     21, 68, 42, 79, 106, 106, 87, 125, 122, 77, 154, 114, 208, 145, 171, 47, 108, 96, 221, 13,
 ]);
 
-const TOKEN_ID: TokenIdU8 = TokenIdU8(4);
-
-/// Initial balance of the accounts.
-const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
-
-const AIRDROP_TOKEN_AMOUNT: TokenAmountU64 = TokenAmountU64(100);
-const AIRDROP_CCD_AMOUNT: Amount = Amount::from_micro_ccd(100);
-
 /// A signer for all the transactions.
 const SIGNER: Signer = Signer::with_one_key();
-
-/// Test that init produces the correct logs.
-#[test]
-fn test_init() {
-    let (_chain, _smart_contract_wallet, _cis2_token_contract_address) =
-        initialize_chain_and_contract();
-}
 
 /// Test depositing of native currency.
 #[test]
@@ -47,43 +40,7 @@ fn test_deposit_native_currency() {
     let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
         initialize_chain_and_contract();
 
-    // Check that Alice has 0 CCD and Bob has 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
-        smart_contract_wallet,
-        ALICE_PUBLIC_KEY,
-    );
-    assert_eq!(balances.0, [Amount::zero(), Amount::zero(), Amount::zero()]);
-
-    let send_amount = Amount::from_micro_ccd(100);
-    let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       send_amount,
-            receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.depositNativeCurrency".to_string(),
-            ),
-            address:      smart_contract_wallet,
-            message:      OwnedParameter::from_serial(&ALICE_PUBLIC_KEY)
-                .expect("Deposit native currency params"),
-        })
-        .expect("Should be able to deposit CCD");
-
-    // Check that Alice now has 100 CCD and Bob has 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
-        smart_contract_wallet,
-        ALICE_PUBLIC_KEY,
-    );
-    assert_eq!(balances.0, [send_amount, Amount::zero(), Amount::zero()]);
-
-    // Check that the logs are correct.
-    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
-
-    assert_eq!(events, [Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
-        ccd_amount: send_amount,
-        from:       ALICE_ADDR,
-        to:         ALICE_PUBLIC_KEY,
-    })]);
+    alice_deposits_ccd(&mut chain, smart_contract_wallet, ALICE_PUBLIC_KEY);
 }
 
 /// Test depositing of cis2 tokens.
@@ -100,7 +57,7 @@ fn test_deposit_cis2_tokens() {
     );
 }
 
-/// Test withdraw of ccd.
+/// Test withdrawing of CCD.
 #[test]
 fn test_withdraw_ccd() {
     let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
@@ -110,14 +67,14 @@ fn test_withdraw_ccd() {
 
     let rng = &mut rand::thread_rng();
 
-    // Construct message, verifying_key, and signature.
+    // Construct signing key.
     let signing_key = SigningKey::generate(rng);
     let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
 
     alice_deposits_ccd(&mut chain, smart_contract_wallet, alice_public_key);
 
     let service_fee_amount: Amount = Amount::from_micro_ccd(1);
-    let transfer_amount: Amount = Amount::from_micro_ccd(5);
+    let withdraw_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = WithdrawMessage {
         entry_point:           OwnedEntrypointName::new_unchecked(
@@ -128,7 +85,7 @@ fn test_withdraw_ccd() {
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
         simple_withdraws:      vec![Withdraw {
             to:              Receiver::Account(BOB),
-            withdraw_amount: SigningAmount::CCDAmount(transfer_amount),
+            withdraw_amount: SigningAmount::CCDAmount(withdraw_amount),
             data:            AdditionalData::empty(),
         }],
         service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
@@ -136,7 +93,7 @@ fn test_withdraw_ccd() {
 
     let mut withdraw = WithdrawBatch {
         signer:    alice_public_key,
-        signature: SIGNATURE,
+        signature: DUMMY_SIGNATURE,
         message:   message.clone(),
     };
 
@@ -158,10 +115,11 @@ fn test_withdraw_ccd() {
     withdraw.signature = SignatureEd25519(signature.to_bytes());
 
     let withdraw_param = WithdrawParameter {
-        withdraws: vec![withdraw.clone()],
+        withdraws: vec![withdraw],
     };
 
-    let ccd_balance_bob_before = chain.account_balance(BOB).unwrap().total;
+    let ccd_balance_bob_before =
+        chain.account_balance(BOB).expect("Bob should have a balance").total;
 
     let update = chain
         .contract_update(
@@ -176,28 +134,28 @@ fn test_withdraw_ccd() {
                 ),
                 address:      smart_contract_wallet,
                 message:      OwnedParameter::from_serial(&withdraw_param)
-                    .expect("Internal transfer native currency params"),
+                    .expect("Withdraw native currency params"),
             },
         )
-        .print_emitted_events()
-        .expect("Should be able to internally transfer native currency");
+        .expect("Should be able to withdraw native currency");
 
-    // Check that Alice now has 100 ccd and Bob has 0 ccd on their public
-    // keys.
+    // Check that Alice now has `AIRDROP_CCD_AMOUNT - withdraw_amount -
+    // service_fee_amount` CCD, Bob has 0 CCD, and service_fee_recipient has
+    // `service_fee_amount` CCD on their public keys.
     let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         alice_public_key,
     );
     assert_eq!(balances.0, [
-        AIRDROP_CCD_AMOUNT - transfer_amount - service_fee_amount,
+        AIRDROP_CCD_AMOUNT - withdraw_amount - service_fee_amount,
         Amount::zero(),
         service_fee_amount
     ]);
 
     assert_eq!(
-        chain.account_balance(BOB).unwrap().total,
-        ccd_balance_bob_before.checked_add(transfer_amount).unwrap(),
+        chain.account_balance(BOB).expect("Bob should have a balance").total,
+        ccd_balance_bob_before.checked_add(withdraw_amount).expect("Expect no overflow"),
     );
 
     // Check that the logs are correct.
@@ -210,7 +168,7 @@ fn test_withdraw_ccd() {
             to:         SERVICE_FEE_RECIPIENT_KEY,
         }),
         Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
-            ccd_amount: transfer_amount,
+            ccd_amount: withdraw_amount,
             from:       alice_public_key,
             to:         BOB_ADDR,
         }),
@@ -231,7 +189,7 @@ fn test_withdraw_cis2_tokens() {
 
     let rng = &mut rand::thread_rng();
 
-    // Construct message, verifying_key, and signature.
+    // Construct signing key.
     let signing_key = SigningKey::generate(rng);
     let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
 
@@ -243,7 +201,7 @@ fn test_withdraw_cis2_tokens() {
     );
 
     let service_fee_amount: TokenAmountU256 = TokenAmountU256(1.into());
-    let transfer_amount: TokenAmountU256 = TokenAmountU256(5.into());
+    let withdraw_amount: TokenAmountU256 = TokenAmountU256(5.into());
     let contract_token_id: TokenIdVec = TokenIdVec(vec![TOKEN_ID.0]);
 
     let message = WithdrawMessage {
@@ -254,7 +212,7 @@ fn test_withdraw_cis2_tokens() {
         simple_withdraws:      vec![Withdraw {
             to:              Receiver::Account(BOB),
             withdraw_amount: SigningAmount::TokenAmount(TokenAmount {
-                token_amount: transfer_amount,
+                token_amount: withdraw_amount,
                 token_id: contract_token_id.clone(),
                 cis2_token_contract_address,
             }),
@@ -269,7 +227,7 @@ fn test_withdraw_cis2_tokens() {
 
     let mut withdraw = WithdrawBatch {
         signer:    alice_public_key,
-        signature: SIGNATURE,
+        signature: DUMMY_SIGNATURE,
         message:   message.clone(),
     };
 
@@ -291,13 +249,12 @@ fn test_withdraw_cis2_tokens() {
     withdraw.signature = SignatureEd25519(signature.to_bytes());
 
     let withdraw_param = WithdrawParameter {
-        withdraws: vec![withdraw.clone()],
+        withdraws: vec![withdraw],
     };
 
-    // Check balances in state.
-    let token_balance_of_bob = get_balances(&chain, cis2_token_contract_address);
+    let token_balance_of_bob_before = get_balances(&chain, cis2_token_contract_address);
 
-    assert_eq!(token_balance_of_bob.0, [TokenAmountU64(0u64)]);
+    assert_eq!(token_balance_of_bob_before.0, [TokenAmountU64(0u64)]);
 
     let update = chain
         .contract_update(
@@ -315,27 +272,27 @@ fn test_withdraw_cis2_tokens() {
                     .expect("Withdraw cis2 tokens params"),
             },
         )
-        .print_emitted_events()
         .expect("Should be able to withdraw cis2 tokens");
 
-    // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
-    // keys.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
+    // Check that Alice now has `AIRDROP_TOKEN_AMOUNT - withdraw_amount -
+    // service_fee_amount` tokens, Bob has 0 tokens, and service_fee_recipient has
+    // `service_fee_amount` tokens on their public keys.
+    let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
         alice_public_key,
     );
     assert_eq!(balances.0, [
-        TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()) - transfer_amount - service_fee_amount,
+        TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()) - withdraw_amount - service_fee_amount,
         TokenAmountU256(0.into()),
         TokenAmountU256(service_fee_amount.into())
     ]);
 
     // Check balances in state.
-    let token_balance_of_bob = get_balances(&chain, cis2_token_contract_address);
+    let token_balance_of_bob_after = get_balances(&chain, cis2_token_contract_address);
 
-    assert_eq!(token_balance_of_bob.0, [TokenAmountU64(transfer_amount.0.as_u64())]);
+    assert_eq!(token_balance_of_bob_after.0, [TokenAmountU64(withdraw_amount.0.as_u64())]);
 
     // Check that the logs are correct.
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
@@ -349,7 +306,7 @@ fn test_withdraw_cis2_tokens() {
             to: SERVICE_FEE_RECIPIENT_KEY
         }),
         Event::WithdrawCis2Tokens(WithdrawCis2TokensEvent {
-            token_amount: transfer_amount,
+            token_amount: withdraw_amount,
             token_id: contract_token_id,
             cis2_token_contract_address,
             from: alice_public_key,
@@ -372,7 +329,7 @@ fn test_internal_transfer_ccd() {
 
     let rng = &mut rand::thread_rng();
 
-    // Construct message, verifying_key, and signature.
+    // Construct signing key.
     let signing_key = SigningKey::generate(rng);
     let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
 
@@ -397,7 +354,7 @@ fn test_internal_transfer_ccd() {
 
     let mut internal_transfer = InternalTransferBatch {
         signer:    alice_public_key,
-        signature: SIGNATURE,
+        signature: DUMMY_SIGNATURE,
         message:   message.clone(),
     };
 
@@ -419,7 +376,7 @@ fn test_internal_transfer_ccd() {
     internal_transfer.signature = SignatureEd25519(signature.to_bytes());
 
     let internal_transfer_param = InternalTransferParameter {
-        transfers: vec![internal_transfer.clone()],
+        transfers: vec![internal_transfer],
     };
 
     let update = chain
@@ -438,11 +395,11 @@ fn test_internal_transfer_ccd() {
                     .expect("Internal transfer native currency params"),
             },
         )
-        .print_emitted_events()
         .expect("Should be able to internally transfer native currency");
 
-    // Check that Alice now has 100 ccd and Bob has 0 ccd on their public
-    // keys.
+    // Check that Alice now has `AIRDROP_CCD_AMOUNT - transfer_amount -
+    // service_fee_amount` CCD and Bob has `transfer_amount` CCD, and
+    // service_fee_recipient has `service_fee_amount` CCD on their public keys.
     let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
@@ -485,7 +442,7 @@ fn test_internal_transfer_cis2_tokens() {
 
     let rng = &mut rand::thread_rng();
 
-    // Construct message, verifying_key, and signature.
+    // Construct signing key.
     let signing_key = SigningKey::generate(rng);
     let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
 
@@ -524,7 +481,7 @@ fn test_internal_transfer_cis2_tokens() {
 
     let mut internal_transfer = InternalTransferBatch {
         signer:    alice_public_key,
-        signature: SIGNATURE,
+        signature: DUMMY_SIGNATURE,
         message:   message.clone(),
     };
 
@@ -546,7 +503,7 @@ fn test_internal_transfer_cis2_tokens() {
     internal_transfer.signature = SignatureEd25519(signature.to_bytes());
 
     let internal_transfer_param = InternalTransferParameter {
-        transfers: vec![internal_transfer.clone()],
+        transfers: vec![internal_transfer],
     };
 
     let update = chain
@@ -565,12 +522,13 @@ fn test_internal_transfer_cis2_tokens() {
                     .expect("Internal transfer cis2 tokens params"),
             },
         )
-        .print_emitted_events()
         .expect("Should be able to internally transfer cis2 tokens");
 
-    // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
+    // Check that Alice now has `AIRDROP_TOKEN_AMOUNT - transfer_amount -
+    // service_fee_amount` tokens, Bob has `transfer_amount` tokens, and
+    // service_fee_recipient has `service_fee_amount` tokens on their public
     // keys.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
+    let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
@@ -611,7 +569,7 @@ fn test_internal_transfer_cis2_tokens() {
 
 /// Setup chain and contract.
 ///
-/// Also creates the two accounts, Alice and Bob.
+/// Also creates the three accounts, Alice, Bob, and Charlie.
 ///
 /// Alice is the owner of the contract.
 fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) {
@@ -628,7 +586,7 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
     let deployment =
         chain.module_deploy_v1_debug(SIGNER, ALICE, module, true).expect("Deploy valid module");
 
-    // Initialize the auction contract.
+    // Initialize the token contract.
     let cis2_token_contract_init = chain
         .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
@@ -644,7 +602,7 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
     let deployment =
         chain.module_deploy_v1_debug(SIGNER, ALICE, module, true).expect("Deploy valid module");
 
-    // Initialize the auction contract.
+    // Initialize the smart contract wallet.
     let smart_contract_wallet_init = chain
         .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
             amount:    Amount::zero(),
@@ -657,8 +615,8 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress, ContractAddress) 
     (chain, smart_contract_wallet_init.contract_address, cis2_token_contract_init.contract_address)
 }
 
-/// Get the token balances for Alice and Bob.
-fn get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
+/// Get the token balances for Alice, Bob, and the service_fee_recipient.
+fn get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
     cis2_token_contract_address: ContractAddress,
@@ -691,32 +649,23 @@ fn get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf params"),
+                .expect("BalanceOf cis2 token params"),
         })
-        .expect("Invoke balanceOf");
+        .expect("Invoke balanceOf cis2 token");
     let rv: Cis2TokensBalanceOfResponse =
-        invoke.parse_return_value().expect("BalanceOf return value");
+        invoke.parse_return_value().expect("BalanceOf CIS-2 token return value");
     rv
 }
 
-/// Get the native currency balances for Alice and Bob.
+/// Get the native currency balances for Alice, Bob, and the
+/// service_fee_recipient.
 fn get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
     alice_public_key: PublicKeyEd25519,
 ) -> NativeCurrencyBalanceOfResponse {
     let balance_of_params = NativeCurrencyBalanceOfParameter {
-        queries: vec![
-            NativeCurrencyBalanceOfQuery {
-                public_key: alice_public_key,
-            },
-            NativeCurrencyBalanceOfQuery {
-                public_key: BOB_PUBLIC_KEY,
-            },
-            NativeCurrencyBalanceOfQuery {
-                public_key: SERVICE_FEE_RECIPIENT_KEY,
-            },
-        ],
+        queries: vec![alice_public_key, BOB_PUBLIC_KEY, SERVICE_FEE_RECIPIENT_KEY],
     };
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
@@ -734,7 +683,7 @@ fn get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
     rv
 }
 
-/// Get the token balances for Alice and Bob.
+/// Alice deposits cis2 tokens into the smart contract wallet.
 fn alice_deposits_cis2_tokens(
     chain: &mut Chain,
     smart_contract_wallet: ContractAddress,
@@ -756,8 +705,9 @@ fn alice_deposits_cis2_tokens(
         data:         AdditionalData::from(to_bytes(&alice_public_key)),
     };
 
-    // Check that Alice has 0 tokens and Bob has 0 tokens on their public keys.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
+    // Check that Alice has 0 tokens, Bob has 0 tokens, and the
+    // service_fee_recipient has 0 tokens on their public keys.
+    let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
@@ -769,6 +719,7 @@ fn alice_deposits_cis2_tokens(
         TokenAmountU256(0u8.into())
     ]);
 
+    // Deposit tokens.
     let update = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
@@ -779,9 +730,9 @@ fn alice_deposits_cis2_tokens(
         })
         .expect("Should be able to deposit cis2 tokens");
 
-    // Check that Alice now has 100 tokens and Bob has 0 tokens on their public
-    // keys.
-    let balances = get_cis2_tokens_balances_from_alice_and_bob_and_service_fee_recipient(
+    // Check that Alice now has AIRDROP_TOKEN_AMOUNT tokens, Bob has 0 tokens, and
+    // the service_fee_recipient has 0 tokens on their public keys.
+    let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         cis2_token_contract_address,
@@ -805,13 +756,14 @@ fn alice_deposits_cis2_tokens(
     })]);
 }
 
-/// Get the token balances for Alice and Bob.
+/// Alice deposits CCD into the smart contract wallet.
 fn alice_deposits_ccd(
     chain: &mut Chain,
     smart_contract_wallet: ContractAddress,
     alice_public_key: PublicKeyEd25519,
 ) {
-    // Check that Alice has 0 CCD and Bob has 0 CCD on their public keys.
+    // Check that Alice has 0 CCD, Bob has 0 CCD, and the service_fee_recipient has
+    // 0 CCD on their public keys.
     let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
@@ -831,7 +783,8 @@ fn alice_deposits_ccd(
         })
         .expect("Should be able to deposit CCD");
 
-    // Check that Alice now has 100 CCD and Bob has 0 CCD on their public keys.
+    // Check that Alice now has AIRDROP_CCD_AMOUNT CCD, Bob has 0 CCD, and the
+    // service_fee_recipient has 0 CCD on their public keys.
     let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
@@ -867,7 +820,7 @@ fn deserialize_update_events_of_specified_contract(
         .collect()
 }
 
-/// Get the `TOKEN_ID` balances for Bob.
+/// Get the `TOKEN_ID` balance for Bob.
 fn get_balances(
     chain: &Chain,
     contract_address: ContractAddress,
