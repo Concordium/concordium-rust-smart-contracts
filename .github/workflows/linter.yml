@@ -631,7 +631,6 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-dynamic-nft/Cargo.toml
           - examples/cis2-multi-royalties/Cargo.toml
-          - examples/cis5-smart-contract-wallet/Cargo.toml
           - examples/nametoken/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/bump-alloc-tests/Cargo.toml

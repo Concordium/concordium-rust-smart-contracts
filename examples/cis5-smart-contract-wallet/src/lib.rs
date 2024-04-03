@@ -381,7 +381,7 @@ impl State {
         std_id: StandardIdentifierOwned,
         implementors: Vec<ContractAddress>,
     ) {
-        self.implementors.insert(std_id, implementors);
+        let _ = self.implementors.insert(std_id, implementors);
     }
 }
 
@@ -627,7 +627,7 @@ fn validate_signature_and_increase_nonce_withdraw_message(
     ctx: &ReceiveContext,
 ) -> ContractResult<()> {
     // Check that the signature is not expired.
-    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired);
 
     // Calculate the message hash.
     let message_hash: [u8; 32] =
@@ -636,13 +636,13 @@ fn validate_signature_and_increase_nonce_withdraw_message(
     // Check the signature.
     let valid_signature =
         crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
-    ensure!(valid_signature, CustomContractError::WrongSignature.into());
+    ensure!(valid_signature, CustomContractError::WrongSignature);
 
     // Get the nonce.
     let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
 
     // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch.into());
+    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch);
 
     // Bump the nonce.
     *entry += 1;
@@ -1034,7 +1034,7 @@ fn validate_signature_and_increase_nonce_internal_transfer_message(
     ctx: &ReceiveContext,
 ) -> ContractResult<()> {
     // Check that the signature is not expired.
-    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired);
 
     // Calculate the message hash.
     let message_hash =
@@ -1043,13 +1043,13 @@ fn validate_signature_and_increase_nonce_internal_transfer_message(
     // Check the signature.
     let valid_signature =
         crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
-    ensure!(valid_signature, CustomContractError::WrongSignature.into());
+    ensure!(valid_signature, CustomContractError::WrongSignature);
 
     // Get the nonce.
     let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
 
     // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch.into());
+    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch);
 
     // Bump the nonce.
     *entry += 1;
