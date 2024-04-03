@@ -36,6 +36,7 @@ jobs:
           - examples/cis2-wccd/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/counter-notify/Cargo.toml
+          - examples/cis5-smart-contract-wallet/Cargo.toml
           - examples/credential-registry/Cargo.toml
           - examples/eSealing/Cargo.toml
           - examples/factory/Cargo.toml
@@ -630,6 +631,7 @@ jobs:
           - examples/cis2-multi/Cargo.toml
           - examples/cis2-dynamic-nft/Cargo.toml
           - examples/cis2-multi-royalties/Cargo.toml
+          - examples/cis5-smart-contract-wallet/Cargo.toml
           - examples/nametoken/Cargo.toml
           - examples/account-signature-checks/Cargo.toml
           - examples/bump-alloc-tests/Cargo.toml
@@ -714,6 +716,7 @@ jobs:
           - examples/cis2-nft/Cargo.toml
           - examples/cis3-nft-sponsored-txs/Cargo.toml
           - examples/cis2-wccd/Cargo.toml
+          - examples/cis5-smart-contract-wallet/Cargo.toml
           - examples/credential-registry/Cargo.toml
           - examples/factory/Cargo.toml
           - examples/fib/Cargo.toml
@@ -847,6 +850,7 @@ jobs:
           - examples/cis2-nft
           - examples/cis3-nft-sponsored-txs
           - examples/cis2-wccd
+          - examples/cis5-smart-contract-wallet
           - examples/credential-registry
           - examples/factory
           - examples/fib
@@ -894,9 +898,9 @@ jobs:
         if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
         run: cargo concordium build --out "examples/smart-contract-upgrade/contract-version2/concordium-out/module.wasm.v1" -- --manifest-path "examples/smart-contract-upgrade/contract-version2/Cargo.toml"
 
-        # The 'sponsored-tx-enabled-auction' example needs the wasm module `cis2-multi` for its tests.
+        # The 'sponsored-tx-enabled-auction' and 'cis5-smart-contract-walletn' examples need the wasm module `cis2-multi` for its tests.
       - name: Build cis2-multi module if needed
-        if: ${{ matrix.crates == 'examples/sponsored-tx-enabled-auction' }}
+        if: ${{ matrix.crates == 'examples/sponsored-tx-enabled-auction' || matrix.crates == 'examples/cis5-smart-contract-wallet'}}
         run: cargo concordium build --out "examples/cis2-multi/concordium-out/module.wasm.v1" -- --manifest-path "examples/cis2-multi/Cargo.toml"
 
       - name: Run cargo concordium test
