@@ -286,18 +286,17 @@ impl State {
                     .entry(from_public_key)
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
-                ensure!(
-                    *from_public_key_native_balance >= ccd_amount,
-                    CustomContractError::InsufficientFunds.into()
-                );
-                *from_public_key_native_balance -= ccd_amount;
+                *from_public_key_native_balance = (*from_public_key_native_balance)
+                    .checked_sub(ccd_amount)
+                    .ok_or(CustomContractError::InsufficientFunds)?;
             }
 
             let mut to_public_key_native_balance =
                 self.native_balances.entry(to_public_key).or_insert_with(Amount::zero);
 
-            // TODO: check if overflow possible
-            *to_public_key_native_balance += ccd_amount;
+            *to_public_key_native_balance = (*to_public_key_native_balance)
+                .checked_add(ccd_amount)
+                .ok_or(CustomContractError::Overflow)?;
         }
 
         logger.log(&Event::InternalNativeCurrencyTransfer(
@@ -351,7 +350,11 @@ impl State {
             let mut to_cis2_token_balance =
                 token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0.into()));
 
-            // CHECK: can overflow happen
+            // A well designes CIS-2 token contract should not overflow.
+            ensure!(
+                *to_cis2_token_balance + token_amount >= *to_cis2_token_balance,
+                CustomContractError::Overflow.into()
+            );
             *to_cis2_token_balance += token_amount;
         }
 
@@ -411,6 +414,8 @@ pub enum CustomContractError {
     UnAuthorized, // -10
     /// Failed because the signed amount type is wrong.
     WrongAmountType, // -11
+    /// Failed because of an overflow in the token/CCD amount.
+    Overflow, // -12
 }
 
 /// ContractResult type.
@@ -447,8 +452,8 @@ fn deposit_native_currency(
     let mut public_key_balance =
         host.state_mut().native_balances.entry(to).or_insert_with(Amount::zero);
 
-    // CHECK: overflow can happen
-    *public_key_balance += amount;
+    *public_key_balance =
+        (*public_key_balance).checked_add(amount).ok_or(CustomContractError::Overflow)?;
 
     logger.log(&Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
         ccd_amount: amount,
@@ -505,7 +510,12 @@ fn deposit_cis2_tokens(
         .entry(cis2_hook_param.data)
         .or_insert_with(|| TokenAmountU256(0.into()));
 
-    // CHECK: overflow can happen
+    // A well designes CIS-2 token contract should not overflow.
+    ensure!(
+        *cis2_token_balance + cis2_hook_param.amount >= *cis2_token_balance,
+        CustomContractError::Overflow.into()
+    );
+
     *cis2_token_balance += cis2_hook_param.amount;
 
     logger.log(&Event::DepositCis2Tokens(DepositCis2TokensEvent {
@@ -774,11 +784,9 @@ fn withdraw_native_currency(
                     .entry(signer)
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
-                ensure!(
-                    *from_public_key_native_balance >= ccd_amount,
-                    CustomContractError::InsufficientFunds.into()
-                );
-                *from_public_key_native_balance -= ccd_amount;
+                *from_public_key_native_balance = (*from_public_key_native_balance)
+                    .checked_sub(ccd_amount)
+                    .ok_or(CustomContractError::InsufficientFunds)?;
             }
 
             // Withdraw CCD out of the contract.
