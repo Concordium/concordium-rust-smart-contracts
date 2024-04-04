@@ -31,7 +31,7 @@ use concordium_rust_sdk::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use sdk::types::smart_contracts::InvokeContractResult;
+use sdk::{types::smart_contracts::InvokeContractResult, smart_contracts::engine::wasm::CostConfigurationV1};
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
@@ -584,6 +584,7 @@ impl Chain {
         // Construct the artifact.
         let artifact = match wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
             ValidationConfig::V1,
+            CostConfigurationV1,
             &v1::ConcordiumAllowedImports {
                 support_upgrade: true,
                 enable_debug,
