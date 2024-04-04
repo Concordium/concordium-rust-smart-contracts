@@ -36,7 +36,7 @@ fn parse_input(item: TokenStream, msg: &str) -> syn::Result<LitStr> {
 fn get_token_res(
     item: TokenStream,
     msg: &str,
-    worker_fun: fn(String, Span) -> syn::Result<TokenStream>,
+    worker_fun: impl FnOnce(String, Span) -> syn::Result<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let input = parse_input(item, msg)?;
     worker_fun(input.value(), input.span())
@@ -48,7 +48,7 @@ fn get_token_res(
 fn get_token_res_env(
     item: TokenStream,
     msg: &str,
-    worker_fun: fn(String, Span) -> syn::Result<TokenStream>,
+    worker_fun: impl FnOnce(String, Span) -> syn::Result<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let input = parse_input(item, msg)?;
     let environment_var_value = match std::env::var(input.value()) {
@@ -75,7 +75,7 @@ fn acc_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
         Err(e) => return Err(syn::Error::new(span, format!("Invalid account address: {}", e))),
     };
 
-    Ok(quote!(AccountAddress(#address)).into())
+    Ok(quote!(concordium_std::AccountAddress(#address)).into())
 }
 
 fn pubkey_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -84,7 +84,7 @@ fn pubkey_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
         Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 public key: {}", e))),
     };
 
-    Ok(quote!(PublicKeyEd25519(#public_key)).into())
+    Ok(quote!(concordium_std::PublicKeyEd25519(#public_key)).into())
 }
 
 fn pubkey_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -93,7 +93,7 @@ fn pubkey_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
         Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA public key: {}", e))),
     };
 
-    Ok(quote!(PublicKeyEcdsaSecp256k1(#public_key)).into())
+    Ok(quote!(concordium_std::PublicKeyEcdsaSecp256k1(#public_key)).into())
 }
 
 fn signature_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -102,7 +102,7 @@ fn signature_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream>
         Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 signature: {}", e))),
     };
 
-    Ok(quote!(SignatureEd25519(#signature)).into())
+    Ok(quote!(concordium_std::SignatureEd25519(#signature)).into())
 }
 
 fn signature_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -111,7 +111,7 @@ fn signature_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
         Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA signature: {}", e))),
     };
 
-    Ok(quote!(SignatureEcdsaSecp256k1(#signature)).into())
+    Ok(quote!(concordium_std::SignatureEcdsaSecp256k1(#signature)).into())
 }
 
 fn contract_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -120,7 +120,7 @@ fn contract_address_worker(str: String, span: Span) -> syn::Result<TokenStream> 
         Err(e) => return Err(syn::Error::new(span, format!("Invalid contract address: {}", e))),
     };
 
-    Ok(quote!(ContractAddress { index: #index, subindex: #subindex }).into())
+    Ok(quote!(concordium_std::ContractAddress::new(#index, #subindex)).into())
 }
 
 fn module_ref_worker(str: String, span: Span) -> syn::Result<TokenStream> {
@@ -129,7 +129,7 @@ fn module_ref_worker(str: String, span: Span) -> syn::Result<TokenStream> {
         Err(e) => return Err(syn::Error::new(span, format!("Invalid module reference: {}", e))),
     };
 
-    Ok(quote!(ModuleReference::new(#module_ref)).into())
+    Ok(quote!(concordium_std::ModuleReference::new(#module_ref)).into())
 }
 
 /// Procedural macro for instantiating account addresses.

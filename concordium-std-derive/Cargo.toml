@@ -14,7 +14,7 @@ repository = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 proc-macro = true
 
 [dependencies]
-concordium-contracts-common = { path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common", features = [ "derive-serde" ] }
+concordium-contracts-common = { path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common", features = [ "derive-serde" ], version = "9" }
 syn = "2.0"
 proc-macro2 = "1.0"
 quote = "1.0"

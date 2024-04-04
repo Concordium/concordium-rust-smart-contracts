@@ -1,7 +1,5 @@
 # Changelog
 
-- Bump MSRV to 1.72
-
 ## Unreleased changes
 
 - Add support for querying the module reference and contract name of an instance,
@@ -9,6 +7,8 @@
   These are only available from protocol version 7, and as such are guarded by the
   `p7` feature flag.
 - Add two ordered collections: `StateBTreeMap` and `StateBTreeSet`. These are based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), but where each node is stored in the low-level smart contract key-value store. Use one of these when needing operations related to the ordering of the keys, such as `higher(k)` providing the smallest key in collection which is stricly greater than `k`.
+- Bump MSRV to 1.73
+
 
 ## concordium-std 10.0.0 (2024-02-22)
 
