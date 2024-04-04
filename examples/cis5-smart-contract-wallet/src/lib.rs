@@ -421,6 +421,12 @@ pub enum CustomContractError {
 /// ContractResult type.
 pub type ContractResult<A> = Result<A, CustomContractError>;
 
+/// Implement custom trait `IsMessage`.
+trait IsMessage {
+    fn expiry_time(&self) -> Timestamp;
+    fn nonce(&self) -> u64;
+}
+
 // Contract functions
 
 /// Initializes the contract instance with no balances.
@@ -578,6 +584,12 @@ pub struct WithdrawMessage {
     pub simple_withdraws:      Vec<Withdraw>,
 }
 
+impl IsMessage for WithdrawMessage {
+    fn expiry_time(&self) -> Timestamp { self.expiry_time }
+
+    fn nonce(&self) -> u64 { self.nonce }
+}
+
 /// A batch of withdrawals signed by a signer.
 #[derive(Serialize, SchemaType)]
 pub struct WithdrawBatch {
@@ -622,14 +634,15 @@ fn calculate_message_hash_from_bytes(
     Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], &message_bytes].concat()).0)
 }
 
-/// Validates the withdraw message signature and increases the public key nonce.
+/// Validates the message signature and increases the public key nonce.
 ///
 /// It rejects if:
 /// - the message is expired.
 /// - the signature is invalid.
 /// - the nonce is wrong.
-fn validate_signature_and_increase_nonce_withdraw_message(
-    message: WithdrawMessage,
+/// - the message hash can not be calculated.
+fn validate_signature_and_increase_nonce<T: IsMessage + Serial>(
+    message: T,
     signer: PublicKeyEd25519,
     signature: SignatureEd25519,
     host: &mut Host<State>,
@@ -637,7 +650,7 @@ fn validate_signature_and_increase_nonce_withdraw_message(
     ctx: &ReceiveContext,
 ) -> ContractResult<()> {
     // Check that the signature is not expired.
-    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired);
+    ensure!(message.expiry_time() > ctx.metadata().slot_time(), CustomContractError::Expired);
 
     // Calculate the message hash.
     let message_hash: [u8; 32] =
@@ -652,7 +665,7 @@ fn validate_signature_and_increase_nonce_withdraw_message(
     let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
 
     // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch);
+    ensure_eq!(message.nonce(), *entry, CustomContractError::NonceMismatch);
 
     // Bump the nonce.
     *entry += 1;
@@ -746,7 +759,7 @@ fn withdraw_native_currency(
             }
         };
 
-        validate_signature_and_increase_nonce_withdraw_message(
+        validate_signature_and_increase_nonce(
             message,
             signer,
             signature,
@@ -883,7 +896,7 @@ fn withdraw_cis2_tokens(
             SigningAmount::TokenAmount(ref token_amount) => token_amount,
         };
 
-        validate_signature_and_increase_nonce_withdraw_message(
+        validate_signature_and_increase_nonce(
             message,
             signer,
             signature,
@@ -1006,6 +1019,12 @@ pub struct InternalTransferMessage {
     pub simple_transfers:      Vec<InternalTransfer>,
 }
 
+impl IsMessage for InternalTransferMessage {
+    fn expiry_time(&self) -> Timestamp { self.expiry_time }
+
+    fn nonce(&self) -> u64 { self.nonce }
+}
+
 /// A batch of transfers signed by a signer.
 #[derive(Serialize, SchemaType)]
 pub struct InternalTransferBatch {
@@ -1025,44 +1044,6 @@ pub struct InternalTransferParameter {
     /// List of transfer batches.
     #[concordium(size_length = 2)]
     pub transfers: Vec<InternalTransferBatch>,
-}
-
-/// Validates the transfer message signature and increases the public key nonce.
-///
-/// It rejects if:
-/// - the message is expired.
-/// - the signature is invalid.
-/// - the nonce is wrong.
-fn validate_signature_and_increase_nonce_internal_transfer_message(
-    message: InternalTransferMessage,
-    signer: PublicKeyEd25519,
-    signature: SignatureEd25519,
-    host: &mut Host<State>,
-    crypto_primitives: &impl HasCryptoPrimitives,
-    ctx: &ReceiveContext,
-) -> ContractResult<()> {
-    // Check that the signature is not expired.
-    ensure!(message.expiry_time > ctx.metadata().slot_time(), CustomContractError::Expired);
-
-    // Calculate the message hash.
-    let message_hash =
-        calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
-
-    // Check the signature.
-    let valid_signature =
-        crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
-    ensure!(valid_signature, CustomContractError::WrongSignature);
-
-    // Get the nonce.
-    let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
-
-    // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, *entry, CustomContractError::NonceMismatch);
-
-    // Bump the nonce.
-    *entry += 1;
-
-    Ok(())
 }
 
 /// Helper function to calculate the `InternalTransferMessageHash`.
@@ -1148,7 +1129,7 @@ fn internal_transfer_native_currency(
             }
         };
 
-        validate_signature_and_increase_nonce_internal_transfer_message(
+        validate_signature_and_increase_nonce(
             message,
             signer,
             signature,
@@ -1252,7 +1233,7 @@ fn internal_transfer_cis2_tokens(
             SigningAmount::TokenAmount(token_amount) => token_amount,
         };
 
-        validate_signature_and_increase_nonce_internal_transfer_message(
+        validate_signature_and_increase_nonce(
             message,
             signer,
             signature,
