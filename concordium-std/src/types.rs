@@ -384,6 +384,8 @@ impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
 /// that the value is properly stored in the contract state maintained by the
 /// node.
 pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
+    /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
+    /// the entry without `StateRefMut` being mutable.
     pub(crate) entry:            UnsafeCell<S::EntryType>,
     pub(crate) state_api:        S,
     pub(crate) lazy_value:       UnsafeCell<Option<V>>,
@@ -414,7 +416,8 @@ pub struct ExternStateIter {
 
 pub(crate) type StateEntryId = u64;
 pub(crate) type StateIteratorId = u64;
-pub(crate) type StateItemPrefix = [u8; 8];
+pub(crate) const STATE_ITEM_PREFIX_SIZE: usize = 8;
+pub(crate) type StateItemPrefix = [u8; STATE_ITEM_PREFIX_SIZE];
 /// Type of keys that index into the contract state.
 pub type Key = Vec<u8>;
 

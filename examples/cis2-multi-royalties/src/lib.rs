@@ -229,7 +229,7 @@ impl State {
         royalty: u8,
     ) {
         self.tokens.insert(*token_id);
-        self.token_details.insert(*token_id, TokenDetails {
+        let _ = self.token_details.insert(*token_id, TokenDetails {
             minter: *owner,
             royalty,
         });
@@ -355,7 +355,7 @@ impl State {
         std_id: StandardIdentifierOwned,
         implementors: Vec<ContractAddress>,
     ) {
-        self.implementors.insert(std_id, implementors);
+        let _ = self.implementors.insert(std_id, implementors);
     }
 
     fn calculate_royalty_payments(

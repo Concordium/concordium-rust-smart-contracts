@@ -701,7 +701,7 @@ mod tests {
             balance,
         );
         //Set account3 balance
-        host.state_mut().balance_sheet.insert(account3, balance);
+        let _ = host.state_mut().balance_sheet.insert(account3, balance);
 
         //Test 1: Try to withdraw too much money from Account 3
         let mut ctx = TestReceiveContext::empty();
@@ -782,9 +782,9 @@ mod tests {
             alice_balance + bob_balance + charlie_balance,
         );
         //Set balance sheet
-        host.state_mut().balance_sheet.insert(alice, alice_balance);
-        host.state_mut().balance_sheet.insert(bob, bob_balance);
-        host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
+        let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
+        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
 
         //Define settlements
         let settlement1 = Settlement {
@@ -1084,9 +1084,9 @@ mod tests {
         );
 
         //Set balance sheet
-        host.state_mut().balance_sheet.insert(alice, alice_balance);
-        host.state_mut().balance_sheet.insert(bob, bob_balance);
-        host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
+        let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
+        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
 
         // First settlement is fine and with past finality
         let settlement1 = Settlement {
@@ -1266,9 +1266,9 @@ mod tests {
             alice_balance + bob_balance + charlie_balance,
         );
         //Set balance sheet
-        host.state_mut().balance_sheet.insert(alice, alice_balance);
-        host.state_mut().balance_sheet.insert(bob, bob_balance);
-        host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
+        let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
+        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
 
         //Define settlements
         let settlement1 = Settlement {

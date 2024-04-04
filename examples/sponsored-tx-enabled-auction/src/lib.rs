@@ -337,7 +337,7 @@ fn add_item(
     host.state_mut().counter = item_index;
 
     // Insert the item into the state.
-    host.state_mut().items.insert(item_index, ItemState {
+    let _ = host.state_mut().items.insert(item_index, ItemState {
         auction_state:  AuctionState::NotSoldYet,
         highest_bidder: None,
         name:           item.name,
