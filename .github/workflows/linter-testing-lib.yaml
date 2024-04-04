@@ -23,6 +23,7 @@ on:
       - 'contract-testing/**/*.toml'
       - 'rustfmt.toml'
       - 'concordium-rust-sdk'
+      - 'concordium-std-derive'
 
   workflow_dispatch: # allows manual trigger
 

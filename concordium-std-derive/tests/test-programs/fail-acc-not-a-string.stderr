@@ -1,0 +1,7 @@
+error: Expected a string literal of a hex-encoded account address
+ --> tests/test-programs/fail-acc-not-a-string.rs:6:29
+  |
+6 | const ACC: AccountAddress = account_address!(0);
+  |                             ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `account_address` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,14 +1,17 @@
 //! Tests for the `nametoken` contract.
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
+use concordium_std_derive::*;
 use nametoken::*;
 
 /// The tests accounts.
-const ALICE: AccountAddress = AccountAddress([0; 32]);
+const ALICE: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 const ALICE_ADDR: Address = Address::Account(ALICE);
-const BOB: AccountAddress = AccountAddress([1; 32]);
+const BOB: AccountAddress = account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");
 const BOB_ADDR: Address = Address::Account(BOB);
-const CHARLIE: AccountAddress = AccountAddress([2; 32]);
+const CHARLIE: AccountAddress =
+    account_address!("2xdTv8awN1BjgYEw8W1BVXVtiEwG2b29U8KoZQqJrDuEqddseE");
 
 /// Token IDs.
 const NAME_0: &str = "MyEvenCoolerName";

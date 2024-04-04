@@ -24,6 +24,7 @@ default-features = false
 
 [dev-dependencies]
 concordium-smart-contract-testing = { path = "../../../contract-testing" }
+concordium-std-derive = { path = "../../../concordium-std-derive" }
 
 [profile.release]
 opt-level = 3
