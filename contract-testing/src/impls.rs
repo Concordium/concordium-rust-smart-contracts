@@ -31,7 +31,10 @@ use concordium_rust_sdk::{
 };
 use num_bigint::BigUint;
 use num_integer::Integer;
-use sdk::{types::smart_contracts::InvokeContractResult, smart_contracts::engine::wasm::CostConfigurationV1};
+use sdk::{
+    smart_contracts::engine::wasm::CostConfigurationV1,
+    types::smart_contracts::InvokeContractResult,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
@@ -919,7 +922,8 @@ impl Chain {
         amount_reserved_for_energy: Amount,
         payload: UpdateContractPayload,
         remaining_energy: &mut Energy,
-    ) -> Result<(InvokeResponse, ChangeSet, Vec<DebugTraceElement>), ContractInvokeError> {
+    ) -> Result<(InvokeResponse, ChangeSet, Vec<DebugTraceElement>, Energy), ContractInvokeError>
+    {
         // Check if the contract to invoke exists.
         if !self.contract_exists(payload.address) {
             return Err(self.convert_to_invoke_error(
@@ -930,6 +934,7 @@ impl Chain {
                 Vec::new(),
                 energy_reserved,
                 *remaining_energy,
+                0.into(),
             ));
         }
 
@@ -940,6 +945,7 @@ impl Chain {
                 Vec::new(),
                 energy_reserved,
                 *remaining_energy,
+                0.into(),
             ));
         }
 
@@ -957,6 +963,7 @@ impl Chain {
                 Vec::new(),
                 energy_reserved,
                 *remaining_energy,
+                0.into(),
             ));
         }
 
@@ -970,18 +977,23 @@ impl Chain {
             // Starts at 1 since 0 is the "initial state" of all contracts in the current
             // transaction.
             next_contract_modification_index: 1,
+            module_load_energy: 0.into(),
         };
-
+        let module_load_energy = contract_invocation.module_load_energy;
         let res = contract_invocation.invoke_entrypoint(invoker, sender, payload);
         match res {
-            Ok((result, trace_elements)) => {
-                Ok((result, contract_invocation.changeset, trace_elements))
-            }
+            Ok((result, trace_elements)) => Ok((
+                result,
+                contract_invocation.changeset,
+                trace_elements,
+                contract_invocation.module_load_energy,
+            )),
             Err(err) => Err(self.convert_to_invoke_error(
                 err.into(),
                 Vec::new(),
                 energy_reserved,
                 *remaining_energy,
+                module_load_energy,
             )),
         }
     }
@@ -992,7 +1004,9 @@ impl Chain {
         trace_elements: Vec<DebugTraceElement>,
         energy_reserved: Energy,
         remaining_energy: Energy,
+        state_energy: Energy,
         state_changed: bool,
+        module_load_energy: Energy,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         match result {
             v1::InvokeResponse::Success {
@@ -1008,6 +1022,8 @@ impl Chain {
                     return_value: data.unwrap_or_default(),
                     state_changed,
                     new_balance,
+                    storage_energy: state_energy,
+                    module_load_energy,
                 })
             }
             v1::InvokeResponse::Failure {
@@ -1019,6 +1035,7 @@ impl Chain {
                 trace_elements,
                 energy_reserved,
                 remaining_energy,
+                module_load_energy,
             )),
         }
     }
@@ -1053,10 +1070,11 @@ impl Chain {
             // is verified upfront. So what we do here is custom behaviour, and we reject
             // without consuming any energy.
             return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                energy_used:        Energy::from(0),
+                transaction_fee:    Amount::zero(),
+                trace_elements:     Vec::new(),
+                kind:               ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                module_load_energy: 0.into(),
             });
         }
 
@@ -1069,6 +1087,7 @@ impl Chain {
                 kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
+                module_load_energy: 0.into(),
             });
         };
 
@@ -1083,12 +1102,13 @@ impl Chain {
         // Charge the header cost.
         let mut remaining_energy =
             energy_reserved.checked_sub(check_header_cost).ok_or(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::OutOfEnergy {
+                energy_used:        Energy::from(0),
+                transaction_fee:    Amount::zero(),
+                trace_elements:     Vec::new(),
+                kind:               ContractInvokeErrorKind::OutOfEnergy {
                     debug_trace: DebugTracker::empty_trace(), // we haven't done anything yet.
                 },
+                module_load_energy: 0.into(),
             })?;
 
         let invoker_amount_reserved_for_nrg =
@@ -1102,6 +1122,7 @@ impl Chain {
                 transaction_fee: self.parameters.calculate_energy_cost(energy_used),
                 trace_elements: Vec::new(),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
+                module_load_energy: 0.into(),
             });
         }
 
@@ -1115,37 +1136,43 @@ impl Chain {
             &mut remaining_energy,
         );
         let res = match res {
-            Ok((result, changeset, trace_elements)) => {
+            Ok((result, changeset, trace_elements, module_load_energy)) => {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
-                let state_changed = if matches!(result, v1::InvokeResponse::Success { .. }) {
-                    let res = changeset.persist(
-                        &mut remaining_energy,
-                        contract_address,
-                        &mut self.accounts,
-                        &mut self.contracts,
-                    );
-                    if let Ok(res) = res {
-                        res
+                let (state_energy, state_changed) =
+                    if matches!(result, v1::InvokeResponse::Success { .. }) {
+                        let energy_before = remaining_energy;
+                        let res = changeset.persist(
+                            &mut remaining_energy,
+                            contract_address,
+                            &mut self.accounts,
+                            &mut self.contracts,
+                        );
+                        let state_energy = energy_before.checked_sub(remaining_energy).unwrap();
+                        if let Ok(res) = res {
+                            (state_energy, res)
+                        } else {
+                            // the error happens when storing the state, so there are no trace
+                            // elements associated with it. The trace is
+                            // already in the "debug trace" vector.
+                            return Err(self.invocation_out_of_energy_error(
+                                energy_reserved,
+                                DebugTracker::empty_trace(),
+                                module_load_energy,
+                            ));
+                        }
                     } else {
-                        // the error happens when storing the state, so there are no trace elements
-                        // associated with it. The trace is already in the
-                        // "debug trace" vector.
-                        return Err(self.invocation_out_of_energy_error(
-                            energy_reserved,
-                            DebugTracker::empty_trace(),
-                        ));
-                    }
-                } else {
-                    // An error occurred, so state hasn't changed.
-                    false
-                };
+                        // An error occurred, so state hasn't changed.
+                        (0.into(), false)
+                    };
                 self.contract_invocation_process_response(
                     result,
                     trace_elements,
                     energy_reserved,
                     remaining_energy,
+                    state_energy,
                     state_changed,
+                    module_load_energy,
                 )
             }
             Err(e) => Err(e),
@@ -1185,10 +1212,11 @@ impl Chain {
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                energy_used:        Energy::from(0),
+                transaction_fee:    Amount::zero(),
+                trace_elements:     Vec::new(),
+                kind:               ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                module_load_energy: 0.into(),
             });
         }
 
@@ -1200,6 +1228,7 @@ impl Chain {
                 kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
                     AccountDoesNotExist { address: invoker },
                 ),
+                module_load_energy: 0.into(),
             });
         };
 
@@ -1213,6 +1242,7 @@ impl Chain {
                 transaction_fee: self.parameters.calculate_energy_cost(energy_used),
                 trace_elements: Vec::new(),
                 kind: ContractInvokeErrorKind::InsufficientFunds,
+                module_load_energy: 0.into(),
             });
         }
 
@@ -1229,33 +1259,39 @@ impl Chain {
             &mut remaining_energy,
         );
         match res {
-            Ok((result, changeset, trace_elements)) => {
+            Ok((result, changeset, trace_elements, module_load_energy)) => {
                 // Charge energy for contract storage. Or return an error if out
                 // of energy.
-                let state_changed = if matches!(result, v1::InvokeResponse::Success { .. }) {
-                    if let Ok(state_changed) =
-                        changeset.collect_energy_for_state(&mut remaining_energy, contract_address)
-                    {
-                        state_changed
+                let (state_energy, state_changed) =
+                    if matches!(result, v1::InvokeResponse::Success { .. }) {
+                        let energy_before = remaining_energy;
+                        if let Ok(state_changed) = changeset
+                            .collect_energy_for_state(&mut remaining_energy, contract_address)
+                        {
+                            let state_energy = energy_before.checked_sub(remaining_energy).unwrap();
+                            (state_energy, state_changed)
+                        } else {
+                            // the error happens when storing the state, so there are no trace
+                            // elements associated with it. The trace is
+                            // already in the "debug trace" vector.
+                            return Err(self.invocation_out_of_energy_error(
+                                energy_reserved,
+                                DebugTracker::empty_trace(),
+                                module_load_energy,
+                            ));
+                        }
                     } else {
-                        // the error happens when storing the state, so there are no trace elements
-                        // associated with it. The trace is already in the
-                        // "debug trace" vector.
-                        return Err(self.invocation_out_of_energy_error(
-                            energy_reserved,
-                            DebugTracker::empty_trace(),
-                        ));
-                    }
-                } else {
-                    // An error occurred, so state hasn't changed.
-                    false
-                };
+                        // An error occurred, so state hasn't changed.
+                        (0.into(), false)
+                    };
                 self.contract_invocation_process_response(
                     result,
                     trace_elements,
                     energy_reserved,
                     remaining_energy,
+                    state_energy,
                     state_changed,
+                    module_load_energy,
                 )
             }
             Err(e) => Err(e),
@@ -1552,6 +1588,7 @@ impl Chain {
         trace_elements: Vec<DebugTraceElement>,
         energy_reserved: Energy,
         remaining_energy: Energy,
+        module_load_energy: Energy,
     ) -> ContractInvokeError {
         let remaining_energy = if matches!(kind, ContractInvokeErrorKind::OutOfEnergy { .. }) {
             0.into()
@@ -1565,6 +1602,7 @@ impl Chain {
             transaction_fee,
             trace_elements,
             kind,
+            module_load_energy,
         }
     }
 
@@ -1575,6 +1613,7 @@ impl Chain {
         &self,
         energy_reserved: Energy,
         debug_trace: DebugTracker,
+        module_load_energy: Energy,
     ) -> ContractInvokeError {
         self.convert_to_invoke_error(
             ContractInvokeErrorKind::OutOfEnergy {
@@ -1583,6 +1622,7 @@ impl Chain {
             Vec::new(),
             energy_reserved,
             Energy::from(0),
+            module_load_energy,
         )
     }
 

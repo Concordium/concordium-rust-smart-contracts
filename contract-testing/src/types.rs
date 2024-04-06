@@ -439,6 +439,8 @@ pub struct ContractInvokeSuccess {
     pub trace_elements:  Vec<DebugTraceElement>,
     /// Energy used.
     pub energy_used:     Energy,
+    pub storage_energy: Energy,
+    pub module_load_energy: Energy,
     /// Cost of transaction.
     pub transaction_fee: Amount,
     /// The returned value.
@@ -1020,6 +1022,8 @@ pub enum InvokeExecutionError {
 pub struct ContractInvokeError {
     /// The energy used.
     pub energy_used:     Energy,
+    /// Energy incurred by loading modules.
+    pub module_load_energy: Energy,
     /// The transaction fee. For [`Chain::contract_update`], this is the amount
     /// charged to the `invoker` account.
     pub transaction_fee: Amount,
