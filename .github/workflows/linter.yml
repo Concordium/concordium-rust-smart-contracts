@@ -897,7 +897,7 @@ jobs:
         if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
         run: cargo concordium build --out "examples/smart-contract-upgrade/contract-version2/concordium-out/module.wasm.v1" -- --manifest-path "examples/smart-contract-upgrade/contract-version2/Cargo.toml"
 
-        # The 'sponsored-tx-enabled-auction' and 'cis5-smart-contract-walletn' examples need the wasm module `cis2-multi` for its tests.
+        # The 'sponsored-tx-enabled-auction' and 'cis5-smart-contract-wallet' examples need the wasm module `cis2-multi` for its tests.
       - name: Build cis2-multi module if needed
         if: ${{ matrix.crates == 'examples/sponsored-tx-enabled-auction' || matrix.crates == 'examples/cis5-smart-contract-wallet'}}
         run: cargo concordium build --out "examples/cis2-multi/concordium-out/module.wasm.v1" -- --manifest-path "examples/cis2-multi/Cargo.toml"

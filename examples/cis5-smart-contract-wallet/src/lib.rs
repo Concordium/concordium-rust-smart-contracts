@@ -1,23 +1,24 @@
 //! A smart contract wallet.
 //!
-//! This contract implements the CIS-5 (Concordium standard interface 5) that
-//! defines a smart contract wallet that can hold and transfer native currency
-//! and CIS-2 tokens. https://proposals.concordium.software/CIS/cis-5.html
+//! This contract implements the CIS-5 (Concordium interoperability
+//! specification 5) that defines a smart contract wallet that can hold and
+//! transfer native currency and CIS-2 tokens.
+//! https://proposals.concordium.software/CIS/cis-5.html
 //!
 //! Native currency/CIS-2 tokens can be deposited into the smart contract wallet
-//! by specifying to which public key (PublicKeyEd25519 schema) the deposit
+//! by specifying to which public key ([PublicKeyEd25519] schema) the deposit
 //! should be assigned. Authorization for token and currency transfers from the
 //! smart contract's assigned public key balance is exclusively granted to the
 //! holder of the corresponding private key, ensuring self-custodial control
 //! over the assets.
 //!
-//! Transfers of native currency and CIS-2 token balances do not require
+//! Transfers of native currency and CIS-2 token balances (meaning `withdraw`
+//! and `internalTransfer` functions) do not require
 //! on-chain transaction submissions. Instead, the holder of the corresponding
 //! private key can generate a valid signature and identify a third party to
 //! submit the transaction on-chain, potentially incentivizing the third-party
-//! involvement through a service fees. The `withdraw` and `internalTransfer`
-//! functions transfer (authorized as part of the message that was signed) the
-//! amount of service fee to the service fee recipient's public key.
+//! involvement through a service fee. The message that was signed specifies the
+//! amount of service fee and the service fee recipient's public key.
 //!
 //! Any withdrawal (native currency or CIS-2 tokens) to a smart contract will
 //! invoke a `receiveHook` function on that smart contract.
@@ -68,27 +69,27 @@ pub enum Event {
     /// The event tracks the nonce used in the message that was signed.
     #[concordium(tag = 250)]
     Nonce(NonceEvent),
-    /// The event tracks ever time a CCD amount received by the contract is
+    /// The event tracks every time a CCD amount received by the contract is
     /// assigned to a public key.
     #[concordium(tag = 249)]
     DepositNativeCurrency(DepositNativeCurrencyEvent),
-    /// The event tracks ever time a token amount received by the contract is
+    /// The event tracks every time a token amount received by the contract is
     /// assigned to a public key.
     #[concordium(tag = 248)]
     DepositCis2Tokens(DepositCis2TokensEvent),
-    /// The event tracks ever time a CCD amount held by a public key is
+    /// The event tracks every time a CCD amount held by a public key is
     /// withdrawn to an address.
     #[concordium(tag = 247)]
     WithdrawNativeCurrency(WithdrawNativeCurrencyEvent),
-    /// The event tracks ever time a token amount held by a public key is
+    /// The event tracks every time a token amount held by a public key is
     /// withdrawn to an address.
     #[concordium(tag = 246)]
     WithdrawCis2Tokens(WithdrawCis2TokensEvent),
-    /// The event tracks ever time a CCD amount held by a public key is
+    /// The event tracks every time a CCD amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 245)]
     InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent),
-    /// The event tracks ever time a token amount held by a public key is
+    /// The event tracks every time a token amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 244)]
     InternalCis2TokensTransfer(InternalCis2TokensTransferEvent),
@@ -200,7 +201,7 @@ struct ContractAddressState<S = StateApi> {
 
 // Implementation of the `ContractAddressState`.
 impl ContractAddressState {
-    // Creates an new `ContractAddressState` with emtpy balances.
+    /// Creates a new `ContractAddressState` with empty balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         ContractAddressState {
             balances: state_builder.new_map(),
@@ -276,7 +277,7 @@ impl State {
         from_public_key: PublicKeyEd25519,
         to_public_key: PublicKeyEd25519,
         ccd_amount: Amount,
-        logger: &mut impl HasLogger,
+        logger: &mut Logger,
     ) -> ReceiveResult<()> {
         // A zero transfer does not modify the state.
         if ccd_amount != Amount::zero() {
@@ -321,7 +322,7 @@ impl State {
         cis2_token_contract_address: ContractAddress,
         token_id: ContractTokenId,
         token_amount: ContractTokenAmount,
-        logger: &mut impl HasLogger,
+        logger: &mut Logger,
     ) -> ReceiveResult<()> {
         // A zero transfer does not modify the state.
         if token_amount != TokenAmountU256(0.into()) {
@@ -335,22 +336,22 @@ impl State {
                 .entry(token_id.clone())
                 .occupied_or(CustomContractError::InsufficientFunds)?;
 
-            let mut from_cis2_token_balance = token_balances
-                .entry(from_public_key)
-                .occupied_or(CustomContractError::InsufficientFunds)?;
+            {
+                let mut from_cis2_token_balance = token_balances
+                    .entry(from_public_key)
+                    .occupied_or(CustomContractError::InsufficientFunds)?;
 
-            ensure!(
-                *from_cis2_token_balance >= token_amount,
-                CustomContractError::InsufficientFunds.into()
-            );
-            *from_cis2_token_balance -= token_amount;
-
-            drop(from_cis2_token_balance);
+                ensure!(
+                    *from_cis2_token_balance >= token_amount,
+                    CustomContractError::InsufficientFunds.into()
+                );
+                *from_cis2_token_balance -= token_amount;
+            }
 
             let mut to_cis2_token_balance =
                 token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0.into()));
 
-            // A well designes CIS-2 token contract should not overflow.
+            // A well designed CIS-2 token contract should not overflow.
             ensure!(
                 *to_cis2_token_balance + token_amount >= *to_cis2_token_balance,
                 CustomContractError::Overflow.into()
@@ -421,7 +422,10 @@ pub enum CustomContractError {
 /// ContractResult type.
 pub type ContractResult<A> = Result<A, CustomContractError>;
 
-/// Implement custom trait `IsMessage`.
+/// Trait definition of `IsMessage`. This trait is implemented for the two
+/// types `WithdrawMessage` and `InternalTransferMessage`. The `isMessage` trait
+/// is used as an input parameter to the `validate_signature_and_increase_nonce`
+/// function so that the function works with both message types.
 trait IsMessage {
     fn expiry_time(&self) -> Timestamp;
     fn nonce(&self) -> u64;
@@ -438,6 +442,11 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
 /// The function is payable and deposits/assigns the send CCD amount
 /// (native currency) to a public key.
 /// Logs a `DepositNativeCurrency` event.
+///
+/// It rejects if:
+/// - it fails to parse the parameter.
+/// - an overflow occurs.
+/// - it fails to log the event.
 #[receive(
     contract = "smart_contract_wallet",
     name = "depositNativeCurrency",
@@ -451,7 +460,7 @@ fn deposit_native_currency(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     amount: Amount,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
 ) -> ReceiveResult<()> {
     let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
@@ -474,7 +483,10 @@ fn deposit_native_currency(
 /// token contract. The function deposits/assigns the sent CIS-2 tokens to a
 /// public key. Logs a `DepositCis2Tokens` event.
 /// It rejects if:
+/// - it fails to parse the parameter.
 /// - the sender is not a contract.
+/// - an overflow occurs.
+/// - it fails to log the event.
 #[receive(
     contract = "smart_contract_wallet",
     name = "depositCis2Tokens",
@@ -486,7 +498,7 @@ fn deposit_native_currency(
 fn deposit_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
 ) -> ReceiveResult<()> {
     let cis2_hook_param: OnReceivingCis2DataParams<
         ContractTokenId,
@@ -516,7 +528,7 @@ fn deposit_cis2_tokens(
         .entry(cis2_hook_param.data)
         .or_insert_with(|| TokenAmountU256(0.into()));
 
-    // A well designes CIS-2 token contract should not overflow.
+    // A well designed CIS-2 token contract should not overflow.
     ensure!(
         *cis2_token_balance + cis2_hook_param.amount >= *cis2_token_balance,
         CustomContractError::Overflow.into()
@@ -656,11 +668,6 @@ fn validate_signature_and_increase_nonce<T: IsMessage + Serial>(
     let message_hash: [u8; 32] =
         calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
 
-    // Check the signature.
-    let valid_signature =
-        crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
-    ensure!(valid_signature, CustomContractError::WrongSignature);
-
     // Get the nonce.
     let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
 
@@ -669,6 +676,11 @@ fn validate_signature_and_increase_nonce<T: IsMessage + Serial>(
 
     // Bump the nonce.
     *entry += 1;
+
+    // Check the signature.
+    let valid_signature =
+        crypto_primitives.verify_ed25519_signature(signer, signature, &message_hash);
+    ensure!(valid_signature, CustomContractError::WrongSignature);
 
     Ok(())
 }
@@ -712,6 +724,8 @@ fn contract_view_withdraw_message_hash(
 /// - the nonce is wrong.
 /// - the `signer` has an insufficient balance.
 /// - the CCD receive hook function reverts for any withdrawal.
+/// - an overflow occurs.
+/// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
     name = "withdrawNativeCurrency",
@@ -724,7 +738,7 @@ fn contract_view_withdraw_message_hash(
 fn withdraw_native_currency(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
@@ -853,6 +867,8 @@ fn withdraw_native_currency(
 /// - the nonce is wrong.
 /// - the `signer` has an insufficient balance.
 /// - the `transfer` function on the CIS-2 contract reverts for any withdrawal.
+/// - an overflow occurs.
+/// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
     name = "withdrawCis2Tokens",
@@ -865,7 +881,7 @@ fn withdraw_native_currency(
 fn withdraw_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
@@ -969,10 +985,7 @@ fn withdraw_cis2_tokens(
                 Amount::zero(),
             )?;
 
-            let to_address = match to {
-                Receiver::Account(account_address) => Address::Account(account_address),
-                Receiver::Contract(contract_address, _) => Address::Contract(contract_address),
-            };
+            let to_address = to.address();
 
             logger.log(&Event::WithdrawCis2Tokens(WithdrawCis2TokensEvent {
                 token_amount: single_withdraw.token_amount,
@@ -1082,6 +1095,8 @@ fn contract_view_internal_transfer_message_hash(
 /// - the signature is invalid.
 /// - the nonce is wrong.
 /// - the `signer` has an insufficient balance.
+/// - an overflow occurs.
+/// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
     name = "internalTransferNativeCurrency",
@@ -1094,7 +1109,7 @@ fn contract_view_internal_transfer_message_hash(
 fn internal_transfer_native_currency(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
@@ -1186,6 +1201,8 @@ fn internal_transfer_native_currency(
 /// - the signature is invalid.
 /// - the nonce is wrong.
 /// - the `signer` has an insufficient balance.
+/// - an overflow occurs.
+/// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
     name = "internalTransferCis2Tokens",
@@ -1198,7 +1215,7 @@ fn internal_transfer_native_currency(
 fn internal_transfer_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.

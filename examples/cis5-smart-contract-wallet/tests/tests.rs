@@ -802,7 +802,7 @@ fn alice_deposits_ccd(
     })]);
 }
 
-// /// Deserialize the events from an update.
+/// Deserialize the events from an update.
 fn deserialize_update_events_of_specified_contract(
     update: &ContractInvokeSuccess,
     smart_contract_wallet: ContractAddress,

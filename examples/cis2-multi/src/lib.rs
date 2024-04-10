@@ -958,10 +958,7 @@ fn mint(
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let to_address = match params.to {
-        Receiver::Account(address) => Address::Account(address),
-        Receiver::Contract(address, _) => Address::Contract(address),
-    };
+    let to_address = params.to.address();
 
     let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(to_address)?);
 
