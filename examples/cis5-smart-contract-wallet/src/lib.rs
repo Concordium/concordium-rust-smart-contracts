@@ -33,9 +33,12 @@
 //!
 //! The goal of this standard is to simplify the account creation onboarding
 //! flow on Concordium. Users can hold/transfer native currency/CIS-2 tokens
-//! without a valid account as a starting point (no KYC required). Once users
-//! are ready to go through the KYC process to create a valid account on
+//! without a native account as a starting point (no KYC required). Once users
+//! are ready to go through the KYC process to create a native account on
 //! Concordium, they can withdraw assets out of the smart contract wallet.
+//! The public key accounts in this smart contract wallet can't submit the
+//! transactions on chain themselves, but rely on someone with a native account
+//! (third-party) to do so.
 use concordium_cis2::*;
 use concordium_std::*;
 
@@ -190,31 +193,13 @@ pub struct InternalCis2TokensTransferEvent {
     pub to: PublicKeyEd25519,
 }
 
-/// The token balances stored in the state for each token id.
-#[derive(Serial, DeserialWithState, Deletable)]
-#[concordium(state_parameter = "S")]
-#[concordium(transparent)]
-struct ContractAddressState<S = StateApi> {
-    /// The amount of tokens owned by public keys mapped for each token id.
-    balances: StateMap<ContractTokenId, StateMap<PublicKeyEd25519, ContractTokenAmount, S>, S>,
-}
-
-// Implementation of the `ContractAddressState`.
-impl ContractAddressState {
-    /// Creates a new `ContractAddressState` with empty balances.
-    fn empty(state_builder: &mut StateBuilder) -> Self {
-        ContractAddressState {
-            balances: state_builder.new_map(),
-        }
-    }
-}
-
 /// The contract state.
 #[derive(Serial, DeserialWithState)]
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     /// The token balances stored in the state.
-    token_balances:  StateMap<ContractAddress, ContractAddressState<S>, S>,
+    token_balances:
+        StateMap<(ContractAddress, ContractTokenId, PublicKeyEd25519), ContractTokenAmount, S>,
     /// The CCD balances stored in the state.
     native_balances: StateMap<PublicKeyEd25519, Amount, S>,
     /// A map with contract addresses providing implementations of additional
@@ -231,7 +216,7 @@ struct State<S = StateApi> {
 
 // Functions for creating, updating and querying the contract state.
 impl State {
-    /// Creates a new state with emtpy balances.
+    /// Creates a new state with empty balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
             native_balances: state_builder.new_map(),
@@ -252,21 +237,13 @@ impl State {
     /// contract, token id or public key does not exist in the state.
     fn balance_tokens(
         &self,
-        token_id: &ContractTokenId,
-        cis2_token_contract_address: &ContractAddress,
-        public_key: &PublicKeyEd25519,
+        token_id: ContractTokenId,
+        cis2_token_contract_address: ContractAddress,
+        public_key: PublicKeyEd25519,
     ) -> ContractTokenAmount {
         self.token_balances
-            .get(cis2_token_contract_address)
-            .map(|a| {
-                a.balances
-                    .get(token_id)
-                    .map(|b| {
-                        b.get(public_key).map(|c| *c).unwrap_or_else(|| TokenAmountU256(0.into()))
-                    })
-                    .unwrap_or_else(|| TokenAmountU256(0.into()))
-            })
-            .unwrap_or_else(|| TokenAmountU256(0.into()))
+            .get(&(cis2_token_contract_address, token_id, public_key))
+            .map_or_else(|| TokenAmountU256(0.into()), |x| *x)
     }
 
     /// Updates the state with a transfer of CCD amount and logs an
@@ -326,19 +303,10 @@ impl State {
     ) -> ReceiveResult<()> {
         // A zero transfer does not modify the state.
         if token_amount != TokenAmountU256(0.into()) {
-            let mut contract_balances = self
-                .token_balances
-                .entry(cis2_token_contract_address)
-                .occupied_or(CustomContractError::InsufficientFunds)?;
-
-            let mut token_balances = contract_balances
-                .balances
-                .entry(token_id.clone())
-                .occupied_or(CustomContractError::InsufficientFunds)?;
-
             {
-                let mut from_cis2_token_balance = token_balances
-                    .entry(from_public_key)
+                let mut from_cis2_token_balance = self
+                    .token_balances
+                    .entry((cis2_token_contract_address, token_id.clone(), from_public_key))
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
                 ensure!(
@@ -348,8 +316,10 @@ impl State {
                 *from_cis2_token_balance -= token_amount;
             }
 
-            let mut to_cis2_token_balance =
-                token_balances.entry(to_public_key).or_insert_with(|| TokenAmountU256(0.into()));
+            let mut to_cis2_token_balance = self
+                .token_balances
+                .entry((cis2_token_contract_address, token_id.clone(), to_public_key))
+                .or_insert_with(|| TokenAmountU256(0.into()));
 
             // A well designed CIS-2 token contract should not overflow.
             ensure!(
@@ -512,20 +482,10 @@ fn deposit_cis2_tokens(
         Address::Account(_) => bail!(CustomContractError::OnlyContract.into()),
     };
 
-    let (state, builder) = host.state_and_builder();
-
-    let mut contract_balances = state
+    let mut cis2_token_balance = host
+        .state_mut()
         .token_balances
-        .entry(sender_contract_address)
-        .or_insert_with(|| ContractAddressState::empty(builder));
-
-    let mut contract_token_balances = contract_balances
-        .balances
-        .entry(cis2_hook_param.token_id.clone())
-        .or_insert_with(|| builder.new_map());
-
-    let mut cis2_token_balance = contract_token_balances
-        .entry(cis2_hook_param.data)
+        .entry((sender_contract_address, cis2_hook_param.token_id.clone(), cis2_hook_param.data))
         .or_insert_with(|| TokenAmountU256(0.into()));
 
     // A well designed CIS-2 token contract should not overflow.
@@ -946,19 +906,14 @@ fn withdraw_cis2_tokens(
 
             // Update the contract state
             {
-                let mut contract_balances = host
+                let mut from_cis2_token_balance = host
                     .state_mut()
                     .token_balances
-                    .entry(single_withdraw.cis2_token_contract_address)
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                let mut token_balances = contract_balances
-                    .balances
-                    .entry(single_withdraw.token_id.clone())
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
-
-                let mut from_cis2_token_balance = token_balances
-                    .entry(signer)
+                    .entry((
+                        single_withdraw.cis2_token_contract_address,
+                        single_withdraw.token_id.clone(),
+                        signer,
+                    ))
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
                 ensure!(
@@ -1471,9 +1426,9 @@ fn contract_balance_of_cis2_tokens(
     for query in params.queries {
         // Query the state for balance.
         let amount = host.state().balance_tokens(
-            &query.token_id,
-            &query.cis2_token_contract_address,
-            &query.public_key,
+            query.token_id,
+            query.cis2_token_contract_address,
+            query.public_key,
         );
         response.push(amount);
     }
