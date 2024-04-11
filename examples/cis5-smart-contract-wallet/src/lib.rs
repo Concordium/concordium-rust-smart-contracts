@@ -583,6 +583,7 @@ pub struct WithdrawBatch<T: SigningAmount> {
 /// `withdrawNativeCurrency/withdrawCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct WithdrawParameter<T: SigningAmount> {
     /// List of withdraw batches.
     #[concordium(size_length = 2)]
@@ -1007,6 +1008,7 @@ pub struct InternalTransferBatch<T: SigningAmount> {
 /// `internalTransferNativeCurrency/internalTransferCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct InternalTransferParameter<T: SigningAmount> {
     /// List of transfer batches.
     #[concordium(size_length = 2)]
@@ -1320,6 +1322,7 @@ fn contract_supports(
 /// The parameter type for the contract function `balanceOfNativeCurrency`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct NativeCurrencyBalanceOfParameter {
     /// List of balance queries.
     #[concordium(size_length = 2)]
@@ -1331,6 +1334,7 @@ pub struct NativeCurrencyBalanceOfParameter {
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct NativeCurrencyBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<Amount>);
 
 /// Conversion helper function.
@@ -1380,6 +1384,7 @@ pub struct Cis2TokensBalanceOfQuery {
 /// The parameter type for the contract function `balanceOfCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct Cis2TokensBalanceOfParameter {
     /// List of balance queries.
     #[concordium(size_length = 2)]
@@ -1391,6 +1396,7 @@ pub struct Cis2TokensBalanceOfParameter {
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
+#[repr(transparent)]
 pub struct Cis2TokensBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<ContractTokenAmount>);
 
 /// Conversion helper function.
