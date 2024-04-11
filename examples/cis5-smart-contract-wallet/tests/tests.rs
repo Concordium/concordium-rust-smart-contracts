@@ -77,18 +77,16 @@ fn test_withdraw_ccd() {
     let withdraw_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = WithdrawMessage {
-        entry_point:           OwnedEntrypointName::new_unchecked(
-            "withdrawNativeCurrency".to_string(),
-        ),
-        expiry_time:           Timestamp::now(),
-        nonce:                 0u64,
+        entry_point: OwnedEntrypointName::new_unchecked("withdrawNativeCurrency".to_string()),
+        expiry_time: Timestamp::now(),
+        nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_withdraws:      vec![Withdraw {
-            to:              Receiver::Account(BOB),
-            withdraw_amount: SigningAmount::CCDAmount(withdraw_amount),
-            data:            AdditionalData::empty(),
+        simple_withdraws: vec![Withdraw {
+            to: Receiver::Account(BOB),
+            withdraw_amount,
+            data: AdditionalData::empty(),
         }],
-        service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
+        service_fee_amount,
     };
 
     let mut withdraw = WithdrawBatch {
@@ -103,12 +101,12 @@ fn test_withdraw_ccd() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewWithdrawMessageHash".to_string(),
+                "smart_contract_wallet.viewWithdrawMessageHashCcdAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewWithdrawMessageHash");
+        .expect("Should be able to query viewWithdrawMessageHashCccdAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -211,18 +209,18 @@ fn test_withdraw_cis2_tokens() {
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
         simple_withdraws:      vec![Withdraw {
             to:              Receiver::Account(BOB),
-            withdraw_amount: SigningAmount::TokenAmount(TokenAmount {
+            withdraw_amount: TokenAmount {
                 token_amount: withdraw_amount,
                 token_id: contract_token_id.clone(),
                 cis2_token_contract_address,
-            }),
+            },
             data:            AdditionalData::empty(),
         }],
-        service_fee_amount:    SigningAmount::TokenAmount(TokenAmount {
+        service_fee_amount:    TokenAmount {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
-        }),
+        },
     };
 
     let mut withdraw = WithdrawBatch {
@@ -237,12 +235,12 @@ fn test_withdraw_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewWithdrawMessageHash".to_string(),
+                "smart_contract_wallet.viewWithdrawMessageHashTokenAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewWithdrawMessageHash");
+        .expect("Should be able to query viewWithdrawMessageHashTokenAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -339,17 +337,17 @@ fn test_internal_transfer_ccd() {
     let transfer_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = InternalTransferMessage {
-        entry_point:           OwnedEntrypointName::new_unchecked(
+        entry_point: OwnedEntrypointName::new_unchecked(
             "internalTransferNativeCurrency".to_string(),
         ),
-        expiry_time:           Timestamp::now(),
-        nonce:                 0u64,
+        expiry_time: Timestamp::now(),
+        nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_transfers:      vec![InternalTransfer {
-            to:              BOB_PUBLIC_KEY,
-            transfer_amount: SigningAmount::CCDAmount(transfer_amount),
+        simple_transfers: vec![InternalTransfer {
+            to: BOB_PUBLIC_KEY,
+            transfer_amount,
         }],
-        service_fee_amount:    SigningAmount::CCDAmount(service_fee_amount),
+        service_fee_amount,
     };
 
     let mut internal_transfer = InternalTransferBatch {
@@ -364,12 +362,12 @@ fn test_internal_transfer_ccd() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewInternalTransferMessageHash".to_string(),
+                "smart_contract_wallet.viewInternalTransferMessageHashCcdAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewInternalTransferMessageHash");
+        .expect("Should be able to query viewInternalTransferMessageHashCcdAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -464,18 +462,18 @@ fn test_internal_transfer_cis2_tokens() {
         expiry_time:           Timestamp::now(),
         nonce:                 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        service_fee_amount:    SigningAmount::TokenAmount(TokenAmount {
+        service_fee_amount:    TokenAmount {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
-        }),
+        },
         simple_transfers:      vec![InternalTransfer {
             to:              BOB_PUBLIC_KEY,
-            transfer_amount: SigningAmount::TokenAmount(TokenAmount {
+            transfer_amount: TokenAmount {
                 token_amount: transfer_amount,
                 token_id: contract_token_id.clone(),
                 cis2_token_contract_address,
-            }),
+            },
         }],
     };
 
@@ -491,12 +489,12 @@ fn test_internal_transfer_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewInternalTransferMessageHash".to_string(),
+                "smart_contract_wallet.viewInternalTransferMessageHashTokenAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewInternalTransferMessageHash");
+        .expect("Should be able to query viewInternalTransferMessageHashTokenAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
