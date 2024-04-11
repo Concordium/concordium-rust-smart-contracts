@@ -1041,7 +1041,7 @@ fn contract_mint(
         let parameter = OnReceivingCis2Params {
             token_id: params.token_id,
             amount:   host.state.mint_airdrop,
-            from:     Address::Contract(ctx.self_address()),
+            from:     Address::from(address),
             data:     params.data,
         };
         host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;

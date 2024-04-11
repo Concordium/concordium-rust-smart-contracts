@@ -749,7 +749,7 @@ fn alice_deposits_cis2_tokens(
         token_amount: TokenAmountU256(AIRDROP_TOKEN_AMOUNT.0.into()),
         token_id: TokenIdVec(vec![TOKEN_ID.0]),
         cis2_token_contract_address,
-        from: Address::Contract(cis2_token_contract_address),
+        from: Address::Contract(smart_contract_wallet),
         to: alice_public_key
     })]);
 }
