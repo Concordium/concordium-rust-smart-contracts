@@ -998,6 +998,9 @@ impl Chain {
         }
     }
 
+    // Since this is an internal function it seems better to allow rather than
+    // introduce a new struct just to call this function.
+    #[allow(clippy::too_many_arguments)]
     fn contract_invocation_process_response(
         &self,
         result: InvokeResponse,
