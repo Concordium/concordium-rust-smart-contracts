@@ -89,12 +89,12 @@ fn basics() {
 
     // Check that the energy usage matches the node.
     assert_eq!(deployment.energy_used, 1067.into());
-    assert_eq!(init.energy_used, 771.into());
-    assert_eq!(update.energy_used, 8198.into());
-    assert_eq!(view.energy_used, 316.into());
+    assert_eq!(init.energy_used, 756.into());
+    assert_eq!(update.energy_used, 7787.into());
+    assert_eq!(view.energy_used, 301.into());
 
     // Check that the amounts charged matches the node.
     assert_eq!(deployment.transaction_fee, Amount::from_micro_ccd(2_685_078));
-    assert_eq!(init.transaction_fee, Amount::from_micro_ccd(1_940_202));
-    assert_eq!(update.transaction_fee, Amount::from_micro_ccd(20_630_050));
+    assert_eq!(init.transaction_fee, Amount::from_micro_ccd(1_902_454));
+    assert_eq!(update.transaction_fee, Amount::from_micro_ccd(19_595_780));
 }
