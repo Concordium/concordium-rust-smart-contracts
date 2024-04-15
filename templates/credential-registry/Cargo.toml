@@ -20,7 +20,8 @@ concordium-cis2 = {version = "6.1", default-features = false}
 quickcheck = {version = "1"}
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4.0"
+concordium-smart-contract-testing = "4.2"
+concordium-std-derive = "6.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]

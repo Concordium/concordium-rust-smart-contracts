@@ -5,16 +5,16 @@ use crate::{
     convert::{self, TryInto},
     fmt,
     marker::PhantomData,
-    mem, num,
+    mem::{self, MaybeUninit},
+    num,
     num::NonZeroU32,
-    prims,
+    prims, state_btree,
     traits::*,
     types::*,
     vec::Vec,
     String,
 };
 pub(crate) use concordium_contracts_common::*;
-use mem::MaybeUninit;
 
 /// Mapped to i32::MIN + 1.
 impl convert::From<()> for Reject {
@@ -765,6 +765,7 @@ where
     StateApi: HasStateApi,
 {
     /// Ensures a value is in the entry by inserting the default value if empty.
+    #[allow(clippy::unwrap_or_default)]
     pub fn or_default(self) -> OccupiedEntry<'a, K, V, StateApi> {
         self.or_insert_with(Default::default)
     }
@@ -774,8 +775,6 @@ where
 /// "allocator"/state builder stores "next location". The values stored at this
 /// location are 64-bit integers.
 const NEXT_ITEM_PREFIX_KEY: [u8; 8] = 0u64.to_le_bytes();
-#[cfg(test)]
-const GENERIC_MAP_PREFIX: u64 = 1;
 /// Initial location to store in [NEXT_ITEM_PREFIX_KEY]. For example, the
 /// initial call to "new_state_box" will allocate the box at this location.
 pub(crate) const INITIAL_NEXT_ITEM_PREFIX: [u8; 8] = 2u64.to_le_bytes();
@@ -919,8 +918,10 @@ where
 
     /// Inserts the value with the given key. If a value already exists at the
     /// given key it is replaced and the old value is returned.
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        let key_bytes = self.key_with_map_prefix(&key);
+    /// This only borrows the key, needed internally to avoid the need to clone
+    /// it first.
+    pub(crate) fn insert_borrowed(&mut self, key: &K, value: V) -> Option<V> {
+        let key_bytes = self.key_with_map_prefix(key);
         // Unwrapping is safe because iter() holds a reference to the stateset.
         match self.state_api.entry(key_bytes) {
             EntryRaw::Vacant(vac) => {
@@ -936,6 +937,18 @@ where
             }
         }
     }
+
+    /// Inserts the value with the given key. If a value already exists at the
+    /// given key it is replaced and the old value is returned.
+    ///
+    /// *Caution*: If `Option<V>` is to be deleted and contains a data structure
+    /// prefixed with `State` (such as [StateBox](crate::StateBox) or
+    /// [StateMap](crate::StateMap)), then it is important to call
+    /// [`Deletable::delete`](crate::Deletable::delete) on the value returned
+    /// when you're finished with it. Otherwise, it will remain in the
+    /// contract state.
+    #[must_use]
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> { self.insert_borrowed(&key, value) }
 
     /// Get an entry for the given key.
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S> {
@@ -1155,24 +1168,20 @@ impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
 
 /// When dropped, the value, `V`, is written to the entry in the contract state.
 impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
-    fn drop(&mut self) {
-        if let Some(value) = self.lazy_value.get_mut() {
-            let entry = self.entry.get_mut();
-            entry.move_to_start();
-            value.serial(entry).unwrap_abort()
-        }
-    }
+    fn drop(&mut self) { self.store_mutations() }
 }
 
 impl<'a, V, S> StateRefMut<'a, V, S>
 where
-    V: Serial + DeserialWithState<S>,
+    V: Serial,
     S: HasStateApi,
 {
     /// Get a shared reference to the value. Note that [StateRefMut](Self) also
     /// implements [Deref](crate::ops::Deref) so this conversion can happen
     /// implicitly.
-    pub fn get(&self) -> &V {
+    pub fn get(&self) -> &V
+    where
+        V: DeserialWithState<S>, {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1184,7 +1193,9 @@ where
     /// Get a unique reference to the value. Note that [StateRefMut](Self) also
     /// implements [DerefMut](crate::ops::DerefMut) so this conversion can
     /// happen implicitly.
-    pub fn get_mut(&mut self) -> &mut V {
+    pub fn get_mut(&mut self) -> &mut V
+    where
+        V: DeserialWithState<S>, {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1194,7 +1205,11 @@ where
     }
 
     /// Load the value referenced by the entry from the chain data.
-    fn load_value(&self) -> V {
+    fn load_value(&self) -> V
+    where
+        V: DeserialWithState<S>, {
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = unsafe { &mut *self.entry.get() };
         entry.move_to_start();
         V::deserial_with_state(&self.state_api, entry).unwrap_abort()
@@ -1202,6 +1217,8 @@ where
 
     /// Set the value. Overwrites the existing one.
     pub fn set(&mut self, new_val: V) {
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = self.entry.get_mut();
         entry.move_to_start();
         new_val.serial(entry).unwrap_abort();
@@ -1211,8 +1228,11 @@ where
     /// Update the existing value with the given function.
     pub fn update<F>(&mut self, f: F)
     where
+        V: DeserialWithState<S>,
         F: FnOnce(&mut V), {
         let lv = self.lazy_value.get_mut();
+        // Safe to unwrap below, since the entry can only be `None`, using methods which
+        // are consuming self.
         let entry = self.entry.get_mut();
         let value = if let Some(v) = lv {
             v
@@ -1227,6 +1247,20 @@ where
         entry.move_to_start();
         value.serial(entry).unwrap_abort()
     }
+
+    /// Write to the state entry if the value is loaded.
+    pub(crate) fn store_mutations(&mut self) {
+        if let Some(value) = self.lazy_value.get_mut() {
+            // Safe to unwrap below, since the entry can only be `None`, using methods which
+            // are consuming self.
+            let entry = self.entry.get_mut();
+            entry.move_to_start();
+            value.serial(entry).unwrap_abort();
+        }
+    }
+
+    /// Drop the ref without storing mutations to the state entry.
+    pub(crate) fn drop_without_storing(mut self) { *self.lazy_value.get_mut() = None; }
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
@@ -2195,9 +2229,8 @@ fn query_exchange_rates_worker() -> ExchangeRates {
 /// two extern hosts below.
 fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPublicKeysResult {
     let data: &[u8] = address.as_ref();
-    let response = unsafe {
-        prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr() as *const u8, 32)
-    };
+    let response =
+        unsafe { prims::invoke(INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG, data.as_ptr(), 32) };
     let mut return_value = parse_query_account_public_keys_response_code(response)?;
     Ok(crate::AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
 }
@@ -2213,11 +2246,7 @@ fn check_account_signature_worker(
     signatures.serial(&mut buffer).unwrap_abort();
 
     let response = unsafe {
-        prims::invoke(
-            INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG,
-            buffer.as_ptr() as *const u8,
-            buffer.len() as u32,
-        )
+        prims::invoke(INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG, buffer.as_ptr(), buffer.len() as u32)
     };
     // Be explicit that the buffer must survive up to here.
     drop(buffer);
@@ -2373,48 +2402,53 @@ where
     }
 }
 
-#[cfg(test)]
-/// Some helper methods that are used for internal tests.
-impl<S> StateBuilder<S>
-where
-    S: HasStateApi,
-{
-    /// Get a value from the generic map.
-    /// `Some(Err(_))` means that something exists in the state with that key,
-    /// but it isn't of type `V`.
-    pub(crate) fn get<K: Serial, V: DeserialWithState<S>>(&self, key: K) -> Option<ParseResult<V>> {
-        let key_with_map_prefix = Self::prepend_generic_map_key(key);
-
-        self.state_api
-            .lookup_entry(&key_with_map_prefix)
-            .map(|mut entry| V::deserial_with_state(&self.state_api, &mut entry))
+impl StateBuilder<StateApi> {
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet).
+    pub fn new_btree_set<K>(&mut self) -> state_btree::StateBTreeSet<K> {
+        let (state_api, prefix) = self.new_state_container();
+        state_btree::StateBTreeSet::new(state_api, prefix)
     }
 
-    /// Inserts a value in the generic map.
-    /// The key and value are serialized before insert.
-    pub(crate) fn insert<K: Serial, V: Serial>(
-        &mut self,
-        key: K,
-        value: V,
-    ) -> Result<(), StateError> {
-        let key_with_map_prefix = Self::prepend_generic_map_key(key);
-        match self.state_api.entry(key_with_map_prefix) {
-            EntryRaw::Vacant(vac) => {
-                let _ = vac.insert(&value);
-            }
-            EntryRaw::Occupied(mut occ) => occ.insert(&value),
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap).
+    pub fn new_btree_map<K, V>(&mut self) -> state_btree::StateBTreeMap<K, V> {
+        state_btree::StateBTreeMap {
+            key_value: self.new_map(),
+            key_order: self.new_btree_set(),
         }
-        Ok(())
     }
 
-    /// Serializes the key and prepends [GENERIC_MAP_PREFIX].
-    /// This is similar to how [StateMap] works, where a unique prefix is
-    /// prepended onto keys. Since there is only one generic map, the prefix
-    /// is a constant.
-    fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
-        let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
-        key_with_map_prefix.append(&mut to_bytes(&key));
-        key_with_map_prefix
+    /// Create a new empty [`StateBTreeSet`](crate::StateBTreeSet), setting the
+    /// minimum degree `M` of the B-Tree explicitly. `M` must be 2 or higher
+    /// otherwise constructing the B-Tree results in aborting.
+    pub fn new_btree_set_degree<const M: usize, K>(&mut self) -> state_btree::StateBTreeSet<K, M> {
+        if M >= 2 {
+            let (state_api, prefix) = self.new_state_container();
+            state_btree::StateBTreeSet::new(state_api, prefix)
+        } else {
+            crate::fail!(
+                "Invalid minimum degree used for StateBTreeSet, must be >=2 instead got {}",
+                M
+            )
+        }
+    }
+
+    /// Create a new empty [`StateBTreeMap`](crate::StateBTreeMap), setting the
+    /// minimum degree `M` of the B-Tree explicitly. `M` must be 2 or higher
+    /// otherwise constructing the B-Tree results in aborting.
+    pub fn new_btree_map_degree<const M: usize, K, V>(
+        &mut self,
+    ) -> state_btree::StateBTreeMap<K, V, M> {
+        if M >= 2 {
+            state_btree::StateBTreeMap {
+                key_value: self.new_map(),
+                key_order: self.new_btree_set_degree(),
+            }
+        } else {
+            crate::fail!(
+                "Invalid minimum degree used for StateBTreeMap, must be >=2 instead got {}",
+                M
+            )
+        }
     }
 }
 
@@ -2547,7 +2581,6 @@ where
         (&mut self.state, &mut self.state_builder)
     }
 }
-
 impl HasHost<ExternStateApi> for ExternLowLevelHost {
     type ReturnValueType = ExternCallResponse;
     type StateApiType = ExternStateApi;
@@ -3129,5 +3162,472 @@ mod tests {
     fn statemap_multiple_state_ref_mut_not_allowed() {
         let t = trybuild::TestCases::new();
         t.compile_fail("tests/state/map-multiple-state-ref-mut.rs");
+    }
+}
+
+/// This test module relies on the runtime providing host functions and can only
+/// be run using `cargo concordium test`.
+#[cfg(feature = "internal-wasm-test")]
+mod wasm_test {
+    use crate::{
+        claim, claim_eq, concordium_test, to_bytes, Deletable, Deserial, DeserialWithState,
+        EntryRaw, HasStateApi, HasStateEntry, ParseResult, Serial, StateApi, StateBuilder,
+        StateError, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+    };
+
+    const GENERIC_MAP_PREFIX: u64 = 1;
+
+    /// Some helper methods that are used for internal tests.
+    impl<S> StateBuilder<S>
+    where
+        S: HasStateApi,
+    {
+        /// Get a value from the generic map.
+        /// `Some(Err(_))` means that something exists in the state with that
+        /// key, but it isn't of type `V`.
+        pub(crate) fn get<K: Serial, V: DeserialWithState<S>>(
+            &self,
+            key: K,
+        ) -> Option<ParseResult<V>> {
+            let key_with_map_prefix = Self::prepend_generic_map_key(key);
+
+            self.state_api
+                .lookup_entry(&key_with_map_prefix)
+                .map(|mut entry| V::deserial_with_state(&self.state_api, &mut entry))
+        }
+
+        /// Inserts a value in the generic map.
+        /// The key and value are serialized before insert.
+        pub(crate) fn insert<K: Serial, V: Serial>(
+            &mut self,
+            key: K,
+            value: V,
+        ) -> Result<(), StateError> {
+            let key_with_map_prefix = Self::prepend_generic_map_key(key);
+            match self.state_api.entry(key_with_map_prefix) {
+                EntryRaw::Vacant(vac) => {
+                    let _ = vac.insert(&value);
+                }
+                EntryRaw::Occupied(mut occ) => occ.insert(&value),
+            }
+            Ok(())
+        }
+
+        /// Serializes the key and prepends [GENERIC_MAP_PREFIX].
+        /// This is similar to how [StateMap] works, where a unique prefix is
+        /// prepended onto keys. Since there is only one generic map, the prefix
+        /// is a constant.
+        fn prepend_generic_map_key<K: Serial>(key: K) -> Vec<u8> {
+            let mut key_with_map_prefix = to_bytes(&GENERIC_MAP_PREFIX);
+            key_with_map_prefix.append(&mut to_bytes(&key));
+            key_with_map_prefix
+        }
+    }
+
+    #[concordium_test]
+    fn high_level_insert_get() {
+        let expected_value: u64 = 123123123;
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        state_builder.insert(0, expected_value).expect("Insert failed");
+        let actual_value: u64 = state_builder.get(0).expect("Not found").expect("Not a valid u64");
+        claim_eq!(expected_value, actual_value);
+    }
+
+    #[concordium_test]
+    fn low_level_entry() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(&42u64);
+        let mut state = StateApi::open();
+        state
+            .entry(&key[..])
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
+
+        match state.entry(key) {
+            EntryRaw::Vacant(_) => panic!("Unexpected vacant entry."),
+            EntryRaw::Occupied(occ) => {
+                claim_eq!(u64::deserial(&mut occ.get()), Ok(expected_value))
+            }
+        }
+    }
+
+    #[concordium_test]
+    fn high_level_statemap() {
+        let my_map_key = "my_map";
+        let mut state_builder = StateBuilder::open(StateApi::open());
+
+        let map_to_insert = state_builder.new_map::<String, String>();
+        state_builder.insert(my_map_key, map_to_insert).expect("Insert failed");
+
+        let mut my_map: StateMap<String, String, _> = state_builder
+            .get(my_map_key)
+            .expect("Could not get statemap")
+            .expect("Deserializing statemap failed");
+        let _ = my_map.insert("abc".to_string(), "hello, world".to_string());
+        let _ = my_map.insert("def".to_string(), "hallo, Weld".to_string());
+        let _ = my_map.insert("ghi".to_string(), "hej, verden".to_string());
+        claim_eq!(*my_map.get(&"abc".to_string()).unwrap(), "hello, world".to_string());
+
+        let mut iter = my_map.iter();
+        let (k1, v1) = iter.next().unwrap();
+        claim_eq!(*k1, "abc".to_string());
+        claim_eq!(*v1, "hello, world".to_string());
+        let (k2, v2) = iter.next().unwrap();
+        claim_eq!(*k2, "def".to_string());
+        claim_eq!(*v2, "hallo, Weld".to_string());
+        let (k3, v3) = iter.next().unwrap();
+        claim_eq!(*k3, "ghi".to_string());
+        claim_eq!(*v3, "hej, verden".to_string());
+        claim!(iter.next().is_none());
+    }
+
+    #[concordium_test]
+    fn statemap_insert_remove() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+        let value = String::from("hello");
+        let _ = map.insert(42, value.clone());
+        claim_eq!(*map.get(&42).unwrap(), value);
+        map.remove(&42);
+        claim!(map.get(&42).is_none());
+    }
+
+    #[concordium_test]
+    fn statemap_clear() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+        let _ = map.insert(1, 2);
+        let _ = map.insert(2, 3);
+        let _ = map.insert(3, 4);
+        map.clear();
+        claim!(map.is_empty());
+    }
+
+    #[concordium_test]
+    fn high_level_nested_statemaps() {
+        let inner_map_key = 0u8;
+        let key_to_value = 77u8;
+        let value = 255u8;
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut outer_map = state_builder.new_map::<u8, StateMap<u8, u8, _>>();
+        let mut inner_map = state_builder.new_map::<u8, u8>();
+
+        let _ = inner_map.insert(key_to_value, value);
+        let _ = outer_map.insert(inner_map_key, inner_map);
+
+        claim_eq!(*outer_map.get(&inner_map_key).unwrap().get(&key_to_value).unwrap(), value);
+    }
+
+    #[concordium_test]
+    fn statemap_iter_mut_works() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+        let _ = map.insert(0u8, 1u8);
+        let _ = map.insert(1u8, 2u8);
+        let _ = map.insert(2u8, 3u8);
+        for (_, mut v) in map.iter_mut() {
+            v.update(|old_value| *old_value += 10);
+        }
+        let mut iter = map.iter();
+        let (k1, v1) = iter.next().unwrap();
+        claim_eq!(*k1, 0);
+        claim_eq!(*v1, 11);
+        let (k2, v2) = iter.next().unwrap();
+        claim_eq!(*k2, 1);
+        claim_eq!(*v2, 12);
+        let (k3, v3) = iter.next().unwrap();
+        claim_eq!(*k3, 2);
+        claim_eq!(*v3, 13);
+        claim!(iter.next().is_none());
+    }
+
+    #[concordium_test]
+    fn iter_mut_works_on_nested_statemaps() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut outer_map = state_builder.new_map();
+        let mut inner_map = state_builder.new_map();
+        let _ = inner_map.insert(0u8, 1u8);
+        let _ = inner_map.insert(1u8, 2u8);
+        let _ = outer_map.insert(99u8, inner_map);
+        for (_, mut v_map) in outer_map.iter_mut() {
+            v_map.update(|v_map| {
+                for (_, mut inner_v) in v_map.iter_mut() {
+                    inner_v.update(|inner_v| *inner_v += 10);
+                }
+            });
+        }
+
+        // Check the outer map.
+        let mut outer_iter = outer_map.iter();
+        let (inner_map_key, inner_map) = outer_iter.next().unwrap();
+        claim_eq!(*inner_map_key, 99);
+        claim!(outer_iter.next().is_none());
+
+        // Check the inner map.
+        let mut inner_iter = inner_map.iter();
+        let (k1, v1) = inner_iter.next().unwrap();
+        claim_eq!(*k1, 0);
+        claim_eq!(*v1, 11);
+        let (k2, v2) = inner_iter.next().unwrap();
+        claim_eq!(*k2, 1);
+        claim_eq!(*v2, 12);
+        claim!(inner_iter.next().is_none());
+    }
+
+    #[concordium_test]
+    fn statemap_iterator_unlocks_tree_once_dropped() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+        let _ = map.insert(0u8, 1u8);
+        let _ = map.insert(1u8, 2u8);
+        {
+            let _iter = map.iter();
+            // Uncommenting these two lines (and making iter mutable) should
+            // give a compile error:
+            //
+            // map.insert(2u8, 3u8);
+            // let n = iter.next();
+        } // iter is dropped here, unlocking the subtree.
+        let _ = map.insert(2u8, 3u8);
+    }
+
+    #[concordium_test]
+    fn high_level_stateset() {
+        let my_set_key = "my_set";
+        let mut state_builder = StateBuilder::open(StateApi::open());
+
+        let mut set = state_builder.new_set::<u8>();
+        claim!(set.insert(0));
+        claim!(set.insert(1));
+        claim!(!set.insert(1));
+        claim!(set.insert(2));
+        claim!(set.remove(&2));
+        state_builder.insert(my_set_key, set).expect("Insert failed");
+
+        claim!(state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),);
+        claim!(!state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),);
+
+        let set = state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
+        let mut iter = set.iter();
+        claim_eq!(*iter.next().unwrap(), 0);
+        claim_eq!(*iter.next().unwrap(), 1);
+        claim!(iter.next().is_none());
+    }
+
+    #[concordium_test]
+    fn high_level_nested_stateset() {
+        let inner_set_key = 0u8;
+        let value = 255u8;
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut outer_map = state_builder.new_map::<u8, StateSet<u8, _>>();
+        let mut inner_set = state_builder.new_set::<u8>();
+
+        inner_set.insert(value);
+        let _ = outer_map.insert(inner_set_key, inner_set);
+
+        claim!(outer_map.get(&inner_set_key).unwrap().contains(&value));
+    }
+
+    #[concordium_test]
+    fn stateset_insert_remove() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut set = state_builder.new_set();
+        let _ = set.insert(42);
+        claim!(set.contains(&42));
+        set.remove(&42);
+        claim!(!set.contains(&42));
+    }
+
+    #[concordium_test]
+    fn stateset_clear() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut set = state_builder.new_set();
+        let _ = set.insert(1);
+        let _ = set.insert(2);
+        let _ = set.insert(3);
+        set.clear();
+        claim!(set.is_empty());
+    }
+
+    #[concordium_test]
+    fn stateset_iterator_unlocks_tree_once_dropped() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut set = state_builder.new_set();
+        set.insert(0u8);
+        set.insert(1);
+        {
+            let _iter = set.iter();
+            // Uncommenting these two lines (and making iter mutable) should
+            // give a compile error:
+            //
+            // set.insert(2);
+            // let n = iter.next();
+        } // iter is dropped here, unlocking the subtree.
+        set.insert(2);
+    }
+
+    #[concordium_test]
+    fn allocate_and_get_statebox() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let boxed_value = String::from("I'm boxed");
+        let statebox = state_builder.new_box(boxed_value.clone());
+        claim_eq!(*statebox.get(), boxed_value);
+    }
+
+    #[concordium_test]
+    fn a_new_entry_can_not_be_created_under_a_locked_subtree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"ab");
+        let sub_key = to_bytes(b"abc");
+        let mut state = StateApi::open();
+        state
+            .entry(&key[..])
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
+        claim!(state.iterator(&key).is_ok(), "Iterator should be present");
+        let entry = state.create_entry(&sub_key);
+        claim!(entry.is_err(), "Should not be able to create an entry under a locked subtree");
+    }
+
+    #[concordium_test]
+    fn a_new_entry_can_be_created_under_a_different_subtree_in_same_super_tree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"abcd");
+        let key2 = to_bytes(b"abe");
+        let mut state = StateApi::open();
+        state
+            .entry(&key[..])
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
+        claim!(state.iterator(&key).is_ok(), "Iterator should be present");
+        let entry = state.create_entry(&key2);
+        claim!(entry.is_ok(), "Failed to create a new entry under a different subtree");
+    }
+
+    #[concordium_test]
+    fn an_existing_entry_can_not_be_deleted_under_a_locked_subtree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"ab");
+        let sub_key = to_bytes(b"abc");
+        let mut state = StateApi::open();
+        state
+            .entry(&key[..])
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("no iterators, so insertion should work.");
+        let sub_entry = state
+            .entry(sub_key)
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("Should be possible to create the entry.");
+        claim!(state.iterator(&key).is_ok(), "Iterator should be present");
+        claim!(
+            state.delete_entry(sub_entry).is_err(),
+            "Should not be able to delete entry under a locked subtree"
+        );
+    }
+
+    #[concordium_test]
+    fn an_existing_entry_can_be_deleted_from_a_different_subtree_in_same_super_tree() {
+        let expected_value: u64 = 123123123;
+        let key = to_bytes(b"abcd");
+        let key2 = to_bytes(b"abe");
+        let mut state = StateApi::open();
+        state
+            .entry(&key[..])
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("No iterators, so insertion should work.");
+        let entry2 = state
+            .entry(key2)
+            .or_insert_raw(&to_bytes(&expected_value))
+            .expect("Should be possible to create the entry.");
+        claim!(state.iterator(&key).is_ok(), "Iterator should be present");
+        claim!(
+            state.delete_entry(entry2).is_ok(),
+            "Should be able to delete entry under a different subtree"
+        );
+    }
+
+    #[concordium_test]
+    fn deleting_nested_stateboxes_works() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let inner_box = state_builder.new_box(99u8);
+        let middle_box = state_builder.new_box(inner_box);
+        let outer_box = state_builder.new_box(middle_box);
+        outer_box.delete();
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
+        claim!(iter.nth(1).is_none());
+    }
+
+    #[concordium_test]
+    fn clearing_statemap_with_stateboxes_works() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let box1 = state_builder.new_box(1u8);
+        let box2 = state_builder.new_box(2u8);
+        let box3 = state_builder.new_box(3u8);
+        let mut map = state_builder.new_map();
+        let _ = map.insert(1u8, box1);
+        let _ = map.insert(2u8, box2);
+        let _ = map.insert(3u8, box3);
+        map.clear();
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
+        claim!(iter.nth(1).is_none());
+    }
+
+    #[concordium_test]
+    fn clearing_nested_statemaps_works() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut inner_map_1 = state_builder.new_map();
+        let _ = inner_map_1.insert(1u8, 2u8);
+        let _ = inner_map_1.insert(2u8, 3u8);
+        let _ = inner_map_1.insert(3u8, 4u8);
+        let mut inner_map_2 = state_builder.new_map();
+        let _ = inner_map_2.insert(11u8, 12u8);
+        let _ = inner_map_2.insert(12u8, 13u8);
+        let _ = inner_map_2.insert(13u8, 14u8);
+        let mut outer_map = state_builder.new_map();
+        let _ = outer_map.insert(0u8, inner_map_1);
+        let _ = outer_map.insert(1u8, inner_map_2);
+        outer_map.clear();
+        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        // The only remaining node should be the state_builder's next_item_prefix node.
+        claim!(iter.nth(1).is_none());
+    }
+
+    #[concordium_test]
+    fn occupied_entry_truncates_leftover_data() {
+        let mut state_builder = StateBuilder::open(StateApi::open());
+        let mut map = state_builder.new_map();
+        let _ = map.insert(99u8, "A longer string that should be truncated".into());
+        let a_short_string = "A short string".to_string();
+        let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
+        map.entry(99u8).and_modify(|v| *v = a_short_string);
+        let actual_size = state_builder
+            .state_api
+            .lookup_entry(&[INITIAL_NEXT_ITEM_PREFIX[0], 0, 0, 0, 0, 0, 0, 0, 99])
+            .expect("Lookup failed")
+            .size()
+            .expect("Getting size failed");
+        claim_eq!(expected_size as u32, actual_size);
+    }
+
+    #[concordium_test]
+    fn occupied_entry_raw_truncates_leftover_data() {
+        let mut state = StateApi::open();
+        state
+            .entry([])
+            .or_insert_raw(&to_bytes(&"A longer string that should be truncated"))
+            .expect("No iterators, so insertion should work.");
+
+        let a_short_string = "A short string";
+        let expected_size = a_short_string.len() + 4; // 4 bytes for the length of the string.
+
+        match state.entry([]) {
+            EntryRaw::Vacant(_) => panic!("Entry is vacant"),
+            EntryRaw::Occupied(mut occ) => occ.insert_raw(&to_bytes(&a_short_string)),
+        }
+        let actual_size =
+            state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
+        claim_eq!(expected_size as u32, actual_size);
     }
 }

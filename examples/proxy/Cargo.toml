@@ -15,6 +15,7 @@ bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std"}
+concordium-std-derive = { path = "../../concordium-std-derive" }
 
 [dev-dependencies]
 concordium-smart-contract-testing = { path = "../../contract-testing" }

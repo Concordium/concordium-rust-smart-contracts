@@ -12,6 +12,7 @@ concordium-std = {path = "../../concordium-std", default-features = false}
 
 [dev-dependencies]
 concordium-smart-contract-testing = { path = "../../contract-testing" }
+concordium-std-derive = { path = "../../concordium-std-derive" }
 
 [features]
 default = ["std", "bump_alloc"]

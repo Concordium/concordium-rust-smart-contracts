@@ -2,11 +2,13 @@
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::{PublicKeyEd25519, SignatureEd25519, Timestamp};
+use concordium_std_derive::*;
 use credential_registry::*;
 
 /// Constants for tests
 const SIGNER: Signer = Signer::with_one_key();
-pub const ISSUER_ACCOUNT: AccountAddress = AccountAddress([0u8; 32]);
+pub const ISSUER_ACCOUNT: AccountAddress =
+    account_address!("2wkBET2rRgE8pahuaczxKbmv7ciehqsne57F9gtzf1PVdr2VP3");
 pub const ISSUER_ADDRESS: Address = Address::Account(ISSUER_ACCOUNT);
 pub const ISSUER_METADATA_URL: &str = "https://example-university.com/university.json";
 pub const CREDENTIAL_METADATA_URL: &str =
@@ -15,16 +17,9 @@ pub const CREDENTIAL_TYPE: &str = "UniversityDegreeCredential";
 pub const CREDENTIAL_SCHEMA_URL: &str =
     "https://credentials-schemas.com/JsonSchema2023-education-certificate.json";
 // Seed: 2FEE333FAD122A45AAB7BEB3228FA7858C48B551EA8EBC49D2D56E2BA22049FF
-pub const PUBLIC_KEY: PublicKeyEd25519 = PublicKeyEd25519([
-    172, 5, 96, 236, 139, 208, 146, 88, 124, 42, 62, 124, 86, 108, 35, 242, 32, 11, 7, 48, 193, 61,
-    177, 220, 104, 169, 145, 4, 8, 1, 236, 112,
-]);
-pub const SIGNATURE: SignatureEd25519 = SignatureEd25519([
-    254, 138, 58, 131, 209, 45, 191, 52, 98, 228, 26, 234, 155, 245, 244, 226, 0, 153, 104, 111,
-    201, 136, 243, 167, 251, 116, 110, 206, 172, 223, 41, 180, 90, 22, 63, 43, 157, 129, 226, 75,
-    49, 33, 155, 76, 160, 133, 127, 146, 150, 80, 199, 201, 80, 98, 179, 43, 46, 46, 211, 222, 185,
-    216, 12, 4,
-]);
+pub const PUBLIC_KEY: PublicKeyEd25519 =
+    public_key_ed25519!("AC0560EC8BD092587C2A3E7C566C23F2200B0730C13DB1DC68A991040801EC70");
+pub const SIGNATURE: SignatureEd25519 = signature_ed25519!("FE8A3A83D12DBF3462E41AEA9BF5F4E20099686FC988F3A7FB746ECEACDF29B45A163F2B9D81E24B31219B4CA0857F929650C7C95062B32B2E2ED3DEB9D80C04");
 
 /// Test initialization of the contract.
 #[test]

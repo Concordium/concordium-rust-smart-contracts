@@ -23,12 +23,13 @@ on:
       - 'contract-testing/**/*.toml'
       - 'rustfmt.toml'
       - 'concordium-rust-sdk'
+      - 'concordium-std-derive'
 
   workflow_dispatch: # allows manual trigger
 
 env:
   RUST_FMT: nightly-2023-04-01-x86_64-unknown-linux-gnu
-  RUST_CLIPPY: 1.72
+  RUST_CLIPPY: 1.73
 
 jobs:
   "lint_fmt":

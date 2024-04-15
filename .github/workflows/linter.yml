@@ -12,9 +12,9 @@ name: Clippy & fmt
 
 env:
   RUST_FMT: nightly-2023-04-01
-  RUST_VERSION: "1.66"
-  RUST_VERSION_TESTING_LIBRARY: "1.72"
-  CARGO_CONCORDIUM_VERSION: "3.2.0"
+  RUST_VERSION: "1.73"
+  RUST_VERSION_TESTING_LIBRARY: "1.73"
+  CARGO_CONCORDIUM_VERSION: "3.3.0"
 
 jobs:
   rustfmt:
@@ -23,6 +23,7 @@ jobs:
     strategy:
       matrix:
         crates:
+          - concordium-std-derive/Cargo.toml
           - concordium-std/Cargo.toml
           - concordium-cis2/Cargo.toml
           - examples/voting/Cargo.toml
@@ -103,6 +104,33 @@ jobs:
         run: |
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --color=always
 
+  # Run unit-tests for concordium-std compiled to wasm using cargo concordium test.
+  std-internal-wasm-test:
+    name: concordium-std internal wasm tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Wasm target
+        run: rustup target install wasm32-unknown-unknown
+
+      - name: Run internal wasm unit test
+        working-directory: concordium-std
+        run: |
+          curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          chmod +x /tmp/cargo-concordium
+          sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
+          cargo concordium test --only-unit-tests -- --features internal-wasm-test
+
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
   # can be executed without errors on the generated smart contracts.
   cargo-generate-templates:
@@ -145,10 +173,9 @@ jobs:
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
-          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
-          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
-          chmod +x $CARGO_CCD
-          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
+          curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          chmod +x /tmp/cargo-concordium
+          sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo concordium test --out "./concordium-out/module.wasm.v1"
@@ -195,10 +222,9 @@ jobs:
       # Run all tests, including doc tests.
       - name: Run cargo test
         run: |
-          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
-          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
-          chmod +x $CARGO_CCD
-          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
+          curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          chmod +x /tmp/cargo-concordium
+          sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo concordium test --out "./concordium-out/module.wasm.v1"
@@ -351,7 +377,8 @@ jobs:
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/{version = \"10.0\", default-features = false}/{path = \"..\/..\/concordium-std\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/{version = \"6.1\", default-features = false}/{path = \"..\/..\/concordium-cis2\", default-features = false}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/concordium-smart-contract-testing = \"4.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"4.2\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-std-derive = \"6.0\"/concordium-std-derive = {path = \"..\/..\/concordium-std-derive\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/cis2-nft/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/cis2-nft/src/lib.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/cis2-nft/tests/tests.rs
@@ -399,7 +426,8 @@ jobs:
           sed -i "s/root/Concordium <developers@concordium.com>/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/version = \"10.0\", default-features = false/path = \"..\/..\/concordium-std\", version = \"10.0\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           sed -i "s/version = \"6.1\", default-features = false/path = \"..\/..\/concordium-cis2\", version = \"6.1\", default-features = false/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
-          sed -i "s/concordium-smart-contract-testing = \"4.0\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-smart-contract-testing = \"4.2\"/concordium-smart-contract-testing = {path = \"..\/..\/contract-testing\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
+          sed -i "s/concordium-std-derive = \"6.0\"/concordium-std-derive = {path = \"..\/..\/concordium-std-derive\"}/g" ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/Cargo.toml examples/credential-registry/Cargo.toml
           diff ${{ runner.temp }}/$PROJECT_NAME/src/lib.rs examples/credential-registry/src/lib.rs
           diff ${{ runner.temp }}/$PROJECT_NAME/tests/tests.rs examples/credential-registry/tests/tests.rs
@@ -560,18 +588,9 @@ jobs:
           args: --manifest-path ${{ matrix.lib-crates }} --target=${{ matrix.target }} --features=${{ matrix.features }} -- -D warnings
 
   check-std-no-std:
-    name: Build on nightly,
+    name: Build no-std on nightly,
     runs-on: ubuntu-latest
     needs: rustfmt
-    strategy:
-      matrix:
-        target:
-          - wasm32-unknown-unknown
-
-        crates:
-          - concordium-std/Cargo.toml
-          - concordium-cis2/Cargo.toml
-
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -583,14 +602,16 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly
-          target: ${{ matrix.target }}
+          target: wasm32-unknown-unknown
           override: true
 
-      - name: Run cargo check with no-std
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features
+      - name: Run no-std build concordium-std
+        working-directory: concordium-std
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features bump_alloc
+
+      - name: Run no-std build concordium-cis2
+        working-directory: concordium-cis2
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features concordium-std/bump_alloc
 
   check-no-std-examples:
     name: Build on nightly,
@@ -864,11 +885,9 @@ jobs:
 
       - name: Download and install Cargo Concordium
         run: |
-          CARGO_CCD=cargo-concordium_${{ env.CARGO_CONCORDIUM_VERSION }}
-          wget https://distribution.concordium.software/tools/linux/$CARGO_CCD
-          chmod +x $CARGO_CCD
-          sudo mv $CARGO_CCD /usr/bin/cargo-concordium
-
+          curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          chmod +x /tmp/cargo-concordium
+          sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
         # The 'smart-contract-upgrade' example has a v1 and v2 contract and the tests in v1 needs the wasm module from v2 for upgrading.
       - name: Build contract-upgrade version 2 module if needed
         if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}

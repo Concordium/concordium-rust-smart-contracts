@@ -2,9 +2,11 @@
 
 ## Unreleased changes
 
+## 4.2.0
+
 - Add support for querying the module reference and contract name of an instance.
   This functionality is only available on-chain from protocol version 7.
-- Bump minimum supported Rust version (MSRV) to `1.72`.
+- Bump minimum supported Rust version (MSRV) to `1.73`.
 
 ## 4.1.0
 

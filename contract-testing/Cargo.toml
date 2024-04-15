@@ -2,7 +2,7 @@
 name = "concordium-smart-contract-testing"
 version = "4.2.0"
 edition = "2021"
-rust-version = "1.72"
+rust-version = "1.73"
 license = "MPL-2.0"
 readme = "README.md"
 description = "A companion crate to `concordium-std` that supports off-chain end-to-end testing of smart contracts."

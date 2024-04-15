@@ -294,7 +294,7 @@ pub trait HasStateApi: Clone {
     /// Delete an entry.
     /// Returns an error if the entry did not exist, or if it is part of a
     /// locked subtree.
-    fn delete_entry(&mut self, key: Self::EntryType) -> Result<(), StateError>;
+    fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError>;
 
     /// Delete the entire subtree.
     /// Returns whether any values were deleted, or an error if the given prefix
