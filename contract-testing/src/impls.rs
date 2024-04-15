@@ -585,7 +585,7 @@ impl Chain {
         sender_account.balance.total -= transaction_fee;
 
         // Construct the artifact.
-        let artifact = match wasm::utils::instantiate_with_metering::<v1::ProcessedImports, _>(
+        let artifact = match wasm::utils::instantiate_with_metering::<v1::ProcessedImports>(
             ValidationConfig::V1,
             CostConfigurationV1,
             &v1::ConcordiumAllowedImports {
@@ -2155,7 +2155,7 @@ pub(crate) fn from_interpreter_energy(interpreter_energy: &InterpreterEnergy) ->
 /// Calculate the energy for looking up a [`ContractModule`].
 pub(crate) fn lookup_module_cost(module: &ContractModule) -> Energy {
     // The ratio is from Concordium/Cost.hs::lookupModule
-    Energy::from(module.size / 50)
+    Energy::from(module.size / 500)
 }
 
 /// Calculate the microCCD(mCCD) cost of energy(NRG) using the two exchange
