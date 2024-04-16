@@ -149,12 +149,13 @@ fn full_auction_flow_with_cis3_permit_function() {
 
     // Airdrop tokens to ALICE.
     let parameter = cis2_multi::MintParams {
-        owner:        concordium_smart_contract_testing::Address::Account(ALICE),
+        to:           Receiver::from_account(ALICE),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/0".to_string(),
             hash: None,
         },
         token_id:     concordium_cis2::TokenIdU8(1u8),
+        data:         AdditionalData::empty(),
     };
 
     let _update = chain
@@ -320,12 +321,13 @@ fn full_auction_flow_with_several_bids() {
 
     // Airdrop tokens to ALICE.
     let parameter = cis2_multi::MintParams {
-        owner:        concordium_smart_contract_testing::Address::Account(ALICE),
+        to:           Receiver::from_account(ALICE),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/0".to_string(),
             hash: None,
         },
         token_id:     concordium_cis2::TokenIdU8(1u8),
+        data:         AdditionalData::empty(),
     };
 
     let _update = chain
@@ -429,12 +431,13 @@ fn full_auction_flow_with_several_bids() {
 
     // Airdrop tokens to BOB.
     let parameter = cis2_multi::MintParams {
-        owner:        concordium_smart_contract_testing::Address::Account(BOB),
+        to:           Receiver::from_account(BOB),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/0".to_string(),
             hash: None,
         },
         token_id:     concordium_cis2::TokenIdU8(1u8),
+        data:         AdditionalData::empty(),
     };
 
     let _update = chain
@@ -548,12 +551,13 @@ fn full_auction_flow_with_cis3_transfer_function() {
 
     // Airdrop tokens to ALICE.
     let parameter = cis2_multi::MintParams {
-        owner:        concordium_smart_contract_testing::Address::Account(ALICE),
+        to:           Receiver::from_account(ALICE),
         metadata_url: MetadataUrl {
             url:  "https://some.example/token/0".to_string(),
             hash: None,
         },
         token_id:     concordium_cis2::TokenIdU8(1u8),
+        data:         AdditionalData::empty(),
     };
 
     let _update = chain

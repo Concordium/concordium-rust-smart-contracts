@@ -320,14 +320,16 @@ pub type ContractTokenAmount = TokenAmountU64;
 
 /// The parameter for the contract function `mint` which mints/airdrops a number
 /// of tokens to the owner's address.
-#[derive(Serialize, SchemaType)]
+#[derive(Serialize, SchemaType, Clone)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
-    pub owner:        Address,
+    pub to:           Receiver,
     /// The metadata_url of the token.
     pub metadata_url: MetadataUrl,
     /// The token_id to mint/create additional tokens.
     pub token_id:     ContractTokenId,
+    /// Additional data that can be sent to the receiving contract.
+    pub data:         AdditionalData,
 }
 
 /// The parameter for the contract function `burn` which burns a number
@@ -952,11 +954,13 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
 /// function of the state. Logs a `Mint` event.
 /// The function assumes that the mint is authorized.
 fn mint(
-    params: MintParams,
+    params: &MintParams,
     host: &mut Host<State>,
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
-    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(params.owner)?);
+    let to_address = params.to.address();
+
+    let is_blacklisted = host.state().blacklist.contains(&get_canonical_address(to_address)?);
 
     // Check token owner is not blacklisted.
     ensure!(!is_blacklisted, CustomContractError::Blacklisted.into());
@@ -970,7 +974,7 @@ fn mint(
     let token_metadata = state.mint(
         &params.token_id,
         &params.metadata_url,
-        &params.owner,
+        &to_address,
         state.mint_airdrop,
         builder,
     );
@@ -979,7 +983,7 @@ fn mint(
     logger.log(&Cis2Event::Mint(MintEvent {
         token_id: params.token_id,
         amount:   state.mint_airdrop,
-        owner:    params.owner,
+        owner:    to_address,
     }))?;
 
     // Metadata URL for the token.
@@ -1030,7 +1034,18 @@ fn contract_mint(
     // ensure!(host.state().has_role(&sender, Roles::MINTER),
     // ContractError::Unauthorized);
 
-    mint(params, host, logger)?;
+    mint(&params, host, logger)?;
+
+    // If the receiver is a contract: invoke the receive hook function.
+    if let Receiver::Contract(address, function) = params.to {
+        let parameter = OnReceivingCis2Params {
+            token_id: params.token_id,
+            amount:   host.state.mint_airdrop,
+            from:     Address::from(address),
+            data:     params.data,
+        };
+        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
+    }
 
     Ok(())
 }
@@ -1383,7 +1398,7 @@ fn contract_permit(
             //     ContractError::Unauthorized
             // );
 
-            mint(params, host, logger)?;
+            mint(&params, host, logger)?;
         }
         BURN_ENTRYPOINT => {
             // Burn tokens.

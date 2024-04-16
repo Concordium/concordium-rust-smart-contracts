@@ -39,6 +39,7 @@ The list of contracts is as follows:
 - [proxy](./proxy) A proxy contract that can be put in front of another contract. It works with V0 as well as V1 smart contracts.
 - [recorder](./recorder) A contract that records account addresses, and has an entry point to invoke transfers to all those addresses.
 - [signature-verifier](./signature-verifier) An example of how to use `crypto_primitives`. The contract verifies an Ed25519 signature.
+- [cis5-smart-contract-wallet](./cis5-smart-contract-wallet) An example of how to implement a CIS5 compatible smart contract wallet.
 - [nametoken](./nametoken) An example of how to register and manage names as tokens in a smart contract.
 - [voting](./voting) An example of how to conduct an election using a smart contract.
 - [transfer-policy-check](./transfer-policy-check) A contract that showcases how to use policies.
