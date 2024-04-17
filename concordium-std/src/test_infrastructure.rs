@@ -1566,6 +1566,11 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         )
     }
 
+    fn verify_presentation(&self, _presentation: &[u8]) -> Option<concordium_contracts_common::RV> {
+        unimplemented!("Not doing it.")
+    }
+
+
     fn check_account_signature(
         &self,
         _address: AccountAddress,

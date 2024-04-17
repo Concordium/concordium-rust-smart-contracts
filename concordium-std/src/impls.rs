@@ -1862,6 +1862,8 @@ const INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG: u32 = 7;
 #[cfg(feature = "p7")]
 const INVOKE_QUERY_CONTRACT_NAME_TAG: u32 = 8;
 
+const VERIFY_PRESENTATION_TAG: u32 = 9;
+
 /// Check whether the response code from calling `invoke` is encoding a failure
 /// and map out the byte used for the error code.
 /// A successful response code has the last 5 bytes unset.
@@ -2235,6 +2237,14 @@ fn query_account_public_keys_worker(address: AccountAddress) -> QueryAccountPubl
     Ok(crate::AccountPublicKeys::deserial(&mut return_value).unwrap_abort())
 }
 
+
+fn verify_presentation_worker(presentation: &[u8]) -> Option<concordium_contracts_common::RV> {
+    let response =
+        unsafe { prims::invoke(VERIFY_PRESENTATION_TAG, presentation.as_ptr(), presentation.len() as u32) };
+    let mut return_value = parse_query_exchange_rates_response_code(response);
+    Option::<concordium_contracts_common::RV>::deserial(&mut return_value).unwrap_abort()
+}
+
 fn check_account_signature_worker(
     address: AccountAddress,
     signatures: &AccountSignatures,
@@ -2516,6 +2526,7 @@ where
         query_account_balance_worker(&address)
     }
 
+
     #[inline(always)]
     fn contract_balance(&self, address: ContractAddress) -> QueryContractBalanceResult {
         query_contract_balance_worker(&address)
@@ -2580,6 +2591,10 @@ where
     fn state_and_builder(&mut self) -> (&mut S, &mut StateBuilder<Self::StateApiType>) {
         (&mut self.state, &mut self.state_builder)
     }
+
+    fn verify_presentation(&self, presentation: &[u8]) -> Option<concordium_contracts_common::RV> {
+        verify_presentation_worker(presentation)
+    }
 }
 impl HasHost<ExternStateApi> for ExternLowLevelHost {
     type ReturnValueType = ExternCallResponse;
@@ -2623,6 +2638,10 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
 
     fn account_public_keys(&self, address: AccountAddress) -> QueryAccountPublicKeysResult {
         query_account_public_keys_worker(address)
+    }
+
+    fn verify_presentation(&self, presentation: &[u8]) -> Option<concordium_contracts_common::RV> {
+        verify_presentation_worker(presentation)
     }
 
     fn check_account_signature(

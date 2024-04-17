@@ -495,6 +495,8 @@ pub trait HasHost<State>: Sized {
     /// transaction.
     fn account_balance(&self, address: AccountAddress) -> QueryAccountBalanceResult;
 
+    fn verify_presentation(&self, presentation: &[u8]) -> Option<concordium_contracts_common::RV>;
+
     /// Get the current balance of a contract instance.
     ///
     /// Any amount sent and received by transfers and invocations until the
