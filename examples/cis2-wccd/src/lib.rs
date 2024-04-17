@@ -228,6 +228,8 @@ pub enum CustomContractError {
     /// Upgrade failed because the smart contract version of the module is not
     /// supported.
     FailedUpgradeUnsupportedModuleVersion,
+    /// Failed to verify
+    FailedToVerifyProof,
 }
 
 pub type ContractError = Cis2Error<CustomContractError>;
@@ -584,7 +586,34 @@ fn contract_unwrap(
 
     // Transfer the CCD to the receiver
     match params.receiver {
-        Receiver::Account(address) => host.invoke_transfer(&address, unwrapped_amount)?,
+        Receiver::Account(address) => {
+            // verify presentation.
+            let Some(request) = host.verify_presentation(params.data.as_ref()) else {
+                return Err(CustomContractError::FailedToVerifyProof.into())
+            };
+            let allowed = request.statements.into_iter().any(|s| {
+                if s.address != address {
+                    return false;
+                }
+                s.atomics.into_iter().any(|atomic| match atomic {
+                    AtomicStatement::InRange {
+                        ..
+                    } => false,
+                    AtomicStatement::InSet {
+                        tag,
+                        set,
+                    } => {
+                        tag == attributes::COUNTRY_OF_RESIDENCE.0
+                            && set.into_iter().any(|s| s == "DK")
+                    }
+                })
+            });
+            if allowed {
+                host.invoke_transfer(&address, unwrapped_amount)?
+            } else {
+                return Err(CustomContractError::FailedToVerifyProof.into());
+            }
+        }
         Receiver::Contract(address, function) => {
             host.invoke_contract(
                 &address,
