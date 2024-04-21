@@ -603,8 +603,8 @@ fn contract_unwrap(
                         tag,
                         set,
                     } => {
-                        tag == attributes::COUNTRY_OF_RESIDENCE.0
-                            && set.into_iter().any(|s| s == "DK")
+                        tag == attributes::NATIONALITY.0
+                            && set.into_iter().all(|s| s != "NO")
                     }
                 })
             });

@@ -6,7 +6,7 @@ edition = "2021"
 license = "MPL-2.0"
 
 [features]
-default = ["std", "bump_alloc"]
+default = ["std"]
 std = ["concordium-std/std", "concordium-cis2/std"]
 bump_alloc = ["concordium-std/bump_alloc"]
 
