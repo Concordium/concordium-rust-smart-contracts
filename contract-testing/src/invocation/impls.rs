@@ -174,10 +174,9 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
         };
 
         // Subtract the cost of looking up the module
-        exit_ooe!(
-            self.remaining_energy.tick_energy(lookup_module_cost(&module)),
-            DebugTracker::empty_trace()
-        );
+        let lookup_costs = lookup_module_cost(&module);
+        exit_ooe!(self.remaining_energy.tick_energy(lookup_costs), DebugTracker::empty_trace());
+        self.module_load_energy.energy += lookup_costs.energy;
 
         // Sender policies have a very bespoke serialization in
         // order to allow skipping portions of them in smart contracts.
@@ -653,9 +652,10 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
                                     },
                                     Some(module) => {
                                         // Charge for the module lookup.
+                                        let lookup_costs = lookup_module_cost(module);
+                                        self.module_load_energy.energy += lookup_costs.energy;
                                         exit_ooe!(
-                                            self.remaining_energy
-                                                .tick_energy(lookup_module_cost(module)),
+                                            self.remaining_energy.tick_energy(lookup_costs),
                                             DebugTracker::empty_trace()
                                         );
 

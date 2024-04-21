@@ -2,6 +2,10 @@
 
 ## Unreleased changes
 
+- Integrate protocol version 7 cost semantics.
+- The `ContractInvokeSuccess` and `ContractInvokeError` have additional fields
+  that record where parts of the energy was allocated during execution.
+
 ## 4.2.0
 
 - Add support for querying the module reference and contract name of an instance.

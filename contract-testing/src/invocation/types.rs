@@ -33,6 +33,8 @@ pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
     pub(crate) changeset: ChangeSet,
     /// The energy remaining for execution.
     pub(crate) remaining_energy: &'a mut Energy,
+    /// Costs incurred from smart contract module loading.
+    pub(crate) module_load_energy: Energy,
     /// The energy reserved for the execution. Used for calculating intermediate
     /// energy usages in contract trace elements.
     pub(crate) energy_reserved: Energy,
