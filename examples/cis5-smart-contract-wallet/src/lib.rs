@@ -1435,3 +1435,50 @@ fn contract_balance_of_cis2_tokens(
     let result = Cis2TokensBalanceOfResponse::from(response);
     Ok(result)
 }
+
+/// The parameter type for the contracts `nonceOf` entrypoint which results in a
+/// corresponding list of nonces being returned.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct VecOfPublicKeyEd25519 {
+    /// List of queries.
+    #[concordium(size_length = 2)]
+    pub queries: Vec<PublicKeyEd25519>,
+}
+
+/// Response type for the function `nonceOf`.
+#[derive(Debug, Serialize, SchemaType)]
+#[concordium(transparent)]
+pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
+
+impl From<Vec<u64>> for NonceOfQueryResponse {
+    fn from(results: concordium_std::Vec<u64>) -> Self { NonceOfQueryResponse(results) }
+}
+
+/// Get the nonces of public keys.
+///
+/// It rejects if:
+/// - It fails to parse the parameter.
+#[receive(
+    contract = "smart_contract_wallet",
+    name = "nonceOf",
+    parameter = "VecOfPublicKeyEd25519",
+    return_value = "NonceOfQueryResponse",
+    error = "CustomContractError"
+)]
+fn contract_nonce_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
+) -> ContractResult<NonceOfQueryResponse> {
+    // Parse the parameter.
+    let params: VecOfPublicKeyEd25519 = ctx.parameter_cursor().get()?;
+    // Build the response.
+    let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
+    for public_key in params.queries {
+        // Query the next nonce.
+        let nonce = host.state().nonces_registry.get(&public_key).map(|nonce| *nonce).unwrap_or(0);
+
+        response.push(nonce);
+    }
+    Ok(NonceOfQueryResponse::from(response))
+}
