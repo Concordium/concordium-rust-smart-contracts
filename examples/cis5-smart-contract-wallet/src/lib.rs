@@ -1436,8 +1436,8 @@ fn contract_balance_of_cis2_tokens(
     Ok(result)
 }
 
-/// The parameter type for the contract functions `noneOf`. A query
-/// for the nonce of a given public key.
+/// The parameter type for the contracts `nonceOf` entrypoint which results in a
+/// corresponding list of nonces being returned.
 #[derive(Debug, Serialize, SchemaType)]
 #[concordium(transparent)]
 pub struct VecOfPublicKeyEd25519 {
