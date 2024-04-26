@@ -34,9 +34,9 @@ const DUMMY_SIGNATURE: SignatureEd25519 = SignatureEd25519([
 /// A signer for all the transactions.
 const SIGNER: Signer = Signer::with_one_key();
 
-/// Test depositing of native currency.
+/// Test depositing of CCD.
 #[test]
-fn test_deposit_native_currency() {
+fn test_deposit_ccd() {
     let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
         initialize_chain_and_contract();
 
@@ -77,7 +77,7 @@ fn test_withdraw_ccd() {
     let withdraw_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = WithdrawMessage {
-        entry_point: OwnedEntrypointName::new_unchecked("withdrawNativeCurrency".to_string()),
+        entry_point: OwnedEntrypointName::new_unchecked("withdrawCCD".to_string()),
         expiry_time: Timestamp::now(),
         nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
@@ -128,19 +128,19 @@ fn test_withdraw_ccd() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_wallet.withdrawNativeCurrency".to_string(),
+                    "smart_contract_wallet.withdrawCCD".to_string(),
                 ),
                 address:      smart_contract_wallet,
                 message:      OwnedParameter::from_serial(&withdraw_param)
-                    .expect("Withdraw native currency params"),
+                    .expect("Withdraw CCD params"),
             },
         )
-        .expect("Should be able to withdraw native currency");
+        .expect("Should be able to withdraw CCD");
 
     // Check that Alice now has `AIRDROP_CCD_AMOUNT - withdraw_amount -
     // service_fee_amount` CCD, Bob has 0 CCD, and service_fee_recipient has
     // `service_fee_amount` CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+    let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         alice_public_key,
@@ -160,12 +160,12 @@ fn test_withdraw_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+        Event::InternalCcdTransfer(InternalCcdTransferEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
         }),
-        Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
+        Event::WithdrawCcd(WithdrawCcdEvent {
             ccd_amount: withdraw_amount,
             from:       alice_public_key,
             to:         BOB_ADDR,
@@ -337,9 +337,7 @@ fn test_internal_transfer_ccd() {
     let transfer_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = InternalTransferMessage {
-        entry_point: OwnedEntrypointName::new_unchecked(
-            "internalTransferNativeCurrency".to_string(),
-        ),
+        entry_point: OwnedEntrypointName::new_unchecked("internalTransferCCD".to_string()),
         expiry_time: Timestamp::now(),
         nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
@@ -386,19 +384,19 @@ fn test_internal_transfer_ccd() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_wallet.internalTransferNativeCurrency".to_string(),
+                    "smart_contract_wallet.internalTransferCCD".to_string(),
                 ),
                 address:      smart_contract_wallet,
                 message:      OwnedParameter::from_serial(&internal_transfer_param)
-                    .expect("Internal transfer native currency params"),
+                    .expect("Internal transfer CCD params"),
             },
         )
-        .expect("Should be able to internally transfer native currency");
+        .expect("Should be able to internally transfer CCD");
 
     // Check that Alice now has `AIRDROP_CCD_AMOUNT - transfer_amount -
     // service_fee_amount` CCD and Bob has `transfer_amount` CCD, and
     // service_fee_recipient has `service_fee_amount` CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+    let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         alice_public_key,
@@ -413,12 +411,12 @@ fn test_internal_transfer_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+        Event::InternalCcdTransfer(InternalCcdTransferEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
         }),
-        Event::InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent {
+        Event::InternalCcdTransfer(InternalCcdTransferEvent {
             ccd_amount: transfer_amount,
             from:       alice_public_key,
             to:         BOB_PUBLIC_KEY,
@@ -655,29 +653,28 @@ fn get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
     rv
 }
 
-/// Get the native currency balances for Alice, Bob, and the
+/// Get the CCD balances for Alice, Bob, and the
 /// service_fee_recipient.
-fn get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+fn get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
     chain: &Chain,
     smart_contract_wallet: ContractAddress,
     alice_public_key: PublicKeyEd25519,
-) -> NativeCurrencyBalanceOfResponse {
-    let balance_of_params = NativeCurrencyBalanceOfParameter {
+) -> CcdBalanceOfResponse {
+    let balance_of_params = CcdBalanceOfParameter {
         queries: vec![alice_public_key, BOB_PUBLIC_KEY, SERVICE_FEE_RECIPIENT_KEY],
     };
     let invoke = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.balanceOfNativeCurrency".to_string(),
+                "smart_contract_wallet.balanceOfCCD".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf native currency params"),
+                .expect("BalanceOf CCD params"),
         })
-        .expect("Invoke balanceOf native currency");
-    let rv: NativeCurrencyBalanceOfResponse =
-        invoke.parse_return_value().expect("BalanceOf native currency return value");
+        .expect("Invoke balanceOf CCD");
+    let rv: CcdBalanceOfResponse = invoke.parse_return_value().expect("BalanceOf CCD return value");
     rv
 }
 
@@ -762,7 +759,7 @@ fn alice_deposits_ccd(
 ) {
     // Check that Alice has 0 CCD, Bob has 0 CCD, and the service_fee_recipient has
     // 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+    let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         alice_public_key,
@@ -773,17 +770,17 @@ fn alice_deposits_ccd(
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       AIRDROP_CCD_AMOUNT,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.depositNativeCurrency".to_string(),
+                "smart_contract_wallet.depositCCD".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&alice_public_key)
-                .expect("Deposit native currency params"),
+                .expect("Deposit CCD params"),
         })
         .expect("Should be able to deposit CCD");
 
     // Check that Alice now has AIRDROP_CCD_AMOUNT CCD, Bob has 0 CCD, and the
     // service_fee_recipient has 0 CCD on their public keys.
-    let balances = get_native_currency_balance_from_alice_and_bob_and_service_fee_recipient(
+    let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         &chain,
         smart_contract_wallet,
         alice_public_key,
@@ -793,7 +790,7 @@ fn alice_deposits_ccd(
     // Check that the logs are correct.
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
-    assert_eq!(events, [Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
+    assert_eq!(events, [Event::DepositCcd(DepositCcdEvent {
         ccd_amount: AIRDROP_CCD_AMOUNT,
         from:       ALICE_ADDR,
         to:         alice_public_key,

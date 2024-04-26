@@ -2,17 +2,17 @@
 //!
 //! This contract implements the CIS-5 (Concordium interoperability
 //! specification 5) that defines a smart contract wallet that can hold and
-//! transfer native currency and CIS-2 tokens.
+//! transfer CCD and CIS-2 tokens.
 //! https://proposals.concordium.software/CIS/cis-5.html
 //!
-//! Native currency/CIS-2 tokens can be deposited into the smart contract wallet
+//! CCD/CIS-2 tokens can be deposited into the smart contract wallet
 //! by specifying to which public key ([PublicKeyEd25519] schema) the deposit
-//! should be assigned. Authorization for token and currency transfers from the
+//! should be assigned. Authorization for token and CCD transfers from the
 //! smart contract's assigned public key balance is exclusively granted to the
 //! holder of the corresponding private key, ensuring self-custodial control
 //! over the assets.
 //!
-//! Transfers of native currency and CIS-2 token balances (meaning `withdraw`
+//! Transfers of CCD and CIS-2 token balances (meaning `withdraw`
 //! and `internalTransfer` functions) do not require
 //! on-chain transaction submissions. Instead, the holder of the corresponding
 //! private key can generate a valid signature and identify a third party to
@@ -20,7 +20,7 @@
 //! involvement through a service fee. The message that was signed specifies the
 //! amount of service fee and the service fee recipient's public key.
 //!
-//! Any withdrawal (native currency or CIS-2 tokens) to a smart contract will
+//! Any withdrawal (CCD or CIS-2 tokens) to a smart contract will
 //! invoke a `receiveHook` function on that smart contract.
 //!
 //! The three main actions in the smart contract wallet that can be taken are:
@@ -32,7 +32,7 @@
 //!   native account or smart contract.
 //!
 //! The goal of this standard is to simplify the account creation onboarding
-//! flow on Concordium. Users can hold/transfer native currency/CIS-2 tokens
+//! flow on Concordium. Users can hold/transfer CCD/CIS-2 tokens
 //! without a native account as a starting point (no KYC required). Once users
 //! are ready to go through the KYC process to create a native account on
 //! Concordium, they can withdraw assets out of the smart contract wallet.
@@ -75,7 +75,7 @@ pub enum Event {
     /// The event tracks every time a CCD amount received by the contract is
     /// assigned to a public key.
     #[concordium(tag = 249)]
-    DepositNativeCurrency(DepositNativeCurrencyEvent),
+    DepositCcd(DepositCcdEvent),
     /// The event tracks every time a token amount received by the contract is
     /// assigned to a public key.
     #[concordium(tag = 248)]
@@ -83,7 +83,7 @@ pub enum Event {
     /// The event tracks every time a CCD amount held by a public key is
     /// withdrawn to an address.
     #[concordium(tag = 247)]
-    WithdrawNativeCurrency(WithdrawNativeCurrencyEvent),
+    WithdrawCcd(WithdrawCcdEvent),
     /// The event tracks every time a token amount held by a public key is
     /// withdrawn to an address.
     #[concordium(tag = 246)]
@@ -91,7 +91,7 @@ pub enum Event {
     /// The event tracks every time a CCD amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 245)]
-    InternalNativeCurrencyTransfer(InternalNativeCurrencyTransferEvent),
+    InternalCcdTransfer(InternalCcdTransferEvent),
     /// The event tracks every time a token amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 244)]
@@ -108,10 +108,10 @@ pub struct NonceEvent {
     pub nonce:      u64,
 }
 
-/// The `DepositNativeCurrencyEvent` is logged whenever a CCD amount received by
+/// The `DepositCcdEvent` is logged whenever a CCD amount received by
 /// the contract is assigned to a public key.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct DepositNativeCurrencyEvent {
+pub struct DepositCcdEvent {
     /// The CCD amount assigned to a public key.
     pub ccd_amount: Amount,
     /// The address that invoked the deposit entrypoint.
@@ -136,10 +136,10 @@ pub struct DepositCis2TokensEvent {
     pub to: PublicKeyEd25519,
 }
 
-/// The `WithdrawNativeCurrencyEvent` is logged whenever a CCD amount held by a
+/// The `WithdrawCcdEvent` is logged whenever a CCD amount held by a
 /// public key is withdrawn to an address.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct WithdrawNativeCurrencyEvent {
+pub struct WithdrawCcdEvent {
     /// The CCD amount withdrawn.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be withdrawn from.
@@ -164,11 +164,11 @@ pub struct WithdrawCis2TokensEvent {
     pub to: Address,
 }
 
-/// The `InternalNativeCurrencyTransferEvent` is logged whenever a CCD amount
+/// The `InternalCcdTransferEvent` is logged whenever a CCD amount
 /// held by a public key is transferred to another public key within the
 /// contract.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct InternalNativeCurrencyTransferEvent {
+pub struct InternalCcdTransferEvent {
     /// The CCD amount transferred.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be transferred from.
@@ -201,7 +201,7 @@ struct State<S = StateApi> {
     token_balances:
         StateMap<(ContractAddress, ContractTokenId, PublicKeyEd25519), ContractTokenAmount, S>,
     /// The CCD balances stored in the state.
-    native_balances: StateMap<PublicKeyEd25519, Amount, S>,
+    ccd_balances:    StateMap<PublicKeyEd25519, Amount, S>,
     /// A map with contract addresses providing implementations of additional
     /// standards.
     implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -219,17 +219,17 @@ impl State {
     /// Creates a new state with empty balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
-            native_balances: state_builder.new_map(),
+            ccd_balances:    state_builder.new_map(),
             token_balances:  state_builder.new_map(),
             implementors:    state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
         }
     }
 
-    /// Gets the current native currency balance of a given public key.
+    /// Gets the current CCD balance of a given public key.
     /// Returns a balance of 0 if the public key does not exist in the state.
-    fn balance_native_currency(&self, public_key: &PublicKeyEd25519) -> Amount {
-        self.native_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero)
+    fn balance_ccd(&self, public_key: &PublicKeyEd25519) -> Amount {
+        self.ccd_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero)
     }
 
     /// Gets the current balance of a given token ID, a given token contract,
@@ -247,9 +247,9 @@ impl State {
     }
 
     /// Updates the state with a transfer of CCD amount and logs an
-    /// `InternalNativeCurrencyTransfer` event. Results in an error if the
+    /// `InternalCcdTransfer` event. Results in an error if the
     /// from public key has insufficient balance to do the transfer.
-    fn transfer_native_currency(
+    fn transfer_ccd(
         &mut self,
         from_public_key: PublicKeyEd25519,
         to_public_key: PublicKeyEd25519,
@@ -259,31 +259,29 @@ impl State {
         // A zero transfer does not modify the state.
         if ccd_amount != Amount::zero() {
             {
-                let mut from_public_key_native_balance = self
-                    .native_balances
+                let mut from_public_key_ccd_balance = self
+                    .ccd_balances
                     .entry(from_public_key)
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
-                *from_public_key_native_balance = (*from_public_key_native_balance)
+                *from_public_key_ccd_balance = (*from_public_key_ccd_balance)
                     .checked_sub(ccd_amount)
                     .ok_or(CustomContractError::InsufficientFunds)?;
             }
 
-            let mut to_public_key_native_balance =
-                self.native_balances.entry(to_public_key).or_insert_with(Amount::zero);
+            let mut to_public_key_ccd_balance =
+                self.ccd_balances.entry(to_public_key).or_insert_with(Amount::zero);
 
-            *to_public_key_native_balance = (*to_public_key_native_balance)
+            *to_public_key_ccd_balance = (*to_public_key_ccd_balance)
                 .checked_add(ccd_amount)
                 .ok_or(CustomContractError::Overflow)?;
         }
 
-        logger.log(&Event::InternalNativeCurrencyTransfer(
-            InternalNativeCurrencyTransferEvent {
-                ccd_amount,
-                from: from_public_key,
-                to: to_public_key,
-            },
-        ))?;
+        logger.log(&Event::InternalCcdTransfer(InternalCcdTransferEvent {
+            ccd_amount,
+            from: from_public_key,
+            to: to_public_key,
+        }))?;
 
         Ok(())
     }
@@ -407,10 +405,10 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
     Ok(State::empty(state_builder))
 }
 
-/// The function is payable and deposits/assigns the send CCD amount
-/// (native currency) to a public key.
+/// The function is payable and deposits/assigns the send CCD amount to a public
+/// key.
 ///
-/// The function logs a `DepositNativeCurrency` event.
+/// The function logs a `DepositCcd` event.
 ///
 /// It rejects if:
 /// - it fails to parse the parameter.
@@ -418,14 +416,14 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
 /// - it fails to log the event.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "depositNativeCurrency",
+    name = "depositCCD",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
     enable_logger,
     payable,
     mutable
 )]
-fn deposit_native_currency(
+fn deposit_ccd(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     amount: Amount,
@@ -434,12 +432,12 @@ fn deposit_native_currency(
     let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
     let mut public_key_balance =
-        host.state_mut().native_balances.entry(to).or_insert_with(Amount::zero);
+        host.state_mut().ccd_balances.entry(to).or_insert_with(Amount::zero);
 
     *public_key_balance =
         (*public_key_balance).checked_add(amount).ok_or(CustomContractError::Overflow)?;
 
-    logger.log(&Event::DepositNativeCurrency(DepositNativeCurrencyEvent {
+    logger.log(&Event::DepositCcd(DepositCcdEvent {
         ccd_amount: amount,
         from: ctx.sender(),
         to,
@@ -533,10 +531,10 @@ pub struct TokenAmount {
     pub cis2_token_contract_address: ContractAddress,
 }
 
-/// A single withdrawal of native currency or some amount of tokens.
+/// A single withdrawal of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
 pub struct Withdraw<T: SigningAmount> {
-    /// The address receiving the native currency or tokens being withdrawn.
+    /// The address receiving the CCD or tokens being withdrawn.
     pub to:              Receiver,
     /// The amount being withdrawn.
     pub withdraw_amount: T,
@@ -555,7 +553,7 @@ pub struct WithdrawMessage<T: SigningAmount> {
     pub nonce:                 u64,
     /// The recipient public key of the service fee.
     pub service_fee_recipient: PublicKeyEd25519,
-    /// The amount of native currency or tokens to be received as a service fee.
+    /// The amount of CCD or tokens to be received as a service fee.
     pub service_fee_amount:    T,
     /// List of withdrawals.
     #[concordium(size_length = 2)]
@@ -580,7 +578,7 @@ pub struct WithdrawBatch<T: SigningAmount> {
 }
 
 /// The parameter type for the contract functions
-/// `withdrawNativeCurrency/withdrawCis2Tokens`.
+/// `withdrawCCD/withdrawCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
@@ -694,12 +692,11 @@ fn contract_view_withdraw_message_hash_token_amount(
     calculate_message_hash_from_bytes(&to_bytes(&param), crypto_primitives, ctx)
 }
 
-/// The function executes a list of CCDs (native currency) withdrawals
-/// to native accounts and/or smart contracts.
-/// When withdrawing CCD to a contract address, a CCD receive hook function is
-/// triggered.
+/// The function executes a list of CCD withdrawals to native accounts and/or
+/// smart contracts. When withdrawing CCD to a contract address, a CCD receive
+/// hook function is triggered.
 ///
-/// The function logs `WithdrawNativeCurrency`, `InternalNativeCurrencyTransfer`
+/// The function logs `WithdrawCcd`, `InternalCcdTransfer`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -716,14 +713,14 @@ fn contract_view_withdraw_message_hash_token_amount(
 /// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "withdrawNativeCurrency",
+    name = "withdrawCCD",
     parameter = "WithdrawParameter<Amount>",
     error = "CustomContractError",
     crypto_primitives,
     enable_logger,
     mutable
 )]
-fn withdraw_native_currency(
+fn withdraw_ccd(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut Logger,
@@ -748,11 +745,7 @@ fn withdraw_native_currency(
             simple_withdraws,
         } = message.clone();
 
-        ensure_eq!(
-            entry_point,
-            "withdrawNativeCurrency",
-            CustomContractError::WrongEntryPoint.into()
-        );
+        ensure_eq!(entry_point, "withdrawCCD", CustomContractError::WrongEntryPoint.into());
 
         validate_signature_and_increase_nonce(
             message,
@@ -764,12 +757,7 @@ fn withdraw_native_currency(
         )?;
 
         // Transfer service fee
-        host.state_mut().transfer_native_currency(
-            signer,
-            service_fee_recipient,
-            service_fee_amount,
-            logger,
-        )?;
+        host.state_mut().transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
 
         for Withdraw {
             to,
@@ -779,13 +767,13 @@ fn withdraw_native_currency(
         {
             // Update the contract state
             {
-                let mut from_public_key_native_balance = host
-                    .state_mut()
-                    .native_balances
-                    .entry(signer)
-                    .occupied_or(CustomContractError::InsufficientFunds)?;
+                let mut from_public_key_ccd_balance =
+                    host.state_mut()
+                        .ccd_balances
+                        .entry(signer)
+                        .occupied_or(CustomContractError::InsufficientFunds)?;
 
-                *from_public_key_native_balance = (*from_public_key_native_balance)
+                *from_public_key_ccd_balance = (*from_public_key_ccd_balance)
                     .checked_sub(withdraw_amount)
                     .ok_or(CustomContractError::InsufficientFunds)?;
             }
@@ -808,7 +796,7 @@ fn withdraw_native_currency(
                 }
             };
 
-            logger.log(&Event::WithdrawNativeCurrency(WithdrawNativeCurrencyEvent {
+            logger.log(&Event::WithdrawCcd(WithdrawCcdEvent {
                 ccd_amount: withdraw_amount,
                 from:       signer,
                 to:         to_address,
@@ -960,7 +948,7 @@ fn withdraw_cis2_tokens(
     Ok(())
 }
 
-/// A single transfer of native currency or some amount of tokens.
+/// A single transfer of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
 pub struct InternalTransfer<T: SigningAmount> {
     /// The public key receiving the tokens being transferred.
@@ -980,7 +968,7 @@ pub struct InternalTransferMessage<T: SigningAmount> {
     pub nonce:                 u64,
     /// The recipient public key of the service fee.
     pub service_fee_recipient: PublicKeyEd25519,
-    /// The amount of native currency or tokens to be received as a service fee.
+    /// The amount of CCD or tokens to be received as a service fee.
     pub service_fee_amount:    T,
     /// List of transfers.
     #[concordium(size_length = 2)]
@@ -1005,7 +993,7 @@ pub struct InternalTransferBatch<T: SigningAmount> {
 }
 
 /// The parameter type for the contract functions
-/// `internalTransferNativeCurrency/internalTransferCis2Tokens`.
+/// `internalTransferCcd/internalTransferCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
@@ -1062,7 +1050,7 @@ fn contract_view_internal_transfer_message_hash_token_amount(
 /// The function executes a list of CCD internal transfers to public keys within
 /// the smart contract wallet.
 ///
-/// The function logs `InternalNativeCurrencyTransfer`
+/// The function logs `InternalCcdTransfer`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -1078,14 +1066,14 @@ fn contract_view_internal_transfer_message_hash_token_amount(
 /// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "internalTransferNativeCurrency",
+    name = "internalTransferCCD",
     parameter = "InternalTransferParameter<Amount>",
     error = "CustomContractError",
     crypto_primitives,
     enable_logger,
     mutable
 )]
-fn internal_transfer_native_currency(
+fn internal_transfer_ccd(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut Logger,
@@ -1110,11 +1098,7 @@ fn internal_transfer_native_currency(
             simple_transfers,
         } = message.clone();
 
-        ensure_eq!(
-            entry_point,
-            "internalTransferNativeCurrency",
-            CustomContractError::WrongEntryPoint.into()
-        );
+        ensure_eq!(entry_point, "internalTransferCCD", CustomContractError::WrongEntryPoint.into());
 
         validate_signature_and_increase_nonce(
             message,
@@ -1126,12 +1110,7 @@ fn internal_transfer_native_currency(
         )?;
 
         // Transfer service fee
-        host.state_mut().transfer_native_currency(
-            signer,
-            service_fee_recipient,
-            service_fee_amount,
-            logger,
-        )?;
+        host.state_mut().transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
 
         for InternalTransfer {
             to,
@@ -1139,7 +1118,7 @@ fn internal_transfer_native_currency(
         } in simple_transfers
         {
             // Update the contract state
-            host.state_mut().transfer_native_currency(signer, to, transfer_amount, logger)?;
+            host.state_mut().transfer_ccd(signer, to, transfer_amount, logger)?;
         }
 
         logger.log(&Event::Nonce(NonceEvent {
@@ -1319,27 +1298,27 @@ fn contract_supports(
     Ok(result)
 }
 
-/// The parameter type for the contract function `balanceOfNativeCurrency`.
+/// The parameter type for the contract function `balanceOfCCD`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
-pub struct NativeCurrencyBalanceOfParameter {
+pub struct CcdBalanceOfParameter {
     /// List of balance queries.
     #[concordium(size_length = 2)]
     pub queries: Vec<PublicKeyEd25519>,
 }
 
 /// The response which is sent back when calling the contract function
-/// `balanceOfNativeCurrency`.
+/// `balanceOfCCD`.
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
 #[repr(transparent)]
-pub struct NativeCurrencyBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<Amount>);
+pub struct CcdBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<Amount>);
 
 /// Conversion helper function.
-impl From<Vec<Amount>> for NativeCurrencyBalanceOfResponse {
-    fn from(results: Vec<Amount>) -> Self { NativeCurrencyBalanceOfResponse(results) }
+impl From<Vec<Amount>> for CcdBalanceOfResponse {
+    fn from(results: Vec<Amount>) -> Self { CcdBalanceOfResponse(results) }
 }
 
 /// The function queries the CCD balances of a list of public keys.
@@ -1348,25 +1327,25 @@ impl From<Vec<Amount>> for NativeCurrencyBalanceOfResponse {
 /// - It fails to parse the parameter.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "balanceOfNativeCurrency",
-    parameter = "NativeCurrencyBalanceOfParameter",
-    return_value = "NativeCurrencyBalanceOfResponse",
+    name = "balanceOfCCD",
+    parameter = "CcdBalanceOfParameter",
+    return_value = "CcdBalanceOfResponse",
     error = "CustomContractError"
 )]
-fn contract_balance_of_native_currency(
+fn contract_balance_of_ccd(
     ctx: &ReceiveContext,
     host: &Host<State>,
-) -> ContractResult<NativeCurrencyBalanceOfResponse> {
+) -> ContractResult<CcdBalanceOfResponse> {
     // Parse the parameter.
-    let params: NativeCurrencyBalanceOfParameter = ctx.parameter_cursor().get()?;
+    let params: CcdBalanceOfParameter = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for public_key in params.queries {
         // Query the state for the balance.
-        let amount = host.state().balance_native_currency(&public_key);
+        let amount = host.state().balance_ccd(&public_key);
         response.push(amount);
     }
-    let result = NativeCurrencyBalanceOfResponse::from(response);
+    let result = CcdBalanceOfResponse::from(response);
     Ok(result)
 }
 
