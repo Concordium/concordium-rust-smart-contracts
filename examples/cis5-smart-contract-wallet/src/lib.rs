@@ -13,7 +13,7 @@
 //! over the assets.
 //!
 //! Transfers of CCD and CIS-2 token balances (meaning `withdraw`
-//! and `internalTransfer` functions) do not require
+//! and `cis5Transfer` functions) do not require
 //! on-chain transaction submissions. Instead, the holder of the corresponding
 //! private key can generate a valid signature and identify a third party to
 //! submit the transaction on-chain, potentially incentivizing the third-party
@@ -26,8 +26,8 @@
 //! The three main actions in the smart contract wallet that can be taken are:
 //! - *deposit*: assigns the balance to a public key within the smart contract
 //!   wallet.
-//! - *internal transfer*: assigns the balance to a new public key within the
-//!   smart contract wallet.
+//! - *CIS-5 transfer*: assigns the balance to a new public key within the smart
+//!   contract wallet.
 //! - *withdraw*: withdraws the balance out of the smart contract wallet to a
 //!   native account or smart contract.
 //!
@@ -91,11 +91,11 @@ pub enum Event {
     /// The event tracks every time a CCD amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 245)]
-    InternalCcdTransfer(InternalCcdTransferEvent),
+    CcdCis5Transfer(CcdCis5TransferEvent),
     /// The event tracks every time a token amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 244)]
-    InternalCis2TokensTransfer(InternalCis2TokensTransferEvent),
+    Cis2TokensCis5Transfer(Cis2TokensCis5TransferEvent),
 }
 
 /// The `NonceEvent` is logged whenever a signature is checked. The event
@@ -164,11 +164,11 @@ pub struct WithdrawCis2TokensEvent {
     pub to: Address,
 }
 
-/// The `InternalCcdTransferEvent` is logged whenever a CCD amount
+/// The `CcdCis5TransferEvent` is logged whenever a CCD amount
 /// held by a public key is transferred to another public key within the
 /// contract.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct InternalCcdTransferEvent {
+pub struct CcdCis5TransferEvent {
     /// The CCD amount transferred.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be transferred from.
@@ -177,10 +177,10 @@ pub struct InternalCcdTransferEvent {
     pub to:         PublicKeyEd25519,
 }
 
-/// The `InternalCis2TokensTransferEvent` is logged whenever a token amount held
+/// The `Cis2TokensCis5TransferEvent` is logged whenever a token amount held
 /// by a public key is transferred to another public key within the contract.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct InternalCis2TokensTransferEvent {
+pub struct Cis2TokensCis5TransferEvent {
     /// The token amount transferred.
     pub token_amount: ContractTokenAmount,
     /// The token id of the token transferred.
@@ -247,7 +247,7 @@ impl State {
     }
 
     /// Updates the state with a transfer of CCD amount and logs an
-    /// `InternalCcdTransfer` event. Results in an error if the
+    /// `CcdCis5Transfer` event. Results in an error if the
     /// from public key has insufficient balance to do the transfer.
     fn transfer_ccd(
         &mut self,
@@ -277,7 +277,7 @@ impl State {
                 .ok_or(CustomContractError::Overflow)?;
         }
 
-        logger.log(&Event::InternalCcdTransfer(InternalCcdTransferEvent {
+        logger.log(&Event::CcdCis5Transfer(CcdCis5TransferEvent {
             ccd_amount,
             from: from_public_key,
             to: to_public_key,
@@ -287,7 +287,7 @@ impl State {
     }
 
     /// Updates the state with a transfer of some tokens and logs an
-    /// `InternalCis2TokensTransfer` event. Results in an error if the token
+    /// `Cis2TokensCis5Transfer` event. Results in an error if the token
     /// contract, or the token id does not exist in the state or the from public
     /// key has insufficient balance to do the transfer.
     fn transfer_cis2_tokens(
@@ -327,7 +327,7 @@ impl State {
             *to_cis2_token_balance += token_amount;
         }
 
-        logger.log(&Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+        logger.log(&Event::Cis2TokensCis5Transfer(Cis2TokensCis5TransferEvent {
             token_amount,
             token_id,
             cis2_token_contract_address,
@@ -389,7 +389,7 @@ pub enum CustomContractError {
 pub type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Trait definition of the `IsMessage`. This trait is implemented for the two
-/// types `WithdrawMessage` and `InternalTransferMessage`. The `isMessage` trait
+/// types `WithdrawMessage` and `Cis5TransferMessage`. The `isMessage` trait
 /// is used as an input parameter to the `validate_signature_and_increase_nonce`
 /// function so that the function works with both message types.
 trait IsMessage {
@@ -416,7 +416,7 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
 /// - it fails to log the event.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "depositCCD",
+    name = "depositCcd",
     parameter = "PublicKeyEd25519",
     error = "CustomContractError",
     enable_logger,
@@ -510,9 +510,9 @@ fn deposit_cis2_tokens(
 /// Trait definition of the `SigningAmount`. This trait is implemented for the
 /// two types `Amount` and `TokenAmount`. The `SigningAmount` trait
 /// is used as a generic parameter in the `WithdrawParameter` and
-/// `InternalTransferParameter` types so that we can use the same parameters in
-/// the `withdraw/internalTransfer` functions (no matter if the function
-/// tranfsers CCD or CIS-2 tokens).
+/// `Cis5TransferParameter` types so that we can use the same parameters in
+/// the `withdraw/cis5Transfer` functions (no matter if the function
+/// transfers CCD or CIS-2 tokens).
 pub trait SigningAmount: Deserial + Serial {}
 
 /// `SigningAmount` trait definition for `Amount`.
@@ -578,7 +578,7 @@ pub struct WithdrawBatch<T: SigningAmount> {
 }
 
 /// The parameter type for the contract functions
-/// `withdrawCCD/withdrawCis2Tokens`.
+/// `withdrawCcd/withdrawCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
@@ -696,7 +696,7 @@ fn contract_view_withdraw_message_hash_token_amount(
 /// smart contracts. When withdrawing CCD to a contract address, a CCD receive
 /// hook function is triggered.
 ///
-/// The function logs `WithdrawCcd`, `InternalCcdTransfer`
+/// The function logs `WithdrawCcd`, `CcdCis5Transfer`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -713,7 +713,7 @@ fn contract_view_withdraw_message_hash_token_amount(
 /// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "withdrawCCD",
+    name = "withdrawCcd",
     parameter = "WithdrawParameter<Amount>",
     error = "CustomContractError",
     crypto_primitives,
@@ -745,7 +745,7 @@ fn withdraw_ccd(
             simple_withdraws,
         } = message.clone();
 
-        ensure_eq!(entry_point, "withdrawCCD", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(entry_point, "withdrawCcd", CustomContractError::WrongEntryPoint.into());
 
         validate_signature_and_increase_nonce(
             message,
@@ -816,7 +816,7 @@ fn withdraw_ccd(
 /// smart contracts. This function calls the `transfer` function on the CIS-2
 /// token contract for every withdrawal.
 ///
-/// The function logs `WithdrawCis2Tokens`, `InternalCis2TokensTransfer`
+/// The function logs `WithdrawCis2Tokens`, `Cis2TokensCis5Transfer`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -950,7 +950,7 @@ fn withdraw_cis2_tokens(
 
 /// A single transfer of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
-pub struct InternalTransfer<T: SigningAmount> {
+pub struct Cis5Transfer<T: SigningAmount> {
     /// The public key receiving the tokens being transferred.
     pub to:              PublicKeyEd25519,
     /// The amount of tokens being transferred.
@@ -959,7 +959,7 @@ pub struct InternalTransfer<T: SigningAmount> {
 
 /// The transfer message that is signed by the signer.
 #[derive(Serialize, Clone, SchemaType)]
-pub struct InternalTransferMessage<T: SigningAmount> {
+pub struct Cis5TransferMessage<T: SigningAmount> {
     /// The entry_point that the signature is intended for.
     pub entry_point:           OwnedEntrypointName,
     /// A timestamp to make the signatures expire.
@@ -972,10 +972,10 @@ pub struct InternalTransferMessage<T: SigningAmount> {
     pub service_fee_amount:    T,
     /// List of transfers.
     #[concordium(size_length = 2)]
-    pub simple_transfers:      Vec<InternalTransfer<T>>,
+    pub simple_transfers:      Vec<Cis5Transfer<T>>,
 }
 
-impl<T: SigningAmount> IsMessage for InternalTransferMessage<T> {
+impl<T: SigningAmount> IsMessage for Cis5TransferMessage<T> {
     fn expiry_time(&self) -> Timestamp { self.expiry_time }
 
     fn nonce(&self) -> u64 { self.nonce }
@@ -983,81 +983,81 @@ impl<T: SigningAmount> IsMessage for InternalTransferMessage<T> {
 
 /// A batch of transfers signed by a signer.
 #[derive(Serialize, SchemaType)]
-pub struct InternalTransferBatch<T: SigningAmount> {
+pub struct Cis5TransferBatch<T: SigningAmount> {
     /// The signer public key.
     pub signer:    PublicKeyEd25519,
     /// The signature.
     pub signature: SignatureEd25519,
     /// The message being signed.
-    pub message:   InternalTransferMessage<T>,
+    pub message:   Cis5TransferMessage<T>,
 }
 
 /// The parameter type for the contract functions
-/// `internalTransferCcd/internalTransferCis2Tokens`.
+/// `cis5TransferCcd/cis5TransferCis2Tokens`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
-pub struct InternalTransferParameter<T: SigningAmount> {
+pub struct Cis5TransferParameter<T: SigningAmount> {
     /// List of transfer batches.
     #[concordium(size_length = 2)]
-    pub transfers: Vec<InternalTransferBatch<T>>,
+    pub transfers: Vec<Cis5TransferBatch<T>>,
 }
 
-/// Helper function to calculate the `InternalTransferMessageHash` for a CCD
+/// Helper function to calculate the `Cis5TransferMessageHash` for a CCD
 /// amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewInternalTransferMessageHashCcdAmount",
-    parameter = "InternalTransferMessage<Amount>",
+    name = "viewCis5TransferMessageHashCcdAmount",
+    parameter = "Cis5TransferMessage<Amount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_internal_transfer_message_hash_ccd_amount(
+fn contract_view_cis5_transfer_message_hash_ccd_amount(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<[u8; 32]> {
     // Parse the parameter.
-    let param: InternalTransferMessage<Amount> = ctx.parameter_cursor().get()?;
+    let param: Cis5TransferMessage<Amount> = ctx.parameter_cursor().get()?;
 
     calculate_message_hash_from_bytes(&to_bytes(&param), crypto_primitives, ctx)
 }
 
-/// Helper function to calculate the `InternalTransferMessageHash` for a token
+/// Helper function to calculate the `Cis5TransferMessageHash` for a token
 /// amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewInternalTransferMessageHashTokenAmount",
-    parameter = "InternalTransferMessage<TokenAmount>",
+    name = "viewCis5TransferMessageHashTokenAmount",
+    parameter = "Cis5TransferMessage<TokenAmount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_internal_transfer_message_hash_token_amount(
+fn contract_view_cis5_transfer_message_hash_token_amount(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ContractResult<[u8; 32]> {
     // Parse the parameter.
-    let param: InternalTransferMessage<TokenAmount> = ctx.parameter_cursor().get()?;
+    let param: Cis5TransferMessage<TokenAmount> = ctx.parameter_cursor().get()?;
 
     calculate_message_hash_from_bytes(&to_bytes(&param), crypto_primitives, ctx)
 }
 
-/// The function executes a list of CCD internal transfers to public keys within
+/// The function executes a list of CCD CIS-5 transfers to public keys within
 /// the smart contract wallet.
 ///
-/// The function logs `InternalCcdTransfer`
+/// The function logs `CcdCis5Transfer`
 /// and `Nonce` events.
 ///
 /// It rejects if:
 /// - it fails to parse the parameter.
 /// - the message was intended for a different entry point.
-/// - the `AmountType` is not CCD for the service fee transfer or for any
-///   internal transfer.
+/// - the `AmountType` is not CCD for the service fee transfer or for any CIS-5
+///   transfer.
 /// - the message is expired.
 /// - the signature is invalid.
 /// - the nonce is wrong.
@@ -1066,30 +1066,30 @@ fn contract_view_internal_transfer_message_hash_token_amount(
 /// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "internalTransferCCD",
-    parameter = "InternalTransferParameter<Amount>",
+    name = "cis5TransferCcd",
+    parameter = "Cis5TransferParameter<Amount>",
     error = "CustomContractError",
     crypto_primitives,
     enable_logger,
     mutable
 )]
-fn internal_transfer_ccd(
+fn cis5_transfer_ccd(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
-    let param: InternalTransferParameter<Amount> = ctx.parameter_cursor().get()?;
+    let param: Cis5TransferParameter<Amount> = ctx.parameter_cursor().get()?;
 
     for transfer_batch in param.transfers {
-        let InternalTransferBatch {
+        let Cis5TransferBatch {
             signer,
             signature,
             message,
         } = transfer_batch;
 
-        let InternalTransferMessage {
+        let Cis5TransferMessage {
             entry_point,
             expiry_time: _,
             nonce,
@@ -1098,7 +1098,7 @@ fn internal_transfer_ccd(
             simple_transfers,
         } = message.clone();
 
-        ensure_eq!(entry_point, "internalTransferCCD", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(entry_point, "cis5TransferCcd", CustomContractError::WrongEntryPoint.into());
 
         validate_signature_and_increase_nonce(
             message,
@@ -1112,7 +1112,7 @@ fn internal_transfer_ccd(
         // Transfer service fee
         host.state_mut().transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
 
-        for InternalTransfer {
+        for Cis5Transfer {
             to,
             transfer_amount,
         } in simple_transfers
@@ -1130,17 +1130,17 @@ fn internal_transfer_ccd(
     Ok(())
 }
 
-/// The function executes a list of token internal transfers to public keys
+/// The function executes a list of token CIS-5 transfers to public keys
 /// within the smart contract wallet.
 ///
-/// The function logs `InternalCis2TokensTransfer`
+/// The function logs `Cis2TokensCis5Transfer`
 /// and `Nonce` events.
 ///
 /// It rejects:
 /// - it fails to parse the parameter.
 /// - the message was intended for a different entry point.
 /// - the `AmountType` is not a CIS-2 token for the service fee transfer or for
-///   any internal transfer.
+///   any CIS-5 transfer.
 /// - the message is expired.
 /// - the signature is invalid.
 /// - the nonce is wrong.
@@ -1149,30 +1149,30 @@ fn internal_transfer_ccd(
 /// - it fails to log any of the events.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "internalTransferCis2Tokens",
-    parameter = "InternalTransferParameter<TokenAmount>",
+    name = "cis5TransferCis2Tokens",
+    parameter = "Cis5TransferParameter<TokenAmount>",
     error = "CustomContractError",
     crypto_primitives,
     enable_logger,
     mutable
 )]
-fn internal_transfer_cis2_tokens(
+fn cis5_transfer_cis2_tokens(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
     logger: &mut Logger,
     crypto_primitives: &impl HasCryptoPrimitives,
 ) -> ReceiveResult<()> {
     // Parse the parameter.
-    let param: InternalTransferParameter<TokenAmount> = ctx.parameter_cursor().get()?;
+    let param: Cis5TransferParameter<TokenAmount> = ctx.parameter_cursor().get()?;
 
     for transfer_batch in param.transfers {
-        let InternalTransferBatch {
+        let Cis5TransferBatch {
             signer,
             signature,
             message,
         } = transfer_batch;
 
-        let InternalTransferMessage {
+        let Cis5TransferMessage {
             entry_point,
             expiry_time: _,
             nonce,
@@ -1183,7 +1183,7 @@ fn internal_transfer_cis2_tokens(
 
         ensure_eq!(
             entry_point,
-            "internalTransferCis2Tokens",
+            "cis5TransferCis2Tokens",
             CustomContractError::WrongEntryPoint.into()
         );
 
@@ -1206,7 +1206,7 @@ fn internal_transfer_cis2_tokens(
             logger,
         )?;
 
-        for InternalTransfer {
+        for Cis5Transfer {
             to,
             transfer_amount,
         } in simple_transfers
@@ -1298,7 +1298,7 @@ fn contract_supports(
     Ok(result)
 }
 
-/// The parameter type for the contract function `balanceOfCCD`.
+/// The parameter type for the contract function `balanceOfCcd`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
@@ -1309,7 +1309,7 @@ pub struct CcdBalanceOfParameter {
 }
 
 /// The response which is sent back when calling the contract function
-/// `balanceOfCCD`.
+/// `balanceOfCcd`.
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
@@ -1327,7 +1327,7 @@ impl From<Vec<Amount>> for CcdBalanceOfResponse {
 /// - It fails to parse the parameter.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "balanceOfCCD",
+    name = "balanceOfCcd",
     parameter = "CcdBalanceOfParameter",
     return_value = "CcdBalanceOfResponse",
     error = "CustomContractError"

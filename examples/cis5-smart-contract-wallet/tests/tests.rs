@@ -77,7 +77,7 @@ fn test_withdraw_ccd() {
     let withdraw_amount: Amount = Amount::from_micro_ccd(5);
 
     let message = WithdrawMessage {
-        entry_point: OwnedEntrypointName::new_unchecked("withdrawCCD".to_string()),
+        entry_point: OwnedEntrypointName::new_unchecked("withdrawCcd".to_string()),
         expiry_time: Timestamp::now(),
         nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
@@ -128,7 +128,7 @@ fn test_withdraw_ccd() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_wallet.withdrawCCD".to_string(),
+                    "smart_contract_wallet.withdrawCcd".to_string(),
                 ),
                 address:      smart_contract_wallet,
                 message:      OwnedParameter::from_serial(&withdraw_param)
@@ -160,7 +160,7 @@ fn test_withdraw_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalCcdTransfer(InternalCcdTransferEvent {
+        Event::CcdCis5Transfer(CcdCis5TransferEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
@@ -296,7 +296,7 @@ fn test_withdraw_cis2_tokens() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+        Event::Cis2TokensCis5Transfer(Cis2TokensCis5TransferEvent {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
@@ -317,9 +317,9 @@ fn test_withdraw_cis2_tokens() {
     ]);
 }
 
-/// Test internal transfer of ccd.
+/// Test cis5 transfer of ccd.
 #[test]
-fn test_internal_transfer_ccd() {
+fn test_cis5_transfer_ccd() {
     let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
         initialize_chain_and_contract();
 
@@ -336,19 +336,19 @@ fn test_internal_transfer_ccd() {
     let service_fee_amount: Amount = Amount::from_micro_ccd(1);
     let transfer_amount: Amount = Amount::from_micro_ccd(5);
 
-    let message = InternalTransferMessage {
-        entry_point: OwnedEntrypointName::new_unchecked("internalTransferCCD".to_string()),
+    let message = Cis5TransferMessage {
+        entry_point: OwnedEntrypointName::new_unchecked("cis5TransferCcd".to_string()),
         expiry_time: Timestamp::now(),
         nonce: 0u64,
         service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
-        simple_transfers: vec![InternalTransfer {
+        simple_transfers: vec![Cis5Transfer {
             to: BOB_PUBLIC_KEY,
             transfer_amount,
         }],
         service_fee_amount,
     };
 
-    let mut internal_transfer = InternalTransferBatch {
+    let mut cis5_transfer = Cis5TransferBatch {
         signer:    alice_public_key,
         signature: DUMMY_SIGNATURE,
         message:   message.clone(),
@@ -360,19 +360,19 @@ fn test_internal_transfer_ccd() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewInternalTransferMessageHashCcdAmount".to_string(),
+                "smart_contract_wallet.viewCis5TransferMessageHashCcdAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewInternalTransferMessageHashCcdAmount");
+        .expect("Should be able to query viewCis5TransferMessageHashCcdAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
-    internal_transfer.signature = SignatureEd25519(signature.to_bytes());
+    cis5_transfer.signature = SignatureEd25519(signature.to_bytes());
 
-    let internal_transfer_param = InternalTransferParameter {
-        transfers: vec![internal_transfer],
+    let cis5_transfer_param = Cis5TransferParameter {
+        transfers: vec![cis5_transfer],
     };
 
     let update = chain
@@ -384,14 +384,14 @@ fn test_internal_transfer_ccd() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_wallet.internalTransferCCD".to_string(),
+                    "smart_contract_wallet.cis5TransferCcd".to_string(),
                 ),
                 address:      smart_contract_wallet,
-                message:      OwnedParameter::from_serial(&internal_transfer_param)
-                    .expect("Internal transfer CCD params"),
+                message:      OwnedParameter::from_serial(&cis5_transfer_param)
+                    .expect("Cis5 transfer CCD params"),
             },
         )
-        .expect("Should be able to internally transfer CCD");
+        .expect("Should be able to cis5 transfer CCD");
 
     // Check that Alice now has `AIRDROP_CCD_AMOUNT - transfer_amount -
     // service_fee_amount` CCD and Bob has `transfer_amount` CCD, and
@@ -411,12 +411,12 @@ fn test_internal_transfer_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalCcdTransfer(InternalCcdTransferEvent {
+        Event::CcdCis5Transfer(CcdCis5TransferEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
         }),
-        Event::InternalCcdTransfer(InternalCcdTransferEvent {
+        Event::CcdCis5Transfer(CcdCis5TransferEvent {
             ccd_amount: transfer_amount,
             from:       alice_public_key,
             to:         BOB_PUBLIC_KEY,
@@ -428,9 +428,9 @@ fn test_internal_transfer_ccd() {
     ]);
 }
 
-/// Test internal transfer of cis2 tokens.
+/// Test cis5 transfer of cis2 tokens.
 #[test]
-fn test_internal_transfer_cis2_tokens() {
+fn test_cis5_transfer_cis2_tokens() {
     let (mut chain, smart_contract_wallet, cis2_token_contract_address) =
         initialize_chain_and_contract();
 
@@ -453,9 +453,9 @@ fn test_internal_transfer_cis2_tokens() {
     let transfer_amount: TokenAmountU256 = TokenAmountU256(5.into());
     let contract_token_id: TokenIdVec = TokenIdVec(vec![TOKEN_ID.0]);
 
-    let message = InternalTransferMessage {
+    let message = Cis5TransferMessage {
         entry_point:           OwnedEntrypointName::new_unchecked(
-            "internalTransferCis2Tokens".to_string(),
+            "cis5TransferCis2Tokens".to_string(),
         ),
         expiry_time:           Timestamp::now(),
         nonce:                 0u64,
@@ -465,7 +465,7 @@ fn test_internal_transfer_cis2_tokens() {
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
         },
-        simple_transfers:      vec![InternalTransfer {
+        simple_transfers:      vec![Cis5Transfer {
             to:              BOB_PUBLIC_KEY,
             transfer_amount: TokenAmount {
                 token_amount: transfer_amount,
@@ -475,7 +475,7 @@ fn test_internal_transfer_cis2_tokens() {
         }],
     };
 
-    let mut internal_transfer = InternalTransferBatch {
+    let mut cis5_transfer = Cis5TransferBatch {
         signer:    alice_public_key,
         signature: DUMMY_SIGNATURE,
         message:   message.clone(),
@@ -487,19 +487,19 @@ fn test_internal_transfer_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewInternalTransferMessageHashTokenAmount".to_string(),
+                "smart_contract_wallet.viewCis5TransferMessageHashTokenAmount".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewInternalTransferMessageHashTokenAmount");
+        .expect("Should be able to query viewCis5TransferMessageHashTokenAmount");
 
     let signature = signing_key.sign(&invoke.return_value);
 
-    internal_transfer.signature = SignatureEd25519(signature.to_bytes());
+    cis5_transfer.signature = SignatureEd25519(signature.to_bytes());
 
-    let internal_transfer_param = InternalTransferParameter {
-        transfers: vec![internal_transfer],
+    let cis5_transfer_param = Cis5TransferParameter {
+        transfers: vec![cis5_transfer],
     };
 
     let update = chain
@@ -511,14 +511,14 @@ fn test_internal_transfer_cis2_tokens() {
             UpdateContractPayload {
                 amount:       Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked(
-                    "smart_contract_wallet.internalTransferCis2Tokens".to_string(),
+                    "smart_contract_wallet.cis5TransferCis2Tokens".to_string(),
                 ),
                 address:      smart_contract_wallet,
-                message:      OwnedParameter::from_serial(&internal_transfer_param)
-                    .expect("Internal transfer cis2 tokens params"),
+                message:      OwnedParameter::from_serial(&cis5_transfer_param)
+                    .expect("Cis5 transfer cis2 tokens params"),
             },
         )
-        .expect("Should be able to internally transfer cis2 tokens");
+        .expect("Should be able to cis5 transfer cis2 tokens");
 
     // Check that Alice now has `AIRDROP_TOKEN_AMOUNT - transfer_amount -
     // service_fee_amount` tokens, Bob has `transfer_amount` tokens, and
@@ -540,14 +540,14 @@ fn test_internal_transfer_cis2_tokens() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+        Event::Cis2TokensCis5Transfer(Cis2TokensCis5TransferEvent {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
             from: alice_public_key,
             to: SERVICE_FEE_RECIPIENT_KEY
         }),
-        Event::InternalCis2TokensTransfer(InternalCis2TokensTransferEvent {
+        Event::Cis2TokensCis5Transfer(Cis2TokensCis5TransferEvent {
             token_amount: transfer_amount,
             token_id: contract_token_id,
             cis2_token_contract_address,
@@ -667,7 +667,7 @@ fn get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.balanceOfCCD".to_string(),
+                "smart_contract_wallet.balanceOfCcd".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&balance_of_params)
@@ -770,7 +770,7 @@ fn alice_deposits_ccd(
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       AIRDROP_CCD_AMOUNT,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.depositCCD".to_string(),
+                "smart_contract_wallet.depositCcd".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&alice_public_key)
