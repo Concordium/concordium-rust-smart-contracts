@@ -102,12 +102,12 @@ fn test_withdraw_ccd() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewWithdrawMessageHashCcdAmount".to_string(),
+                "smart_contract_wallet.getCcdWithdrawMessageHash".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewWithdrawMessageHashCccdAmount");
+        .expect("Should be able to query getCcdWithdrawMessageHash");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -236,12 +236,12 @@ fn test_withdraw_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewWithdrawMessageHashTokenAmount".to_string(),
+                "smart_contract_wallet.getCis2WithdrawMessageHash".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewWithdrawMessageHashTokenAmount");
+        .expect("Should be able to query getCis2WithdrawMessageHash");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -361,12 +361,12 @@ fn test_transfer_ccd() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewTransferMessageHashCcdAmount".to_string(),
+                "smart_contract_wallet.getCcdTransferMessageHash".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewTransferMessageHashCcdAmount");
+        .expect("Should be able to query getCcdTransferMessageHash");
 
     let signature = signing_key.sign(&invoke.return_value);
 
@@ -486,12 +486,12 @@ fn test_transfer_cis2_tokens() {
             amount:       Amount::zero(),
             address:      smart_contract_wallet,
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.viewTransferMessageHashTokenAmount".to_string(),
+                "smart_contract_wallet.getCis2TransferMessageHash".to_string(),
             ),
             message:      OwnedParameter::from_serial(&message)
                 .expect("Should be a valid inut parameter"),
         })
-        .expect("Should be able to query viewTransferMessageHashTokenAmount");
+        .expect("Should be able to query getCis2TransferMessageHash");
 
     let signature = signing_key.sign(&invoke.return_value);
 

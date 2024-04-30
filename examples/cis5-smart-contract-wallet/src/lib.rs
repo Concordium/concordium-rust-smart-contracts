@@ -654,14 +654,14 @@ fn validate_signature_and_increase_nonce<T: IsMessage + Serial>(
 /// Helper function to calculate the `WithdrawMessageHash` for a CCD amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewWithdrawMessageHashCcdAmount",
+    name = "getCcdWithdrawMessageHash",
     parameter = "WithdrawMessage<Amount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_withdraw_message_hash_ccd_amount(
+fn contract_get_ccd_withdraw_message_hash(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
@@ -675,14 +675,14 @@ fn contract_view_withdraw_message_hash_ccd_amount(
 /// Helper function to calculate the `WithdrawMessageHash` for a token amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewWithdrawMessageHashTokenAmount",
+    name = "getCis2WithdrawMessageHash",
     parameter = "WithdrawMessage<TokenAmount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_withdraw_message_hash_token_amount(
+fn contract_get_cis2_withdraw_message_hash(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
@@ -1008,14 +1008,14 @@ pub struct TransferParameter<T: SigningAmount> {
 /// amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewTransferMessageHashCcdAmount",
+    name = "getCcdTransferMessageHash",
     parameter = "TransferMessage<Amount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_transfer_message_hash_ccd_amount(
+fn contract_get_ccd_transfer_message_hash(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
@@ -1030,14 +1030,14 @@ fn contract_view_transfer_message_hash_ccd_amount(
 /// amount.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "viewTransferMessageHashTokenAmount",
+    name = "getCis2TransferMessageHash",
     parameter = "TransferMessage<TokenAmount>",
     return_value = "[u8;32]",
     error = "CustomContractError",
     crypto_primitives,
     mutable
 )]
-fn contract_view_transfer_message_hash_token_amount(
+fn contract_get_cis2_transfer_message_hash(
     ctx: &ReceiveContext,
     _host: &mut Host<State>,
     crypto_primitives: &impl HasCryptoPrimitives,
