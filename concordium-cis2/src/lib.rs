@@ -36,7 +36,7 @@
 mod cis2_client;
 pub use cis2_client::{Cis2Client, Cis2ClientError};
 
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::{collections::BTreeMap, schema::SchemaType, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
 #[cfg(not(feature = "std"))]
@@ -1254,7 +1254,7 @@ pub struct OnReceivingCis2Params<T, A> {
 /// with a specific type D for the AdditionalData.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, SchemaType)]
+#[derive(Debug)]
 pub struct OnReceivingCis2DataParams<T, A, D> {
     /// The ID of the token received.
     pub token_id: T,
@@ -1289,6 +1289,19 @@ impl<T: Serial, A: Serial, D: Serial> Serial for OnReceivingCis2DataParams<T, A,
         let add = AdditionalData(to_bytes(&self.data));
         add.serial(out)?;
         Ok(())
+    }
+}
+
+/// SchemaType trait for OnReceivingCis2DataParams<T, A, D>.
+impl<T: SchemaType, A: SchemaType, D> SchemaType for OnReceivingCis2DataParams<T, A, D> {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            (String::from("token_id"), T::get_type()),
+            (String::from("amount"), A::get_type()),
+            (String::from("from"), Address::get_type()),
+            // The data field is serialized the same as AdditionalData.
+            (String::from("data"), AdditionalData::get_type()),
+        ]))
     }
 }
 

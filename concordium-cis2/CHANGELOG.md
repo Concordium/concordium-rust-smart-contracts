@@ -3,6 +3,7 @@
 ## Unreleased changes
 
 - Bump MSRV to 1.72
+- Fix `SchemaType` implementation of `OnReceivingCis2DataParams<T, A, D>` so that it matches `Serial` and `Deserial` implementations.
 
 ## concordium-cis2 6.1.0 (2024-02-22)
 
@@ -31,7 +32,7 @@
 ## concordium-cis2 4.0.0 (2023-06-16)
 
 - Bump concordium-std to version 7.
-p
+
 ## concordium-cis2 3.1.0 (2023-05-08)
 
 - Derive `PartialEq` and `Eq` for the `MetadataUrl` from the CIS2 library.
