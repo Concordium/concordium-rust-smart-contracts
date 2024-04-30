@@ -12,13 +12,13 @@
 //! holder of the corresponding private key, ensuring self-custodial control
 //! over the assets.
 //!
-//! Transfers of CCD and CIS-2 token balances (meaning the `withdraw`,
-//! `transferCcd`, and `transferCis2Tokens` functions) do not require
-//! on-chain transaction submissions. Instead, the holder of the corresponding
-//! private key can generate a valid signature and identify a third party to
-//! submit the transaction on-chain, potentially incentivizing the third-party
-//! involvement through a service fee. The message that was signed specifies the
-//! amount of service fee and the service fee recipient's public key.
+//! Transfers of CCD and CIS-2 token balances (meaning the `withdraw` and
+//! `transfer` functions) do not require on-chain transaction submissions.
+//! Instead, the holder of the corresponding private key can generate a valid
+//! signature and identify a third party to submit the transaction on-chain,
+//! potentially incentivizing the third-party involvement through a service fee.
+//! The message that was signed specifies the amount of service fee and the
+//! service fee recipient's public key.
 //!
 //! Any withdrawal (CCD or CIS-2 tokens) to a smart contract will
 //! invoke a `receiveHook` function on that smart contract.
@@ -248,8 +248,8 @@ impl State {
     }
 
     /// Updates the state with a transfer of CCD amount and logs an
-    /// `CcdTransfer` event. Results in an error if the
-    /// from public key has insufficient balance to do the transfer.
+    /// `CcdTransfer` event. Results in an error if the from public key has
+    /// insufficient balance to do the transfer.
     fn transfer_ccd(
         &mut self,
         from_public_key: PublicKeyEd25519,
@@ -390,8 +390,8 @@ pub enum CustomContractError {
 pub type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Trait definition of the `IsMessage`. This trait is implemented for the two
-/// types `WithdrawMessage` and `TransferMessage`. The `isMessage` trait
-/// is used as an input parameter to the `validate_signature_and_increase_nonce`
+/// types `WithdrawMessage` and `TransferMessage`. The `isMessage` trait is used
+/// as an input parameter to the `validate_signature_and_increase_nonce`
 /// function so that the function works with both message types.
 trait IsMessage {
     fn expiry_time(&self) -> Timestamp;
@@ -512,7 +512,7 @@ fn deposit_cis2_tokens(
 /// two types `Amount` and `TokenAmount`. The `SigningAmount` trait
 /// is used as a generic parameter in the `WithdrawParameter` and
 /// `TransferParameter` types so that we can use the same parameters in
-/// the `withdraw/transferCcd/transferCis2Tokens` functions (no matter if the
+/// the `withdraw`/`transfer` functions (no matter if the
 /// function transfers CCD or CIS-2 tokens).
 pub trait SigningAmount: Deserial + Serial {}
 
@@ -1057,7 +1057,7 @@ fn contract_get_cis2_transfer_message_hash(
 /// It rejects if:
 /// - it fails to parse the parameter.
 /// - the message was intended for a different entry point.
-/// - the `AmountType` is not CCD for the service fee transfer or for any CIS-5
+/// - the `AmountType` is not CCD for the service fee transfer or for any
 ///   transfer.
 /// - the message is expired.
 /// - the signature is invalid.
