@@ -1295,7 +1295,7 @@ fn contract_supports(
     Ok(result)
 }
 
-/// The parameter type for the contract function `balanceOfCcd`.
+/// The parameter type for the contract function `ccdBalanceOf`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
@@ -1306,7 +1306,7 @@ pub struct CcdBalanceOfParameter {
 }
 
 /// The response which is sent back when calling the contract function
-/// `balanceOfCcd`.
+/// `ccdBalanceOf`.
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
@@ -1324,12 +1324,12 @@ impl From<Vec<Amount>> for CcdBalanceOfResponse {
 /// - It fails to parse the parameter.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "balanceOfCcd",
+    name = "ccdBalanceOf",
     parameter = "CcdBalanceOfParameter",
     return_value = "CcdBalanceOfResponse",
     error = "CustomContractError"
 )]
-fn contract_balance_of_ccd(
+fn contract_ccd_balance_of(
     ctx: &ReceiveContext,
     host: &Host<State>,
 ) -> ContractResult<CcdBalanceOfResponse> {
@@ -1348,7 +1348,7 @@ fn contract_balance_of_ccd(
 
 /// A query for the token balance of a given public key.
 #[derive(Serialize, SchemaType)]
-pub struct Cis2TokensBalanceOfQuery {
+pub struct Cis2BalanceOfQuery {
     /// The ID of the token.
     pub token_id:                    ContractTokenId,
     /// The token contract address.
@@ -1357,27 +1357,27 @@ pub struct Cis2TokensBalanceOfQuery {
     pub public_key:                  PublicKeyEd25519,
 }
 
-/// The parameter type for the contract function `balanceOfCis2Tokens`.
+/// The parameter type for the contract function `cis2BalanceOf`.
 #[derive(Serialize, SchemaType)]
 #[concordium(transparent)]
 #[repr(transparent)]
-pub struct Cis2TokensBalanceOfParameter {
+pub struct Cis2BalanceOfParameter {
     /// List of balance queries.
     #[concordium(size_length = 2)]
-    pub queries: Vec<Cis2TokensBalanceOfQuery>,
+    pub queries: Vec<Cis2BalanceOfQuery>,
 }
 
 /// The response which is sent back when calling the contract function
-/// `balanceOfCis2Tokens`.
+/// `cis2BalanceOf`.
 /// It consists of the list of results corresponding to the list of queries.
 #[derive(Serialize, SchemaType, PartialEq, Eq)]
 #[concordium(transparent)]
 #[repr(transparent)]
-pub struct Cis2TokensBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<ContractTokenAmount>);
+pub struct Cis2BalanceOfResponse(#[concordium(size_length = 2)] pub Vec<ContractTokenAmount>);
 
 /// Conversion helper function.
-impl From<Vec<ContractTokenAmount>> for Cis2TokensBalanceOfResponse {
-    fn from(results: Vec<ContractTokenAmount>) -> Self { Cis2TokensBalanceOfResponse(results) }
+impl From<Vec<ContractTokenAmount>> for Cis2BalanceOfResponse {
+    fn from(results: Vec<ContractTokenAmount>) -> Self { Cis2BalanceOfResponse(results) }
 }
 
 /// The function queries the token balances of a list of public keys.
@@ -1386,17 +1386,17 @@ impl From<Vec<ContractTokenAmount>> for Cis2TokensBalanceOfResponse {
 /// - It fails to parse the parameter.
 #[receive(
     contract = "smart_contract_wallet",
-    name = "balanceOfCis2Tokens",
-    parameter = "Cis2TokensBalanceOfParameter",
-    return_value = "Cis2TokensBalanceOfResponse",
+    name = "cis2BalanceOf",
+    parameter = "Cis2BalanceOfParameter",
+    return_value = "Cis2BalanceOfResponse",
     error = "CustomContractError"
 )]
-fn contract_balance_of_cis2_tokens(
+fn contract_cis2_balance_of(
     ctx: &ReceiveContext,
     host: &Host<State>,
-) -> ContractResult<Cis2TokensBalanceOfResponse> {
+) -> ContractResult<Cis2BalanceOfResponse> {
     // Parse the parameter.
-    let params: Cis2TokensBalanceOfParameter = ctx.parameter_cursor().get()?;
+    let params: Cis2BalanceOfParameter = ctx.parameter_cursor().get()?;
     // Build the response.
     let mut response = Vec::with_capacity(params.queries.len());
     for query in params.queries {
@@ -1408,7 +1408,7 @@ fn contract_balance_of_cis2_tokens(
         );
         response.push(amount);
     }
-    let result = Cis2TokensBalanceOfResponse::from(response);
+    let result = Cis2BalanceOfResponse::from(response);
     Ok(result)
 }
 

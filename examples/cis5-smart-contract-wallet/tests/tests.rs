@@ -616,20 +616,20 @@ fn get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
     smart_contract_wallet: ContractAddress,
     cis2_token_contract_address: ContractAddress,
     alice_public_key: PublicKeyEd25519,
-) -> Cis2TokensBalanceOfResponse {
-    let balance_of_params = Cis2TokensBalanceOfParameter {
+) -> Cis2BalanceOfResponse {
+    let balance_of_params = Cis2BalanceOfParameter {
         queries: vec![
-            Cis2TokensBalanceOfQuery {
+            Cis2BalanceOfQuery {
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: alice_public_key,
             },
-            Cis2TokensBalanceOfQuery {
+            Cis2BalanceOfQuery {
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: BOB_PUBLIC_KEY,
             },
-            Cis2TokensBalanceOfQuery {
+            Cis2BalanceOfQuery {
                 token_id: TokenIdVec(vec![TOKEN_ID.0]),
                 cis2_token_contract_address,
                 public_key: SERVICE_FEE_RECIPIENT_KEY,
@@ -640,15 +640,15 @@ fn get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.balanceOfCis2Tokens".to_string(),
+                "smart_contract_wallet.cis2BalanceOf".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf cis2 token params"),
+                .expect("CIS-2 BalanceOf params"),
         })
-        .expect("Invoke balanceOf cis2 token");
-    let rv: Cis2TokensBalanceOfResponse =
-        invoke.parse_return_value().expect("BalanceOf CIS-2 token return value");
+        .expect("Invoke CIS-2 BalanceOf");
+    let rv: Cis2BalanceOfResponse =
+        invoke.parse_return_value().expect("CIS-2 BalanceOf return value");
     rv
 }
 
@@ -666,14 +666,14 @@ fn get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
             amount:       Amount::zero(),
             receive_name: OwnedReceiveName::new_unchecked(
-                "smart_contract_wallet.balanceOfCcd".to_string(),
+                "smart_contract_wallet.ccdBalanceOf".to_string(),
             ),
             address:      smart_contract_wallet,
             message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf CCD params"),
+                .expect("CCD BalanceOf params"),
         })
-        .expect("Invoke balanceOf CCD");
-    let rv: CcdBalanceOfResponse = invoke.parse_return_value().expect("BalanceOf CCD return value");
+        .expect("Invoke CCD balanceOf");
+    let rv: CcdBalanceOfResponse = invoke.parse_return_value().expect("CCD BalanceOf return value");
     rv
 }
 
