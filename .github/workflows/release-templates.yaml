@@ -336,4 +336,3 @@ jobs:
           tag: releases/templates/v${{ github.event.inputs.tag }}
           draft: true
           name: Template Release v${{ github.event.inputs.tag }}
-          body: ${{ steps.tag_version.outputs.changelog }}
