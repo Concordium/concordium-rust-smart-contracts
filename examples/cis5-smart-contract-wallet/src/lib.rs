@@ -39,8 +39,7 @@
 //! The public key accounts in this smart contract wallet can't submit the
 //! transactions on chain themselves, but rely on someone with a native account
 //! (third-party) to do so.
-use concordium_cis2 as cis2;
-use concordium_cis2::*;
+use concordium_cis2::{self as cis2, *};
 use concordium_std::*;
 
 // The testnet genesis hash is:
@@ -92,11 +91,11 @@ pub enum Event {
     /// The event tracks every time a CCD amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 245)]
-    CcdTransfer(CcdTransferEvent),
+    TransferCcd(TransferCcdEvent),
     /// The event tracks every time a token amount held by a public key is
     /// transferred to another public key within the contract.
     #[concordium(tag = 244)]
-    Cis2TokensTransfer(Cis2TokensTransferEvent),
+    TransferCis2Tokens(TransferCis2TokensEvent),
 }
 
 /// The `NonceEvent` is logged whenever a signature is checked. The event
@@ -165,11 +164,11 @@ pub struct WithdrawCis2TokensEvent {
     pub to: Address,
 }
 
-/// The `CcdTransferEvent` is logged whenever a CCD amount
+/// The `TransferCcdEvent` is logged whenever a CCD amount
 /// held by a public key is transferred to another public key within the
 /// contract.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct CcdTransferEvent {
+pub struct TransferCcdEvent {
     /// The CCD amount transferred.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be transferred from.
@@ -178,10 +177,10 @@ pub struct CcdTransferEvent {
     pub to:         PublicKeyEd25519,
 }
 
-/// The `Cis2TokensTransferEvent` is logged whenever a token amount held
+/// The `TransferCis2TokensEvent` is logged whenever a token amount held
 /// by a public key is transferred to another public key within the contract.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct Cis2TokensTransferEvent {
+pub struct TransferCis2TokensEvent {
     /// The token amount transferred.
     pub token_amount: ContractTokenAmount,
     /// The token id of the token transferred.
@@ -248,7 +247,7 @@ impl State {
     }
 
     /// Updates the state with a transfer of CCD amount and logs an
-    /// `CcdTransfer` event. Results in an error if the from public key has
+    /// `TransferCcd` event. Results in an error if the from public key has
     /// insufficient balance to do the transfer.
     fn transfer_ccd(
         &mut self,
@@ -278,7 +277,7 @@ impl State {
                 .ok_or(CustomContractError::Overflow)?;
         }
 
-        logger.log(&Event::CcdTransfer(CcdTransferEvent {
+        logger.log(&Event::TransferCcd(TransferCcdEvent {
             ccd_amount,
             from: from_public_key,
             to: to_public_key,
@@ -288,7 +287,7 @@ impl State {
     }
 
     /// Updates the state with a transfer of some tokens and logs an
-    /// `Cis2TokensTransfer` event. Results in an error if the token
+    /// `TransferCis2Tokens` event. Results in an error if the token
     /// contract, or the token id does not exist in the state or the from public
     /// key has insufficient balance to do the transfer.
     fn transfer_cis2_tokens(
@@ -328,7 +327,7 @@ impl State {
             *to_cis2_token_balance += token_amount;
         }
 
-        logger.log(&Event::Cis2TokensTransfer(Cis2TokensTransferEvent {
+        logger.log(&Event::TransferCis2Tokens(TransferCis2TokensEvent {
             token_amount,
             token_id,
             cis2_token_contract_address,
@@ -697,7 +696,7 @@ fn contract_get_cis2_withdraw_message_hash(
 /// smart contracts. When withdrawing CCD to a contract address, a CCD receive
 /// hook function is triggered.
 ///
-/// The function logs `WithdrawCcd`, `CcdTransfer`
+/// The function logs `WithdrawCcd`, `TransferCcd`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -817,7 +816,7 @@ fn withdraw_ccd(
 /// smart contracts. This function calls the `transfer` function on the CIS-2
 /// token contract for every withdrawal.
 ///
-/// The function logs `WithdrawCis2Tokens`, `Cis2TokensTransfer`
+/// The function logs `WithdrawCis2Tokens`, `TransferCis2Tokens`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -1051,7 +1050,7 @@ fn contract_get_cis2_transfer_message_hash(
 /// The function executes a list of CCD transfers to public keys within the
 /// smart contract wallet.
 ///
-/// The function logs `CcdTransfer`
+/// The function logs `TransferCcd`
 /// and `Nonce` events.
 ///
 /// It rejects if:
@@ -1134,7 +1133,7 @@ fn transfer_ccd(
 /// The function executes a list of token transfers to public keys within the
 /// smart contract wallet.
 ///
-/// The function logs `Cis2TokensTransfer`
+/// The function logs `TransferCis2Tokens`
 /// and `Nonce` events.
 ///
 /// It rejects:

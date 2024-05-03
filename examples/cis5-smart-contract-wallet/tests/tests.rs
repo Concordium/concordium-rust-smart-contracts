@@ -161,7 +161,7 @@ fn test_withdraw_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::CcdTransfer(CcdTransferEvent {
+        Event::TransferCcd(TransferCcdEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
@@ -297,7 +297,7 @@ fn test_withdraw_cis2_tokens() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::Cis2TokensTransfer(Cis2TokensTransferEvent {
+        Event::TransferCis2Tokens(TransferCis2TokensEvent {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
@@ -412,12 +412,12 @@ fn test_transfer_ccd() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::CcdTransfer(CcdTransferEvent {
+        Event::TransferCcd(TransferCcdEvent {
             ccd_amount: service_fee_amount,
             from:       alice_public_key,
             to:         SERVICE_FEE_RECIPIENT_KEY,
         }),
-        Event::CcdTransfer(CcdTransferEvent {
+        Event::TransferCcd(TransferCcdEvent {
             ccd_amount: transfer_amount,
             from:       alice_public_key,
             to:         BOB_PUBLIC_KEY,
@@ -539,14 +539,14 @@ fn test_transfer_cis2_tokens() {
     let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
 
     assert_eq!(events, [
-        Event::Cis2TokensTransfer(Cis2TokensTransferEvent {
+        Event::TransferCis2Tokens(TransferCis2TokensEvent {
             token_amount: service_fee_amount,
             token_id: contract_token_id.clone(),
             cis2_token_contract_address,
             from: alice_public_key,
             to: SERVICE_FEE_RECIPIENT_KEY
         }),
-        Event::Cis2TokensTransfer(Cis2TokensTransferEvent {
+        Event::TransferCis2Tokens(TransferCis2TokensEvent {
             token_amount: transfer_amount,
             token_id: contract_token_id,
             cis2_token_contract_address,
