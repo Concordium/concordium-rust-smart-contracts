@@ -3,6 +3,8 @@
 ## Unreleased changes
 
 - Bump MSRV to 1.72
+- Add `FromStr` implementations for `TokenId` types.
+- Add a `serde` feature that derives `serde::Serialize` and `serde::Deserialize` for `TokenId` types, `TokenAmount` types, `OnReceivingCis2DataParams<T, A, D>`, `OnReceivingCis2Params<T, A>`, `AdditionalData`, and `Receiver`.
 
 ## concordium-cis2 6.1.0 (2024-02-22)
 
@@ -27,11 +29,10 @@
   call into other cis2 compatible smart contracts in a type safe way.
 - Bump concordium-std to version 8.
 
-
 ## concordium-cis2 4.0.0 (2023-06-16)
 
 - Bump concordium-std to version 7.
-p
+
 ## concordium-cis2 3.1.0 (2023-05-08)
 
 - Derive `PartialEq` and `Eq` for the `MetadataUrl` from the CIS2 library.
