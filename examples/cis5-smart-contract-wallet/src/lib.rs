@@ -41,6 +41,8 @@
 //! (third-party) to do so.
 use concordium_cis2::{self as cis2, *};
 use concordium_std::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
 // The testnet genesis hash is:
 // 0x4221332d34e1694168c2a0c0b3fd0f273809612cb13d000d5c2e00e85f50f796
@@ -533,6 +535,7 @@ pub struct TokenAmount {
 
 /// A single withdrawal of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Withdraw<T: SigningAmount> {
     /// The address receiving the CCD or tokens being withdrawn.
     pub to:              Receiver,
@@ -544,6 +547,7 @@ pub struct Withdraw<T: SigningAmount> {
 
 /// The withdraw message that is signed by the signer.
 #[derive(Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct WithdrawMessage<T: SigningAmount> {
     /// The entry_point that the signature is intended for.
     pub entry_point:           OwnedEntrypointName,
@@ -568,6 +572,7 @@ impl<T: SigningAmount> IsMessage for WithdrawMessage<T> {
 
 /// A batch of withdrawals signed by a signer.
 #[derive(Serialize, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct WithdrawBatch<T: SigningAmount> {
     /// The signer public key.
     pub signer:    PublicKeyEd25519,
@@ -580,6 +585,7 @@ pub struct WithdrawBatch<T: SigningAmount> {
 /// The parameter type for the contract functions
 /// `withdrawCcd/withdrawCis2Tokens`.
 #[derive(Serialize, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 #[repr(transparent)]
 pub struct WithdrawParameter<T: SigningAmount> {
@@ -950,6 +956,7 @@ fn withdraw_cis2_tokens(
 
 /// A single transfer of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Transfer<T: SigningAmount> {
     /// The public key receiving the tokens being transferred.
     pub to:              PublicKeyEd25519,
@@ -959,6 +966,7 @@ pub struct Transfer<T: SigningAmount> {
 
 /// The transfer message that is signed by the signer.
 #[derive(Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TransferMessage<T: SigningAmount> {
     /// The entry_point that the signature is intended for.
     pub entry_point:           OwnedEntrypointName,
@@ -983,6 +991,7 @@ impl<T: SigningAmount> IsMessage for TransferMessage<T> {
 
 /// A batch of transfers signed by a signer.
 #[derive(Serialize, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TransferBatch<T: SigningAmount> {
     /// The signer public key.
     pub signer:    PublicKeyEd25519,
@@ -995,6 +1004,7 @@ pub struct TransferBatch<T: SigningAmount> {
 /// The parameter type for the contract functions
 /// `transferCcd/transferCis2Tokens`.
 #[derive(Serialize, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 #[repr(transparent)]
 pub struct TransferParameter<T: SigningAmount> {
