@@ -5,6 +5,7 @@
 - Integrate protocol version 7 cost semantics.
 - The `ContractInvokeSuccess` and `ContractInvokeError` have additional fields
   that record where parts of the energy was allocated during execution.
+- Add support for loading the contract under test with the `module_load_contract` function. The module path is exposed by `cargo-concordium` through the `CARGO_CONCORDIUM_TEST_MODULE_OUTPUT_PATH` environment variable.
 
 ## 4.2.0
 
