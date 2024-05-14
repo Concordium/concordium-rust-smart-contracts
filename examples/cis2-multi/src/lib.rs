@@ -119,9 +119,13 @@
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
+/// The standard identifier for the CIS-3 standard.
+pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
+    StandardIdentifier::new_unchecked("CIS-3");
+
 /// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 2] =
-    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER];
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
+    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER, CIS3_STANDARD_IDENTIFIER];
 
 /// List of supported entrypoints by the `permit` function (CIS3 standard).
 const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =

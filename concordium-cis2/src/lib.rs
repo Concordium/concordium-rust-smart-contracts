@@ -28,21 +28,25 @@
 //!
 //! # Features
 //!
-//! This crate has features `std` and `u256_amount`. The former one is default.
-//! When `u256_amount` feature is enabled the type [`TokenAmountU256`] is
-//! defined and implements the [`IsTokenAmount`] interface.
+//! This crate has features `std`, `u256_amount`, and `serde`. The first one is
+//! default. When the `u256_amount` feature is enabled the type
+//! [`TokenAmountU256`] is defined and implements the [`IsTokenAmount`]
+//! interface. The `serde` features derives `serde::Serialize` and
+//! `serde::Deserialize` for a variety of types.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod cis2_client;
 pub use cis2_client::{Cis2Client, Cis2ClientError};
 
-use concordium_std::{collections::BTreeMap, *};
+use concordium_std::{collections::BTreeMap, schema::SchemaType, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
 #[cfg(not(feature = "std"))]
-use core::{fmt, ops};
+use core::{fmt, ops, str::FromStr};
+#[cfg(feature = "serde")]
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 #[cfg(feature = "std")]
-use std::{fmt, ops};
+use std::{fmt, ops, str::FromStr};
 
 use convert::TryFrom;
 
@@ -101,6 +105,11 @@ pub trait IsTokenAmount: Serialize + schema::SchemaType {}
 /// unless the bytes have some significant meaning, it is most likely better to
 /// use a smaller fixed size token ID such as `TokenIdU8`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Serialize)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdVec(#[concordium(size_length = 1)] pub Vec<u8>);
 
 impl IsTokenId for TokenIdVec {}
@@ -119,6 +128,37 @@ impl fmt::Display for TokenIdVec {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdVec> for String {
+    fn from(id: TokenIdVec) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdVec {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl FromStr for TokenIdVec {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() % 2 != 0 || !s.is_ascii() {
+            return Err(ParseError {});
+        }
+
+        let mut id = Vec::with_capacity(s.len() / 2);
+        for i in (0..s.len()).step_by(2) {
+            let byte = u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| ParseError {})?;
+            id.push(byte);
+        }
+
+        Ok(Self(id))
+    }
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -132,6 +172,11 @@ impl fmt::Display for TokenIdVec {
 /// For fixed sized token IDs with integer representations see `TokenIdU8`,
 /// `TokenIdU16`, `TokenIdU32` and `TokenIdU64`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdFixed<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> IsTokenId for TokenIdFixed<N> {}
@@ -179,6 +224,25 @@ impl<const N: usize> fmt::Display for TokenIdFixed<N> {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<const N: usize> From<TokenIdFixed<N>> for String {
+    fn from(id: TokenIdFixed<N>) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl<const N: usize> TryFrom<String> for TokenIdFixed<N> {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl<const N: usize> FromStr for TokenIdFixed<N> {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> { parse_bytes_exact(s).map(Self) }
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -190,6 +254,11 @@ impl<const N: usize> fmt::Display for TokenIdFixed<N> {
 /// token ID space is fixed to 8 bytes and some token IDs cannot be represented.
 /// For a more general token ID type see `TokenIdVec`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdU64(pub u64);
 
 impl IsTokenId for TokenIdU64 {}
@@ -235,6 +304,28 @@ impl fmt::Display for TokenIdU64 {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdU64> for String {
+    fn from(id: TokenIdU64) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdU64 {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl FromStr for TokenIdU64 {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = parse_bytes_exact(s)?;
+        Ok(Self(u64::from_le_bytes(bytes)))
+    }
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -246,6 +337,11 @@ impl fmt::Display for TokenIdU64 {
 /// token ID space is fixed to 4 bytes and some token IDs cannot be represented.
 /// For a more general token ID type see `TokenIdVec`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdU32(pub u32);
 
 impl IsTokenId for TokenIdU32 {}
@@ -291,6 +387,28 @@ impl fmt::Display for TokenIdU32 {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdU32> for String {
+    fn from(id: TokenIdU32) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdU32 {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl FromStr for TokenIdU32 {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = parse_bytes_exact(s)?;
+        Ok(Self(u32::from_le_bytes(bytes)))
+    }
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -302,6 +420,11 @@ impl fmt::Display for TokenIdU32 {
 /// token ID space is fixed to 2 bytes and some token IDs cannot be represented.
 /// For a more general token ID type see `TokenIdVec`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdU16(pub u16);
 
 impl IsTokenId for TokenIdU16 {}
@@ -347,6 +470,28 @@ impl fmt::Display for TokenIdU16 {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdU16> for String {
+    fn from(id: TokenIdU16) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdU16 {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl FromStr for TokenIdU16 {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = parse_bytes_exact(s)?;
+        Ok(Self(u16::from_le_bytes(bytes)))
+    }
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -358,6 +503,11 @@ impl fmt::Display for TokenIdU16 {
 /// token ID space is fixed to 1 byte and some token IDs cannot be represented.
 /// For a more general token ID type see `TokenIdVec`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdU8(pub u8);
 
 impl IsTokenId for TokenIdU8 {}
@@ -403,6 +553,42 @@ impl fmt::Display for TokenIdU8 {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdU8> for String {
+    fn from(id: TokenIdU8) -> Self { id.to_string() }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdU8 {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+}
+
+/// Parse the token ID from a hex string
+impl FromStr for TokenIdU8 {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = parse_bytes_exact::<1>(s)?;
+        Ok(Self(bytes[0]))
+    }
+}
+
+/// Parses a hex string as a little endian array of bytes of length `N`.
+fn parse_bytes_exact<const N: usize>(s: &str) -> Result<[u8; N], ParseError> {
+    if s.len() != 2 * N || !s.is_ascii() {
+        return Err(ParseError {});
+    }
+
+    let mut bytes = [0; N];
+    for (i, place) in bytes.iter_mut().enumerate() {
+        *place = u8::from_str_radix(&s[(2 * i)..(2 * i + 2)], 16).map_err(|_| ParseError {})?;
+    }
+
+    Ok(bytes)
+}
+
 /// Token Identifier, which combined with the address of the contract instance,
 /// forms the unique identifier of a token type.
 ///
@@ -414,6 +600,11 @@ impl fmt::Display for TokenIdU8 {
 /// token ID can be represented with this type and other token IDs cannot be
 /// represented. For a more general token ID type see `TokenIdVec`.
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Copy, Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(SerdeSerialize, SerdeDeserialize),
+    serde(into = "String", try_from = "String")
+)]
 pub struct TokenIdUnit();
 
 impl IsTokenId for TokenIdUnit {}
@@ -440,9 +631,28 @@ impl Deserial for TokenIdUnit {
     }
 }
 
+#[cfg(feature = "serde")]
+impl From<TokenIdUnit> for String {
+    fn from(_id: TokenIdUnit) -> Self { String::from("") }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<String> for TokenIdUnit {
+    type Error = ParseError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        if s == "" {
+            Ok(Self())
+        } else {
+            Err(ParseError {})
+        }
+    }
+}
+
 macro_rules! token_amount_wrapper {
     ($name:ident, $wrapped:ty) => {
         #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
+        #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
         #[repr(transparent)]
         pub struct $name(pub $wrapped);
 
@@ -559,8 +769,9 @@ mod u256_token {
     use super::*;
     use primitive_types::U256;
     #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Default)]
-    #[repr(transparent)]
+    #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
     #[cfg_attr(docsrs, cfg(feature = "u256_amount"))]
+    #[repr(transparent)]
     pub struct TokenAmountU256(pub U256);
 
     impl ops::Add<Self> for TokenAmountU256 {
@@ -1014,6 +1225,7 @@ where
 // specification, the order of the variants and the order of their fields
 // cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub enum Receiver {
     /// The receiver is an account address.
     Account(
@@ -1053,6 +1265,7 @@ impl From<AccountAddress> for Receiver {
 
 /// Additional information to include with a transfer.
 #[derive(Debug, Serialize, Clone)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
 
@@ -1078,6 +1291,7 @@ impl AsRef<[u8]> for AdditionalData {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -1094,6 +1308,7 @@ pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
     #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
@@ -1111,6 +1326,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
 #[derive(Debug, Serialize, Clone, Copy, SchemaType, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -1122,6 +1338,7 @@ pub enum OperatorUpdate {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -1133,6 +1350,7 @@ pub struct UpdateOperator {
 
 /// The parameter type for the contract function `updateOperator`.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
@@ -1239,6 +1457,7 @@ impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct OnReceivingCis2Params<T, A> {
     /// The ID of the token received.
     pub token_id: T,
@@ -1254,7 +1473,8 @@ pub struct OnReceivingCis2Params<T, A> {
 /// with a specific type D for the AdditionalData.
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
-#[derive(Debug, SchemaType)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct OnReceivingCis2DataParams<T, A, D> {
     /// The ID of the token received.
     pub token_id: T,
@@ -1289,6 +1509,19 @@ impl<T: Serial, A: Serial, D: Serial> Serial for OnReceivingCis2DataParams<T, A,
         let add = AdditionalData(to_bytes(&self.data));
         add.serial(out)?;
         Ok(())
+    }
+}
+
+/// SchemaType trait for OnReceivingCis2DataParams<T, A, D>.
+impl<T: SchemaType, A: SchemaType, D> SchemaType for OnReceivingCis2DataParams<T, A, D> {
+    fn get_type() -> schema::Type {
+        schema::Type::Struct(schema::Fields::Named(vec![
+            (String::from("token_id"), T::get_type()),
+            (String::from("amount"), A::get_type()),
+            (String::from("from"), Address::get_type()),
+            // The data field is serialized the same as AdditionalData.
+            (String::from("data"), AdditionalData::get_type()),
+        ]))
     }
 }
 
@@ -1556,5 +1789,23 @@ mod test {
     fn deserial_token_amount8_max_test() {
         let amount: TokenAmountU8 = from_bytes(&[255, 0b00000001]).expect("Failed to parse bytes");
         assert_eq!(amount, TokenAmountU8::from(u8::MAX))
+    }
+
+    #[test]
+    fn token_id_vec_from_str_test() {
+        let id = TokenIdVec(vec![1, 2, 3, 255]);
+        assert_eq!(id.to_string().parse(), Ok(id))
+    }
+
+    #[test]
+    fn parse_bytes_exact_test() {
+        // the hex string "deadBEEF" corresponds to `0xDEADBEEF_u32.to_be_bytes()`,
+        // since the strings are written in little endian order, i.e. "de" is the first
+        // byte, "ad" is the second, etc.
+        assert_eq!(parse_bytes_exact::<4>("deadBEEF"), Ok(0xDEADBEEF_u32.to_be_bytes()));
+        // odd number of characters fails
+        assert!(parse_bytes_exact::<3>("deadBEE").is_err());
+        // invalid character fails
+        assert!(parse_bytes_exact::<4>("deadBEEK").is_err());
     }
 }

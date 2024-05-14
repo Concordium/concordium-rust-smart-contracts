@@ -19,10 +19,27 @@ default-features = false
 version = "0.11"
 default-features = false
 
+[dependencies.serde]
+version = "1.0"
+features = ["alloc", "derive"]
+optional = true
+default-features = false
+
+[dependencies.concordium-contracts-common]
+path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common"
+version = "*"
+optional = true
+default-features = false
+
 [features]
 default = ["std"]
 std = ["concordium-std/std"]
 u256_amount = []
+serde = [
+    "dep:serde",
+    "concordium-contracts-common/derive-serde",
+    "primitive-types/impl-serde",
+]
 
 [lib]
 crate-type = ["rlib"]
@@ -36,5 +53,5 @@ opt-level = "s"
 # exist on that platform.
 targets = ["wasm32-unknown-unknown"]
 # Default features to build documentation for.
-features = ["std", "u256_amount"]
+features = ["std", "u256_amount", "serde"]
 rustc-args = ["--cfg", "docsrs"]
