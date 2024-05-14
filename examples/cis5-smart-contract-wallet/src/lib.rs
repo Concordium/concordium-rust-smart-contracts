@@ -104,10 +104,10 @@ pub enum Event {
 /// tracks the nonce used by the signer of the message.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
-    /// Account that signed the message.
-    pub public_key: PublicKeyEd25519,
     /// The nonce that was used in the message.
     pub nonce:      u64,
+    /// Account that signed the message.
+    pub public_key: PublicKeyEd25519,
 }
 
 /// The `DepositCcdEvent` is logged whenever a CCD amount received by
@@ -811,8 +811,8 @@ fn withdraw_ccd(
         }
 
         logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
             nonce,
+            public_key: signer,
         }))?;
     }
 
@@ -947,8 +947,8 @@ fn withdraw_cis2_tokens(
         }
 
         logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
             nonce,
+            public_key: signer,
         }))?;
     }
 
@@ -1133,8 +1133,8 @@ fn transfer_ccd(
         }
 
         logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
             nonce,
+            public_key: signer,
         }))?;
     }
 
@@ -1230,8 +1230,8 @@ fn transfer_cis2_tokens(
         }
 
         logger.log(&Event::Nonce(NonceEvent {
-            public_key: signer,
             nonce,
+            public_key: signer,
         }))?;
     }
 

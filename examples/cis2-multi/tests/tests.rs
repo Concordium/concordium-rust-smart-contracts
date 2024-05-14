@@ -345,8 +345,8 @@ fn test_permit_mint() {
             },
         })),
         Event::Nonce(NonceEvent {
-            account: ALICE,
             nonce:   0,
+            account: ALICE,
         })
     ]);
 
@@ -391,8 +391,8 @@ fn test_permit_burn() {
             owner:    ALICE_ADDR,
         })),
         Event::Nonce(NonceEvent {
-            account: ALICE,
             nonce:   0,
+            account: ALICE,
         })
     ]);
 
@@ -442,8 +442,8 @@ fn test_permit_update_operator() {
             operator: BOB_ADDR,
         })),
         Event::Nonce(NonceEvent {
-            account: ALICE,
             nonce:   0,
+            account: ALICE,
         })
     ]);
 
@@ -492,8 +492,8 @@ fn test_permit_transfer() {
             to:       BOB_ADDR,
         })),
         Event::Nonce(NonceEvent {
-            account: ALICE,
             nonce:   0,
+            account: ALICE,
         })
     ]);
 

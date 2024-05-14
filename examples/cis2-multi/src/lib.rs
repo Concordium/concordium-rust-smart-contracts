@@ -171,10 +171,10 @@ pub enum Event {
 /// tracks the nonce used by the signer of the `PermitMessage`.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
-    /// Account that signed the `PermitMessage`.
-    pub account: AccountAddress,
     /// The nonce that was used in the `PermitMessage`.
     pub nonce:   u64,
+    /// Account that signed the `PermitMessage`.
+    pub account: AccountAddress,
 }
 
 /// The UpdateBlacklistEvent is logged when an address is added to or removed
@@ -218,8 +218,8 @@ impl schema::SchemaType for Event {
             (
                 "Nonce".to_string(),
                 schema::Fields::Named(vec![
-                    (String::from("account"), AccountAddress::get_type()),
                     (String::from("nonce"), u64::get_type()),
+                    (String::from("account"), AccountAddress::get_type()),
                 ]),
             ),
         );
@@ -1424,8 +1424,8 @@ fn contract_permit(
 
     // Log the nonce event.
     logger.log(&Event::Nonce(NonceEvent {
-        account: param.signer,
         nonce,
+        account: param.signer,
     }))?;
 
     Ok(())
