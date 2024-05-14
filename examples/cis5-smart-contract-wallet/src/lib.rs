@@ -524,6 +524,7 @@ impl SigningAmount for TokenAmount {}
 
 /// The token amount signed in the message.
 #[derive(Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TokenAmount {
     /// The token amount signed in the message.
     pub token_amount:                ContractTokenAmount,

@@ -27,7 +27,7 @@ default-features = false
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common"
-version = "9.0"
+version = "*"
 optional = true
 default-features = false
 

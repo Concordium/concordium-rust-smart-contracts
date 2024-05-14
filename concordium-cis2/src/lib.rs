@@ -1291,6 +1291,7 @@ impl AsRef<[u8]> for AdditionalData {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
@@ -1307,6 +1308,7 @@ pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
 
 /// The parameter type for the contract function `transfer`.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
     #[concordium(size_length = 2)] pub Vec<Transfer<T, A>>,
@@ -1324,6 +1326,7 @@ impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the variants cannot be changed.
 #[derive(Debug, Serialize, Clone, Copy, SchemaType, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub enum OperatorUpdate {
     /// Remove the operator.
     Remove,
@@ -1335,6 +1338,7 @@ pub enum OperatorUpdate {
 // Note: For the serialization to be derived according to the CIS2
 // specification, the order of the fields cannot be changed.
 #[derive(Debug, Serialize, Clone, SchemaType, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct UpdateOperator {
     /// The update for this operator.
     pub update:   OperatorUpdate,
@@ -1346,6 +1350,7 @@ pub struct UpdateOperator {
 
 /// The parameter type for the contract function `updateOperator`.
 #[derive(Debug, Serialize, Clone, SchemaType)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 #[concordium(transparent)]
 pub struct UpdateOperatorParams(#[concordium(size_length = 2)] pub Vec<UpdateOperator>);
 
@@ -1798,7 +1803,9 @@ mod test {
         // since the strings are written in little endian order, i.e. "de" is the first
         // byte, "ad" is the second, etc.
         assert_eq!(parse_bytes_exact::<4>("deadBEEF"), Ok(0xDEADBEEF_u32.to_be_bytes()));
+        // odd number of characters fails
         assert!(parse_bytes_exact::<3>("deadBEE").is_err());
+        // invalid character fails
         assert!(parse_bytes_exact::<4>("deadBEEK").is_err());
     }
 }
