@@ -172,8 +172,8 @@ fn test_withdraw_ccd() {
             to:         BOB_ADDR,
         }),
         Event::Nonce(NonceEvent {
-            public_key: alice_public_key,
             nonce:      0,
+            public_key: alice_public_key,
         })
     ]);
 }
@@ -312,8 +312,8 @@ fn test_withdraw_cis2_tokens() {
             to: BOB_ADDR
         }),
         Event::Nonce(NonceEvent {
-            public_key: alice_public_key,
             nonce:      0,
+            public_key: alice_public_key,
         })
     ]);
 }
@@ -423,8 +423,8 @@ fn test_transfer_ccd() {
             to:         BOB_PUBLIC_KEY,
         }),
         Event::Nonce(NonceEvent {
-            public_key: alice_public_key,
             nonce:      0,
+            public_key: alice_public_key,
         })
     ]);
 }
@@ -554,8 +554,8 @@ fn test_transfer_cis2_tokens() {
             to: BOB_PUBLIC_KEY
         }),
         Event::Nonce(NonceEvent {
-            public_key: alice_public_key,
             nonce:      0,
+            public_key: alice_public_key,
         })
     ]);
 }
