@@ -2060,7 +2060,8 @@ pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, Modul
     Ok(module)
 }
 
-pub fn module_load_contract() -> Result<WasmModule, ContractModuleLoadError> {
+/// Load the wasm module being tested output by `cargo concordium test`.
+pub fn module_load_output() -> Result<WasmModule, ContractModuleLoadError> {
     let module_path = env::var(CONTRACT_MODULE_OUTPUT_PATH_ENV_VAR)?;
     let module = module_load_v1(module_path)?;
     Ok(module)

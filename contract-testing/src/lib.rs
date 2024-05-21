@@ -89,7 +89,7 @@ mod impls;
 mod invocation;
 mod types;
 pub use constants::CONTRACT_MODULE_OUTPUT_PATH_ENV_VAR;
-pub use impls::{is_debug_enabled, module_load_contract, module_load_v1, module_load_v1_raw};
+pub use impls::{is_debug_enabled, module_load_output, module_load_v1, module_load_v1_raw};
 pub use types::*;
 
 // Re-export types.
