@@ -78,5 +78,5 @@ pub(crate) const UPDATE_CONTRACT_INSTANCE_BASE_COST: Energy = Energy {
 
 /// The name of the environment variable that holds the path to the contract
 /// module file. To load the module, use the
-/// [`module_load_contract`](crate::module_load_contract) function.
+/// [`module_load_output`](crate::module_load_output) function.
 pub const CONTRACT_MODULE_OUTPUT_PATH_ENV_VAR: &str = "CARGO_CONCORDIUM_TEST_MODULE_OUTPUT_PATH";
