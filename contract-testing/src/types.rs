@@ -327,7 +327,7 @@ pub enum ModuleLoadErrorKind {
 }
 
 #[derive(Debug, Error)]
-pub enum ContractModuleLoadError {
+pub enum OutputModuleLoadError {
     #[error(
         "Module path environment variable was not set or invalid. Please ensure that \
          cargo-concordium is up-to-date. Details: {0}"
