@@ -534,6 +534,23 @@ pub struct TokenAmount {
     pub cis2_token_contract_address: ContractAddress,
 }
 
+/// Additional information to include with the CCD hook transfer. This is a type
+/// without the length of the bytes prepended when serializing. It can be used
+/// to represent any input parameter (no matter the length serialization of that
+/// input parameter) of the receiving contract.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
+pub struct NoLengthPrependedBytes<'a>(&'a [u8]);
+
+/// The `NoLengthPrependedBytes` is serialized as plain bytes without the length
+/// being prepended.
+impl Serial for NoLengthPrependedBytes<'_> {
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(self.0)?;
+        Ok(())
+    }
+}
+
 /// A single withdrawal of CCD or some amount of tokens.
 #[derive(Serialize, Clone, SchemaType)]
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
@@ -792,10 +809,12 @@ fn withdraw_ccd(
                     Address::Account(account_address)
                 }
                 Receiver::Contract(contract_address, function) => {
+                    let receiving_contract_input_parameter = NoLengthPrependedBytes(data.as_ref());
+
                     // If the receiver is a contract: invoke the receive hook function.
                     host.invoke_contract(
                         &contract_address,
-                        &data,
+                        &receiving_contract_input_parameter,
                         function.as_entrypoint_name(),
                         withdraw_amount,
                     )?;

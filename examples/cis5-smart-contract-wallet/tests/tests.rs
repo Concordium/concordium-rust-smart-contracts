@@ -58,9 +58,9 @@ fn test_deposit_cis2_tokens() {
     );
 }
 
-/// Test withdrawing of CCD.
+/// Test withdrawing of CCD to an account.
 #[test]
-fn test_withdraw_ccd() {
+fn test_withdraw_ccd_to_account() {
     let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
         initialize_chain_and_contract();
 
@@ -170,6 +170,131 @@ fn test_withdraw_ccd() {
             ccd_amount: withdraw_amount,
             from:       alice_public_key,
             to:         BOB_ADDR,
+        }),
+        Event::Nonce(NonceEvent {
+            nonce:      0,
+            public_key: alice_public_key,
+        })
+    ]);
+}
+
+/// Test withdrawing of CCD to a smart contract.
+#[test]
+fn test_withdraw_ccd_to_smart_contract() {
+    let (mut chain, smart_contract_wallet, _cis2_token_contract_address) =
+        initialize_chain_and_contract();
+
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let rng = &mut rand::thread_rng();
+
+    // Construct signing key.
+    let signing_key = SigningKey::generate(rng);
+    let alice_public_key = PublicKeyEd25519(signing_key.verifying_key().to_bytes());
+
+    alice_deposits_ccd(&mut chain, smart_contract_wallet, alice_public_key);
+
+    let service_fee_amount: Amount = Amount::from_micro_ccd(1);
+    let withdraw_amount: Amount = Amount::from_micro_ccd(5);
+
+    // Test that withdrawing CCD and depositing it to BOB's public key into this
+    // smart contract wallet works. Note: This flow is for testing that
+    // withdrawing to a smart contract works. If you want to credit the
+    // CCD balance to BOB's public key, you would usually invoke the `transferCcd`
+    // entry point in the smart contract wallet.
+    let message = WithdrawMessage {
+        entry_point: OwnedEntrypointName::new_unchecked("withdrawCcd".to_string()),
+        expiry_time: Timestamp::now(),
+        nonce: 0u64,
+        service_fee_recipient: SERVICE_FEE_RECIPIENT_KEY,
+        simple_withdraws: vec![Withdraw {
+            to: Receiver::Contract(
+                smart_contract_wallet,
+                OwnedEntrypointName::new_unchecked("depositCcd".to_string()),
+            ),
+            withdraw_amount,
+            data: AdditionalData::from(BOB_PUBLIC_KEY.0.to_vec()),
+        }],
+        service_fee_amount,
+    };
+
+    let mut withdraw = WithdrawBatch {
+        signer:    alice_public_key,
+        signature: DUMMY_SIGNATURE,
+        message:   message.clone(),
+    };
+
+    // Get the message hash to be signed.
+    let invoke = chain
+        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
+            amount:       Amount::zero(),
+            address:      smart_contract_wallet,
+            receive_name: OwnedReceiveName::new_unchecked(
+                "smart_contract_wallet.getCcdWithdrawMessageHash".to_string(),
+            ),
+            message:      OwnedParameter::from_serial(&message)
+                .expect("Should be a valid inut parameter"),
+        })
+        .expect("Should be able to query getCcdWithdrawMessageHash");
+
+    let signature = signing_key.sign(&invoke.return_value);
+
+    withdraw.signature = SignatureEd25519(signature.to_bytes());
+
+    let withdraw_param = WithdrawParameter {
+        withdraws: vec![withdraw],
+    };
+
+    let update = chain
+        .contract_update(
+            SIGNER,
+            CHARLIE,
+            CHARLIE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount:       Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "smart_contract_wallet.withdrawCcd".to_string(),
+                ),
+                address:      smart_contract_wallet,
+                message:      OwnedParameter::from_serial(&withdraw_param)
+                    .expect("Withdraw CCD params"),
+            },
+        )
+        .expect("Should be able to withdraw CCD");
+
+    // Check that Alice now has `AIRDROP_CCD_AMOUNT - withdraw_amount -
+    // service_fee_amount` CCD, Bob has `withdraw_amount` CCD, and
+    // service_fee_recipient has `service_fee_amount` CCD on their public keys.
+    let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
+        &chain,
+        smart_contract_wallet,
+        alice_public_key,
+    );
+    assert_eq!(balances.0, [
+        AIRDROP_CCD_AMOUNT - withdraw_amount - service_fee_amount,
+        withdraw_amount,
+        service_fee_amount
+    ]);
+
+    // Check that the logs are correct.
+    let events = deserialize_update_events_of_specified_contract(&update, smart_contract_wallet);
+
+    assert_eq!(events, [
+        Event::TransferCcd(TransferCcdEvent {
+            ccd_amount: service_fee_amount,
+            from:       alice_public_key,
+            to:         SERVICE_FEE_RECIPIENT_KEY,
+        }),
+        Event::DepositCcd(DepositCcdEvent {
+            ccd_amount: withdraw_amount,
+            from:       Address::Contract(smart_contract_wallet),
+            to:         BOB_PUBLIC_KEY,
+        }),
+        Event::WithdrawCcd(WithdrawCcdEvent {
+            ccd_amount: withdraw_amount,
+            from:       alice_public_key,
+            to:         Address::Contract(smart_contract_wallet),
         }),
         Event::Nonce(NonceEvent {
             nonce:      0,
