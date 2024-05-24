@@ -539,7 +539,6 @@ pub struct TokenAmount {
 /// to represent any input parameter (no matter the length serialization of that
 /// input parameter) of the receiving contract.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct NoLengthPrependedBytes<'a>(&'a [u8]);
 
 /// The `NoLengthPrependedBytes` is serialized as plain bytes without the length
