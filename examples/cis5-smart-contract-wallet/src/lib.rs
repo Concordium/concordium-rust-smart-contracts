@@ -793,9 +793,9 @@ fn withdraw_ccd(
                 }
                 Receiver::Contract(contract_address, function) => {
                     // If the receiver is a contract: invoke the receive hook function.
-                    host.invoke_contract(
+                    host.invoke_contract_raw(
                         &contract_address,
-                        &data,
+                        Parameter::new_unchecked(data.as_ref()),
                         function.as_entrypoint_name(),
                         withdraw_amount,
                     )?;
