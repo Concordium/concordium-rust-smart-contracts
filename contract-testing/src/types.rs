@@ -27,6 +27,7 @@ use concordium_rust_sdk::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env,
     path::PathBuf,
     sync::Arc,
 };
@@ -323,6 +324,17 @@ pub enum ModuleLoadErrorKind {
     /// The module version is not supported.
     #[error("The module has wasm version {0}, which is not supported")]
     UnsupportedModuleVersion(WasmVersion),
+}
+
+#[derive(Debug, Error)]
+pub enum OutputModuleLoadError {
+    #[error(
+        "Module path environment variable was not set or invalid. Please ensure that \
+         cargo-concordium is up-to-date. Details: {0}"
+    )]
+    MissingEnvVar(#[from] env::VarError),
+    #[error("{0}")]
+    ModuleLoad(#[from] ModuleLoadError),
 }
 
 /// The error produced when trying to read a smart contract

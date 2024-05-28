@@ -2,6 +2,7 @@ use crate::{
     constants,
     invocation::{ChangeSet, EntrypointInvocationHandler, TestConfigurationError},
     types::*,
+    CONTRACT_MODULE_OUTPUT_PATH_ENV_VAR,
 };
 use anyhow::anyhow;
 use concordium_rust_sdk::{
@@ -37,6 +38,7 @@ use sdk::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env,
     future::Future,
     path::Path,
     sync::Arc,
@@ -2055,6 +2057,15 @@ pub fn module_load_v1(module_path: impl AsRef<Path>) -> Result<WasmModule, Modul
             kind: ModuleLoadErrorKind::UnsupportedModuleVersion(module.version),
         });
     }
+    Ok(module)
+}
+
+/// Load the current smart contract module output using the environment variable
+/// `CARGO_CONCORDIUM_TEST_MODULE_OUTPUT_PATH` which is set when running using
+/// `cargo concordium test`.
+pub fn module_load_output() -> Result<WasmModule, OutputModuleLoadError> {
+    let module_path = env::var(CONTRACT_MODULE_OUTPUT_PATH_ENV_VAR)?;
+    let module = module_load_v1(module_path)?;
     Ok(module)
 }
 
