@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased changes
+- Updated the Concordium Rust SDK to support the changes introduced in protocol 7.
 
 ## concordium-std 10.1.0 (2024-04-04)
 
