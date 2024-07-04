@@ -1,10 +1,10 @@
 # Deploy, Initialize, and Update Script Template
 
-This project has boilerplate code to write deployment, initialization, and update scripts for Concordium smart contract protocols. 
+This project has boilerplate code to write deployment, initialization, and update scripts for Concordium smart contract protocols.
 
 # Purpose
 
-Automatic scripts are useful to speed up the development and testing of your protocol on the chain. 
+Automatic scripts are useful to speed up the development and testing of your protocol on the chain.
 In addition, scripts help to set up identical protocols on different chains easily. E.g. you can deploy your protocol to testnet or mainnet by just specifying a corresponding node connection and account keys for the respective network when running the script.
 
 # Running The Script
@@ -18,7 +18,7 @@ The following options are necessary when running the script
 
 ```
     --node <CONCORDIUM_NODE_URL>
-        V2 API of the concordium node. [default: http://node.testnet.concordium.com:20000]
+        V2 API of the concordium node. [default: https://grpc.testnet.concordium.com:20000]
     --account <CONCORDIUM_ACCOUNT_PATH>
         Path to the file containing the Concordium account keys exported from the wallet (e.g. ./myPath/4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export).
     --module <MODULE_PATH>
@@ -32,7 +32,7 @@ genesis tool.
 
 Example:
 ```
-cargo run -- --node http://node.testnet.concordium.com:20000 --account ./myPath/4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --module ./myPath/default.wasm.v1 --module ./default2.wasm.v1
+cargo run -- --node https://grpc.testnet.concordium.com:20000 --account ./myPath/4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --module ./myPath/default.wasm.v1 --module ./default2.wasm.v1
 ```
 
 # Functionalities
@@ -68,7 +68,7 @@ cargo concordium build --out ./deploy-scripts/default.wasm.v1
 Navigate into the deploy-scripts folder and run the example with the `default` smart contract (replace your wallet account in the below command):
 
 ```
-cargo run -- --node http://node.testnet.concordium.com:20000 --account ./4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --module ./default.wasm.v1
+cargo run -- --node https://grpc.testnet.concordium.com:20000 --account ./4SizPU2ipqQQza9Xa6fUkQBCDjyd1vTNUNDGbBeiRGpaJQc6qX.export --module ./default.wasm.v1
 ```
 
 The output should be:
