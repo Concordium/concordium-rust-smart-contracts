@@ -19,6 +19,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
 };
+use tonic::transport::ClientTlsConfig;
 
 /// Reads the wasm module from a given file path.
 fn get_wasm_module(file: &Path) -> Result<WasmModule, Error> {
@@ -34,10 +35,10 @@ fn get_wasm_module(file: &Path) -> Result<WasmModule, Error> {
 struct App {
     #[clap(
         long = "node",
-        default_value = "http://node.testnet.concordium.com:20000",
+        default_value = "https://grpc.testnet.concordium.com:20000",
         help = "V2 API of the Concordium node."
     )]
-    url: v2::Endpoint,
+    endpoint:  tonic::transport::Endpoint,
     #[clap(
         long = "account",
         help = "Path to the file containing the Concordium account keys exported from the wallet \
@@ -61,7 +62,22 @@ struct App {
 async fn main() -> Result<(), Error> {
     let app: App = App::parse();
 
-    let concordium_client = v2::Client::new(app.url).await?;
+    let endpoint = if app
+        .endpoint
+        .uri()
+        .scheme()
+        .map_or(false, |x| *x == concordium_rust_sdk::v2::Scheme::HTTPS)
+    {
+        app.endpoint
+            .tls_config(ClientTlsConfig::new())
+            .context("Unable to construct a TLS connection for the Concordium API.")?
+    } else {
+        app.endpoint
+    };
+
+    let concordium_client = v2::Client::new(endpoint)
+        .await
+        .context("Unable to establish connection to the node.")?;
 
     let mut deployer = Deployer::new(concordium_client, &app.key_file)?;
 
