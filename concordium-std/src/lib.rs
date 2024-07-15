@@ -220,8 +220,9 @@
 //!
 //! | Variant | Error code |
 //! |---------|------------|
-//! | [()][1] | `-2147483647` |
-//! | [ParseError] | `-2147483646` |
+//! | [Unspecified (Default reject)] | `-2147483648` | // i32::MIN
+//! | [()][1] | `-2147483647` | // i32::MIN + 1
+//! | [ParseError] | `-2147483646` | // ...
 //! | [LogError::Full] | `-2147483645` |
 //! | [LogError::Malformed] | `-2147483644`
 //! | [NewContractNameError::MissingInitPrefix] | `-2147483643` |
