@@ -16,9 +16,7 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 fn test_vote_after_end_time() {
     let (mut chain, contract_address) = init();
 
-    let params = VoteParameter {
-        vote_index: 0,
-    };
+    let params = "A".to_string();
 
     // Advance time to after the end time.
     chain.tick_block_time(Duration::from_millis(1001)).expect("Won't overflow");
@@ -40,12 +38,10 @@ fn test_vote_after_end_time() {
 
 /// Test that voting with an voting index that is out of range fails.
 #[test]
-fn test_vote_out_of_range() {
+fn test_invalid_vote() {
     let (mut chain, contract_address) = init();
 
-    let params = VoteParameter {
-        vote_index: 3, // Valid indexes are: 0, 1, 2.
-    };
+    let params = "invalid vote".to_string();
 
     // Try to vote.
     let update = chain
@@ -59,67 +55,61 @@ fn test_vote_out_of_range() {
 
     // Check that the error is correct.
     let rv: VotingError = update.parse_return_value().expect("Deserialize VotingError");
-    assert_eq!(rv, VotingError::InvalidVoteIndex);
+    assert_eq!(rv, VotingError::InvalidVote);
 }
 
 /// Test that voting and changing your vote works.
 ///
 /// In particular:
-///  - Alice votes for option 0.
-///  - Alice changes her vote to option 1.
-///  - Bob votes for option 0.
-///  - Bob again votes for option 0.
+///  - Alice votes for A.
+///  - Alice changes her vote to B.
+///  - Bob votes for A.
+///  - Bob again votes for A.
 #[test]
 fn test_voting_and_changing_vote() {
     let (mut chain, contract_address) = init();
 
-    // Alice votes for option 0.
+    // Alice votes for A.
     let update_1 = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.vote".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 0,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"A".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("Contract updated");
 
     // Check the events and votes.
-    check_event(&update_1, ALICE, 0);
+    check_event(&update_1, ALICE, "A");
     assert_eq!(get_votes(&chain, contract_address), [1, 0, 0]);
 
-    // Alice changes her vote to option 1.
+    // Alice changes her vote to B.
     let update_2 = chain
         .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.vote".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 1,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"B".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("Contract updated");
     // Check the events and votes.
-    check_event(&update_2, ALICE, 1);
+    check_event(&update_2, ALICE, "B");
     assert_eq!(get_votes(&chain, contract_address), [0, 1, 0]);
 
-    // Bob votes for option 0.
+    // Bob votes for A.
     let update_3 = chain
         .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.vote".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 0,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"A".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("Contract updated");
     // Check the events and votes.
-    check_event(&update_3, BOB, 0);
+    check_event(&update_3, BOB, "A");
     assert_eq!(get_votes(&chain, contract_address), [1, 1, 0]);
 
     // Bob again votes for option 0.
@@ -128,14 +118,12 @@ fn test_voting_and_changing_vote() {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.vote".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 0,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"A".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("Contract updated");
     // Check the events and votes.
-    check_event(&update_4, BOB, 0);
+    check_event(&update_4, BOB, "A");
     assert_eq!(get_votes(&chain, contract_address), [1, 1, 0]);
 }
 
@@ -145,9 +133,7 @@ fn test_contract_voter() {
     let (mut chain, contract_address) = init();
 
     // Try to vote.
-    let params = VoteParameter {
-        vote_index: 0,
-    };
+    let params = "A".to_string();
     let update = chain
         .contract_update(
             SIGNER,
@@ -192,10 +178,10 @@ fn init() -> (Chain, ContractAddress) {
     let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
 
     // Contract init parameters.
-    let params = InitParameter {
+    let params = ElectionConfig {
         description: "Election description".to_string(),
         options:     vec!["A".to_string(), "B".to_string(), "C".to_string()],
-        end_time:    Timestamp::from_timestamp_millis(1000),
+        deadline:    Timestamp::from_timestamp_millis(1000),
     };
 
     // Initialize contract.
@@ -211,58 +197,56 @@ fn init() -> (Chain, ContractAddress) {
     (chain, init.contract_address)
 }
 
-/// Get the number of votes for each voting option.
+/// Get the number of votes for each voting option, A, B and C.
 fn get_votes(chain: &Chain, contract_address: ContractAddress) -> [u32; 3] {
-    let view_0 = chain
+    let view_a = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.getNumberOfVotes".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 0,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"A".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_0: VoteCount = view_0.parse_return_value().expect("Deserialize VoteCount");
+    let vote_a: u32 = view_a.parse_return_value().expect("Deserialize VoteCount");
 
-    let view_1 = chain
+    let view_b = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.getNumberOfVotes".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 1,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"B".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_1: VoteCount = view_1.parse_return_value().expect("Deserialize VoteCount");
+    let vote_b: u32 = view_b.parse_return_value().expect("Deserialize VoteCount");
 
-    let view_2 = chain
+    let view_c = chain
         .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
             amount:       Amount::zero(),
             address:      contract_address,
             receive_name: OwnedReceiveName::new_unchecked("voting.getNumberOfVotes".to_string()),
-            message:      OwnedParameter::from_serial(&VoteParameter {
-                vote_index: 2,
-            })
-            .expect("Valid vote parameter"),
+            message:      OwnedParameter::from_serial(&"C".to_string())
+                .expect("Valid vote parameter"),
         })
         .expect("View invoked");
-    let vote_2: VoteCount = view_2.parse_return_value().expect("Deserialize VoteCount");
+    let vote_c: u32 = view_c.parse_return_value().expect("Deserialize VoteCount");
 
-    [vote_0, vote_1, vote_2]
+    [vote_a, vote_b, vote_c]
 }
 
 /// Check that the voting event is produced and that it is correct.
-fn check_event(update: &ContractInvokeSuccess, voter: AccountAddress, vote_index: VoteIndex) {
-    let events: Vec<Event> = update
+fn check_event(
+    update: &ContractInvokeSuccess,
+    voter: AccountAddress,
+    vote_option: impl Into<String>,
+) {
+    let events: Vec<Vote> = update
         .events()
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect();
-    assert_eq!(events, [Event::Vote(VoteEvent {
+    assert_eq!(events, [Vote {
         voter,
-        vote_index,
-    })]);
+        option: vote_option.into(),
+    }]);
 }
