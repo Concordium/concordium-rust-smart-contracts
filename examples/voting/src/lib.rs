@@ -9,14 +9,11 @@
 //!
 //! # Operations
 //! The contract allows for
-//!  - Initializing the election.
-//!  - Viewing general information about the election.
-//!  - Voting for one of the voting options.
-//!  - Tallying votes for a requested voting option.
-//!
-//! Note: There is a limit to the size of function parameters (65535 Bytes),
-//! thus the number of voting options is large, but limited.
-//! Read more here: <https://developer.concordium.software/en/mainnet/smart-contracts/general/contract-instances.html#limits>
+//!  - Initializing the election (`init` function).
+//!  - Viewing general information about the election (`view` function).
+//!  - Voting for one of the voting options (`vote` function).
+//!  - Tallying votes for a requested voting option (`getNumberOfVotes`
+//!    function).
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -35,19 +32,33 @@ pub struct ElectionConfig {
     pub deadline:    Timestamp,
 }
 
-/// The voting smart contract state.
+/// The smart contract state.
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The configuration of the election.
     config:  ElectionConfig,
     /// A map from voters to options, specifying who has voted for what.
     ballots: HashMap<AccountAddress, String>,
+    /// A map from vote options to a vote count, specifying how many votes each
+    /// option has.
+    ///
+    /// Note the data duplication here! The tally can of course always be
+    /// determined by examining the ballots field. This requires looping
+    /// over all ballots, counting how many votes exist for a specific option.
+    /// However, such a loop would be practically unbounded, as it is only
+    /// limited by the number of votes. Such a loop could exhaust the energy
+    /// budget of the smart contract functions, potentially making the smart
+    /// contract unusable and vulnerable to a kind of DDoS attack.
+    ///
+    /// Thus, we favor duplicating the data in another hashmap, where the vote
+    /// count can be retrieved and updated in constant time.
+    tally:   HashMap<String, u32>,
 }
 
 /// The different errors that the `vote` function can produce.
 #[derive(Reject, Serialize, PartialEq, Eq, Debug, SchemaType)]
 pub enum VotingError {
-    /// Raised when parsing the parameter failed.
+    /// Raised when parsing the input parameter failed.
     #[from(ParseError)]
     ParsingFailed,
     /// Raised when the log is full.
@@ -76,7 +87,7 @@ impl From<LogError> for VotingError {
 /// A vote event. The event is logged when a new (or replacement) vote is cast
 /// by an account.
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
-pub struct Vote {
+pub struct VoteEvent {
     /// The account that casts the vote.
     pub voter:  AccountAddress,
     /// The voting option that the account is voting for.
@@ -86,9 +97,13 @@ pub struct Vote {
 // Contract functions
 
 /// Initialize the contract instance and start the election.
-/// A description, the vector of all voting options, and an `deadline`
+/// A description, the vector of all voting options, and a `deadline`
 /// have to be provided.
-#[init(contract = "voting", parameter = "ElectionConfig", event = "Vote")]
+///
+/// Note: There is a limit to the size of the function input parameter (65535
+/// Bytes), thus the number of voting options and the length of voting options
+/// has a limit. Read more here: <https://developer.concordium.software/en/mainnet/smart-contracts/general/contract-instances.html#limits>
+#[init(contract = "voting", parameter = "ElectionConfig", event = "VoteEvent")]
 fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     // Parse the parameter.
     let config: ElectionConfig = ctx.parameter_cursor().get()?;
@@ -97,6 +112,7 @@ fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Stat
     Ok(State {
         config,
         ballots: HashMap::default(),
+        tally: HashMap::default(),
     })
 }
 
@@ -104,7 +120,7 @@ fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Stat
 /// change its selected voting option with this function as often as it desires
 /// until the `deadline` is reached.
 ///
-/// A valid vote produces an `Event::Vote` event.
+/// A valid vote produces an `VoteEvent` event.
 /// This is also the case if the account recasts its vote for another, or even
 /// the same, option. By tracking the events produced, one can reconstruct the
 /// current state of the election.
@@ -144,15 +160,29 @@ fn vote(
     // Check that the vote option is valid (exists).
     ensure!(host.state().config.options.contains(&vote_option), VotingError::InvalidVote);
 
+    let state_mut = host.state_mut();
+
     // Insert or replace the vote for the account.
-    host.state_mut()
+    state_mut
         .ballots
         .entry(acc)
-        .and_modify(|old_vote_option| old_vote_option.clone_from(&vote_option))
+        .and_modify(|old_vote_option| {
+            // The account has already voted previously - we should subtract one vote from
+            // the tally for that option. See doc comment on the tally field for
+            // why it is done this way.
+            *state_mut.tally.get_mut(old_vote_option).unwrap() -= 1;
+
+            old_vote_option.clone_from(&vote_option);
+        })
         .or_insert(vote_option.clone());
 
+    // Now that the account has voted, we should increment the vote count for their
+    // new vote choice. See doc comment on the tally field for why it is done
+    // this way.
+    *state_mut.tally.entry(vote_option.clone()).or_default() += 1;
+
     // Log event for the vote.
-    logger.log(&Vote {
+    logger.log(&VoteEvent {
         voter:  acc,
         option: vote_option,
     })?;
@@ -174,11 +204,9 @@ fn get_votes(ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<u32> {
     // Parse the vote option.
     let vote_option: String = ctx.parameter_cursor().get()?;
 
-    // Count the number of votes for this option.
-    let count =
-        host.state().ballots.iter().filter(|&(_voter, option)| *option == vote_option).count();
-
-    Ok(count as u32)
+    // Get the number of votes for this option from the tally map.
+    // See doc comment on the tally field for why it is done this way.
+    Ok(host.state().tally.get(&vote_option).copied().unwrap_or_default())
 }
 
 /// Get the election information.

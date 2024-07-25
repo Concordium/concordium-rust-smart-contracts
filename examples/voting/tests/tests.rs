@@ -241,11 +241,11 @@ fn check_event(
     voter: AccountAddress,
     vote_option: impl Into<String>,
 ) {
-    let events: Vec<Vote> = update
+    let events: Vec<VoteEvent> = update
         .events()
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect();
-    assert_eq!(events, [Vote {
+    assert_eq!(events, [VoteEvent {
         voter,
         option: vote_option.into(),
     }]);

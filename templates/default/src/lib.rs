@@ -16,7 +16,7 @@ pub struct State {
 /// Errors that may be emitted by this smart contract.
 #[derive(Debug, PartialEq, Eq, Reject, Serialize, SchemaType)]
 pub enum Error {
-    /// Failed parsing the parameter.
+    /// Failed parsing the input parameter.
     #[from(ParseError)]
     ParseParams,
     /// Add variants to this enum to be able to return custom errors from the smart contract.
@@ -43,7 +43,7 @@ fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Stat
     })
 }
 
-/// Receive function. The input parameter in this example is a boolean variable `return_error`.
+/// Receive function. The input parameter in this function is the boolean variable `return_error`.
 ///  If `return_error == true`, the receive function will return a custom error.
 ///  If `return_error == false`, the receive function executes successfully.
 #[receive(
