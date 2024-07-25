@@ -9,6 +9,8 @@ use core::fmt::Debug;
 #[derive(Serialize, SchemaType)]
 pub struct State {
     // Add fields to this type to hold state in the smart contract.
+    // This field is just an example.
+    custom_state_field: i8,
 }
 
 /// Errors that may be emitted by this smart contract.
@@ -21,11 +23,24 @@ pub enum Error {
     CustomError,
 }
 
+/// Any type implementing Serialize and SchemaType can be
+/// used as an input parameter to a smart contract function.
+#[derive(Serialize, SchemaType)]
+pub struct CustomInputParameter {
+    /// Just an example, you could have any fields here.
+    pub num: i8,
+}
+
 /// Creates a new instance of the smart contract.
-#[init(contract = "{{ crate_name }}")]
-fn init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
+#[init(contract = "{{ crate_name }}", parameter = "CustomInputParameter")]
+fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
+    let param: CustomInputParameter = ctx.parameter_cursor().get()?;
+
     // Create the initial state of the smart contract here.
-    Ok(State {})
+    // This state can then be used in the other functions.
+    Ok(State {
+        custom_state_field: param.num,
+    })
 }
 
 /// Receive function. The input parameter in this example is a boolean variable `return_error`.

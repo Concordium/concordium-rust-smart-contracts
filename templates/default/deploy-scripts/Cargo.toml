@@ -12,4 +12,4 @@ clap = { version = "4", features = ["derive", "env"]}
 concordium-rust-sdk="4.2"
 tokio = {version = "1.18", features = ["rt", "macros", "rt-multi-thread"] }
 tonic = {version = "0.10", features = ["tls", "tls-roots"]} # Use system trust roots.
-{{crate_name}} = {path = "../"}
+{{ crate_name }} = { path = "../" }

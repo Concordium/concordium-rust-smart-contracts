@@ -30,7 +30,7 @@ fn test_throw_no_error() {
 }
 
 /// Test that invoking the `receive` endpoint with the `true` parameter
-/// results in the `YourError` being thrown.
+/// results in the `CustomError` being thrown.
 #[test]
 fn test_throw_error() {
     let (mut chain, init) = initialize();
@@ -45,9 +45,9 @@ fn test_throw_error() {
         })
         .expect_err("Update fails with `true` as input.");
 
-    // Check that the contract returned `YourError`.
+    // Check that the contract returned `CustomError`.
     let error: Error = update.parse_return_value().expect("Deserialize `Error`");
-    assert_eq!(error, Error::YourError);
+    assert_eq!(error, Error::CustomError);
 }
 
 /// Helper method for initializing the contract.
