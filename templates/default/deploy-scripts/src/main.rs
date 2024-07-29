@@ -102,7 +102,10 @@ async fn main() -> Result<(), Error> {
     // Write your own deployment/initialization script below. An example is given
     // here.
 
-    let param: OwnedParameter = OwnedParameter::empty(); // Example
+    // You can easily import a type from the smart contract like so:
+    use default::CustomInputParameter; // Example
+
+    let param = OwnedParameter::from_serial(&CustomInputParameter { num: 42 })?; // Example
 
     let init_method_name: &str = "init_{{crate_name}}"; // Example
 
@@ -118,14 +121,9 @@ async fn main() -> Result<(), Error> {
         .await
         .context("Failed to initialize the contract.")?; // Example
 
-    // This is how you can use a type from your smart contract.
-    use {{crate_name}}::MyInputType; // Example
-
-    let input_parameter: MyInputType = false; // Example
-
     // Create a successful transaction.
-
-    let bytes = contracts_common::to_bytes(&input_parameter); // Example
+    // The input parameter to the receive function is in this example a bool.
+    let bytes = contracts_common::to_bytes(&false); // Example
 
     let update_payload = transactions::UpdateContractPayload {
         amount: Amount::from_ccd(0),
