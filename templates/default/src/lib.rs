@@ -59,7 +59,8 @@ fn receive(ctx: &ReceiveContext, _host: &mut Host<State>) -> Result<(), Error> {
     // You can mutate the smart contract state here via host.state_mut(), since the receive attribute has the mutable flag.
     // You can return any of your custom error variants from above.
 
-    let return_error = ctx.parameter_cursor().get()?; // Returns Error::ParseError on failure.
+    // Returns ParseError on failure.
+    let return_error = ctx.parameter_cursor().get()?;
     if return_error {
         Err(Error::CustomError)
     } else {
