@@ -6,6 +6,7 @@
 - The `ContractInvokeSuccess` and `ContractInvokeError` have additional fields
   that record where parts of the energy was allocated during execution.
 - Add support for loading the contract under test with the `module_load_output` function. The module path is exposed by `cargo-concordium` through the `CARGO_CONCORDIUM_TEST_MODULE_OUTPUT_PATH` environment variable.
+- Updated the Concordium Rust SDK to support the changes introduced in protocol 7.
 
 ## 4.2.0
 
@@ -78,7 +79,7 @@
       - These are the elements that were previously returned in the `trace_elements` field.
       - There is also a version of the method which clones: `effective_trace_elements_cloned()`.
     - To migrate existing code, replace `some_update.trace_elements` with `some_update.effective_trace_elements_cloned()`.
-    - Add a helper method, `rollbacks_occurred()`, to determine whether any internal failures or rollbacks occurred. 
+    - Add a helper method, `rollbacks_occurred()`, to determine whether any internal failures or rollbacks occurred.
   - On the `ContractInvokeError` type:
     - Include the field `trace_elements` of type `Vec<DebugTraceElements>` with the trace elements that were hitherto discarded. (breaking change)
     - To migrate, include the new field or use `..` when pattern matching on the type.
