@@ -103,7 +103,7 @@ async fn main() -> Result<(), Error> {
     // here.
 
     // You can easily import a type from the smart contract like so:
-    use default::CustomInputParameter; // Example
+    use {{crate_name}}::CustomInputParameter; // Example
 
     let param = OwnedParameter::from_serial(&CustomInputParameter { num: 42 })?; // Example
 
