@@ -69,14 +69,21 @@ fn initialize() -> (Chain, ContractInitSuccess) {
     // Deploy the module.
     let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
 
+    let parameter = CustomInputParameter { num: 0 };
+
     // Initialize the contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10_000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_{{crate_name}}".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10_000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_{{crate_name}}".to_string()),
+                param: OwnedParameter::from_serial(&parameter).expect("Parameter is valid."),
+            },
+        )
         .expect("Initializing contract");
 
     (chain, init)
