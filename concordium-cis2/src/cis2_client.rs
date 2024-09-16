@@ -389,6 +389,11 @@ impl Cis2Client {
 
 #[cfg(test)]
 mod test {
+    #![expect(
+        deprecated,
+        reason = "concordium_std::test_infrastructure is deprecated and should on the long term be replaced with concordium-smart-contract-testing, see also https://github.com/Concordium/concordium-rust-smart-contracts/issues/341"
+    )]
+
     use crate::*;
     use concordium_std::test_infrastructure::*;
 
