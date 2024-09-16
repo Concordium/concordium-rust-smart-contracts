@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "6.1.0"
+version = "6.2.0"
 authors = ["Concordium <developers@concordium.com>"]
 rust-version = "1.73"
 edition = "2021"

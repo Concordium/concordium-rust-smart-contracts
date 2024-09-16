@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased changes
+## concordium-cis2 6.2.0 (2024-09-17)
 
 - Bump MSRV to 1.72
 - Add `FromStr` implementations for `TokenId` types.
