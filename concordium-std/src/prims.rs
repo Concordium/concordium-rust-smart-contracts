@@ -157,11 +157,13 @@ extern "C" {
     /// either
     /// - u32::MAX if the iterator has already been deleted
     /// - the amount of data that was copied. This will never be more than the
-    ///   supplied length. Before the first call to the [state_iterator_next]
-    ///   function this returns (sections of) the key that was used to create
-    ///   the iterator. After [state_iterator_next] returns (the encoding of)
-    ///   [None] this method returns (sections of) the key at the first node
-    ///   returned by the iterator.
+    ///   supplied length.
+    ///
+    /// Before the first call to the [state_iterator_next]
+    /// function this returns (sections of) the key that was used to create
+    /// the iterator. After [state_iterator_next] returns (the encoding of)
+    /// [None] this method returns (sections of) the key at the first node
+    /// returned by the iterator.
     pub fn state_iterator_key_read(iterator: u64, start: *mut u8, length: u32, offset: u32) -> u32;
 
     // Operations on the entry.
