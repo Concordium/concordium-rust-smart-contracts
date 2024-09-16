@@ -372,8 +372,8 @@
 //!    ```
 //!
 //!    If you use logging, crypto-primitives, or similar, you must also
-//!    replace those uses of traits with concrete types. E.g. replacing `&mut impl
-//!    HasLogger` with `&mut Logger`.
+//!    replace those uses of traits with concrete types. E.g. replacing `&mut
+//!    impl HasLogger` with `&mut Logger`.
 //!
 //! 2. Migrate your tests to use the new testing library.
 //!

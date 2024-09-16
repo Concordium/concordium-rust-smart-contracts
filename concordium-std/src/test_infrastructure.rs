@@ -1930,12 +1930,7 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
-    use crate::{
-        cell::RefCell,
-        rc::Rc,
-        test_infrastructure::TestStateEntry,
-        HasStateEntry,
-    };
+    use crate::{cell::RefCell, rc::Rc, test_infrastructure::TestStateEntry, HasStateEntry};
     use concordium_contracts_common::{Read, Seek, SeekFrom, Write};
 
     #[test]
