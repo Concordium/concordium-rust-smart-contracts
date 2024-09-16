@@ -8,12 +8,12 @@ readme = "README.md"
 description = "A companion crate to `concordium-std` that supports off-chain end-to-end testing of smart contracts."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts"
 repository = "https://github.com/Concordium/concordium-rust-smart-contracts"
-exclude = ["tests"] # Do not publish tests.
+exclude = ["tests"]                                                                                                  # Do not publish tests.
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-concordium-rust-sdk = {version = "4", path = "../concordium-rust-sdk"}
+concordium-rust-sdk = { version = "5", path = "../concordium-rust-sdk" }
 tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"

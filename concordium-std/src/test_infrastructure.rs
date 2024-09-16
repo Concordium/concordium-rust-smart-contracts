@@ -780,9 +780,9 @@ type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 /// two different ways:
 ///
 /// 1. By setting up mock responses for the functions you need, for example with
-/// the `setup_hash_sha_256_mock` method.
+///    the `setup_hash_sha_256_mock` method.
 /// 2. Or, by using the actual implementations. For this, you need to enable the
-/// "crypto-primitives" feature.
+///    "crypto-primitives" feature.
 pub struct TestCryptoPrimitives {
     #[cfg(not(feature = "crypto-primitives"))]
     verify_ed25519_signature_mock:         RefCell<Option<MockFnVerifyEd25519>>,
@@ -1928,17 +1928,15 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod test {
-
-    use super::TestStateApi;
     use crate::{
         cell::RefCell,
         rc::Rc,
-        test_infrastructure::{TestStateBuilder, TestStateEntry},
-        Deletable, EntryRaw, HasStateApi, HasStateEntry, StateBTreeSet, StateMap, StateSet,
-        INITIAL_NEXT_ITEM_PREFIX,
+        test_infrastructure::TestStateEntry,
+        HasStateEntry,
     };
-    use concordium_contracts_common::{to_bytes, Deserial, Read, Seek, SeekFrom, Write};
+    use concordium_contracts_common::{Read, Seek, SeekFrom, Write};
 
     #[test]
     fn test_testhost_balance_queries_reflect_transfers() {
