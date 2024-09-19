@@ -322,7 +322,7 @@
 //! to do the following two steps:
 //!
 //! 1. Replace the usage of deprecated traits with their concrete alternatives
-//! and remove generics.
+//!    and remove generics.
 //!
 //!    For init methods:
 //!    ```no_run
@@ -372,8 +372,8 @@
 //!    ```
 //!
 //!    If you use logging, crypto-primitives, or similar, you must also
-//! replace those uses of traits with concrete types. E.g. replacing `&mut impl
-//! HasLogger` with `&mut Logger`.
+//!    replace those uses of traits with concrete types. E.g. replacing `&mut
+//!    impl HasLogger` with `&mut Logger`.
 //!
 //! 2. Migrate your tests to use the new testing library.
 //!

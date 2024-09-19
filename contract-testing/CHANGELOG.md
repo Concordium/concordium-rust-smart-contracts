@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased changes
+## 4.3.0
 
 - Integrate protocol version 7 cost semantics.
 - The `ContractInvokeSuccess` and `ContractInvokeError` have additional fields

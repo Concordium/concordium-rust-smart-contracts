@@ -636,7 +636,7 @@ impl Chain {
     ///  - `sender`: The account paying for the transaction. Will also become
     ///    the owner of the contract created.
     ///  - `energy_reserved`: Amount of energy reserved for executing the init
-    ///   method.
+    ///    method.
     ///  - `payload`:
     ///    - `amount`: The initial balance of the contract. Subtracted from the
     ///      `sender` account.
@@ -750,7 +750,7 @@ impl Chain {
 
         // Ensure the module contains the provided init name.
         let init_name = payload.init_name.as_contract_name().get_chain_name();
-        if module.artifact.export.get(init_name).is_none() {
+        if !module.artifact.export.contains_key(init_name) {
             return Err(ContractInitErrorKind::ContractNotPresentInModule {
                 name: payload.init_name,
             });
@@ -1742,7 +1742,7 @@ impl Chain {
     /// This method also queries the block info for one of two reasons:
     /// 1) If `query_block` is provided, its existence is checked.
     /// 2) Otherwise, the last final block is queried to get its blockhash which
-    /// will be saved in [`ExternalNodeConnection`].
+    ///    will be saved in [`ExternalNodeConnection`].
     fn setup_external_node_connection(
         &mut self,
         endpoint: Endpoint,

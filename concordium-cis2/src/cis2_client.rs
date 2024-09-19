@@ -389,6 +389,9 @@ impl Cis2Client {
 
 #[cfg(test)]
 mod test {
+    // concordium_std::test_infrastructure is deprecated and should on the long term be replaced with concordium-smart-contract-testing, see also https://github.com/Concordium/concordium-rust-smart-contracts/issues/341
+    #![allow(deprecated)]
+
     use crate::*;
     use concordium_std::test_infrastructure::*;
 
@@ -538,9 +541,7 @@ mod test {
             };
 
             // Return a response with operator true.
-            Ok((false, OperatorOfQueryResponse {
-                0: vec![true],
-            }))
+            Ok((false, OperatorOfQueryResponse(vec![true])))
         }
 
         host.setup_mock_entrypoint(
@@ -551,9 +552,9 @@ mod test {
 
         let client = Cis2Client::new(cis_contract_address);
         let res: Result<bool, Cis2ClientError<()>> =
-            client.operator_of(&mut host, owner, current_contract_address);
+            client.operator_of(&host, owner, current_contract_address);
 
-        assert_eq!(res.unwrap(), true);
+        assert!(res.unwrap());
     }
 
     #[test]

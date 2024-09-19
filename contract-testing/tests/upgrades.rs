@@ -525,9 +525,9 @@ fn test_reject() {
             ..
         } => match failure_kind {
             InvokeFailure::ContractReject {
-                code,
+                code: -1,
                 ..
-            } if code == -1 => (),
+            } => (),
             _ => panic!("Expected ContractReject with code == -1"),
         },
         _ => panic!("Expected Err(ContractUpdateError::ExecutionError)"),

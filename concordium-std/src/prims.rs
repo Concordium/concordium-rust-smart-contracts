@@ -126,8 +126,8 @@ extern "C" {
     /// - all but second bit set to 1 if there is no value in the state with the
     ///   given key
     /// - otherwise the first bit is 0, and the remaining bits are the iterator
-    ///   identifier
-    /// that may be used in subsequent calls to advance it, or to get its key.
+    ///   identifier that may be used in subsequent calls to advance it, or to
+    ///   get its key.
     pub fn state_iterate_prefix(prefix_start: *const u8, prefix_length: u32) -> u64;
 
     /// Return the next entry along the iterator, and advance the iterator.
@@ -135,9 +135,8 @@ extern "C" {
     /// - u64::MAX if the iterator does not exist (it was deleted, or the ID is
     ///   invalid)
     /// - all but the second bit set to 1 if no more entries are left, the
-    ///   iterator
-    /// is exhausted. All further calls will yield the same until the iterator
-    /// is deleted.
+    ///   iterator is exhausted. All further calls will yield the same until the
+    ///   iterator is deleted.
     /// - otherwise the first bit is 0, and the remaining bits encode an entry
     ///   identifier that can be passed to any of the entry methods.
     pub fn state_iterator_next(iterator: u64) -> u64;
@@ -159,11 +158,12 @@ extern "C" {
     /// - u32::MAX if the iterator has already been deleted
     /// - the amount of data that was copied. This will never be more than the
     ///   supplied length.
-    /// Before the first call to the [state_iterator_next] function this returns
-    /// (sections of) the key that was used to create the iterator. After
-    /// [state_iterator_next] returns (the encoding of) [None] this method
-    /// returns (sections of) the key at the first node returned by the
-    /// iterator.
+    ///
+    /// Before the first call to the [state_iterator_next]
+    /// function this returns (sections of) the key that was used to create
+    /// the iterator. After [state_iterator_next] returns (the encoding of)
+    /// [None] this method returns (sections of) the key at the first node
+    /// returned by the iterator.
     pub fn state_iterator_key_read(iterator: u64, start: *mut u8, length: u32, offset: u32) -> u32;
 
     // Operations on the entry.
@@ -175,7 +175,7 @@ extern "C" {
     /// offset ... where to start reading in the entry
     /// The return value is
     /// - u32::MAX if the entry does not exist (has been invalidated, or never
-    /// existed). In this case no data is written.
+    ///   existed). In this case no data is written.
     /// - amount of data that was read. This is never more than length.
     pub fn state_entry_read(entry: u64, start: *mut u8, length: u32, offset: u32) -> u32;
 
@@ -186,14 +186,14 @@ extern "C" {
     /// offset ... where to start writing in the entry
     /// The return value is
     /// - u32::MAX if the entry does not exist (has been invalidated, or never
-    /// existed). In this case no data is written.
+    ///   existed). In this case no data is written.
     /// - amount of data that was written. This is never more than length.
     pub fn state_entry_write(entry: u64, start: *const u8, length: u32, offset: u32) -> u32;
 
     /// Return the current size of the entry in bytes.
     /// The return value is either
     /// - u32::MAX if the entry does not exist (has been invalidated, or never
-    /// existed). In this case no data is written.
+    ///   existed). In this case no data is written.
     /// - or the size of the entry.
     pub fn state_entry_size(entry: u64) -> u32;
 

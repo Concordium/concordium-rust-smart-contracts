@@ -505,9 +505,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
         let mut higher_so_far = None;
@@ -543,9 +541,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
         let mut higher_so_far = None;
@@ -581,9 +577,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
         let mut lower_so_far = None;
@@ -614,9 +608,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
         let mut lower_so_far = None;
@@ -651,9 +643,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn first(&self) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
         let mut root = self.get_node(root_node_id);
         if root.is_leaf() {
             Some(StateRef::new(root.keys.swap_remove(0)))
@@ -667,9 +657,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn last(&self) -> Option<StateRef<K>>
     where
         K: Serialize + Ord, {
-        let Some(root_node_id) = self.root else {
-            return None;
-        };
+        let root_node_id = self.root?;
         let mut root = self.get_node(root_node_id);
         if root.is_leaf() {
             Some(StateRef::new(root.keys.pop().unwrap_abort()))
