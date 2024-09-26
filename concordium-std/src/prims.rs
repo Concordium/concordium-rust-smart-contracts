@@ -288,6 +288,10 @@ extern "C" {
         column: u32,
     );
 
+    /// TODO
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_slot_time(slot_time: u64);
+
     #[cfg(feature = "debug")]
     /// Emit text together with the source location.
     /// This is used as the equivalent of the `dbg!` macro when the
@@ -511,5 +515,20 @@ mod host_dummy_functions {
     #[no_mangle]
     fn get_random(_dest: *mut u8, _size: u32) {
         unimplemented!("Dummy function! Not to be executed")
+    }
+}
+
+#[cfg(feature = "internal-wasm-test")]
+mod wasm_test {
+    use super::*;
+    use crate::{claim_eq, concordium_test};
+
+    #[concordium_test]
+    fn test() {
+        let slot_time = unsafe {
+            set_slot_time(10);
+            get_slot_time()
+        };
+        claim_eq!(slot_time, 10)
     }
 }
