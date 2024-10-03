@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added the following functions in the primitive interface:
+  - `set_slot_time`
+  - `set_receive_self_address`
+  - `set_receive_self_balance`
+
 ## concordium-std 10.1.0 (2024-04-04)
 
 - Add support for querying the module reference and contract name of an instance,
