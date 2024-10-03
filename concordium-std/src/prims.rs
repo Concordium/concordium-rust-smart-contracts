@@ -288,9 +288,18 @@ extern "C" {
         column: u32,
     );
 
-    /// TODO
+    /// Set the slot time in milliseconds.
+    /// The slot time represents the beginning of the smart contract's block.
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_slot_time(slot_time: u64);
+
+    /// Sets the address of this smart contract
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_self_balance(balance: u64);
+
+    /// Sets the current balance of this smart contract
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_self_address(start: *const u8);
 
     #[cfg(feature = "debug")]
     /// Emit text together with the source location.
@@ -520,15 +529,41 @@ mod host_dummy_functions {
 
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test {
+    use concordium_contracts_common::{from_bytes, to_bytes, ContractAddress};
+
     use super::*;
     use crate::{claim_eq, concordium_test};
 
     #[concordium_test]
-    fn test() {
+    fn set_get_slot_time() {
         let slot_time = unsafe {
             set_slot_time(10);
             get_slot_time()
         };
         claim_eq!(slot_time, 10)
+    }
+
+    #[concordium_test]
+    fn set_get_receive_self_balance() {
+        let balance = unsafe {
+            set_receive_self_balance(1729);
+            get_receive_self_balance()
+        };
+        claim_eq!(balance, 1729)
+    }
+
+    #[concordium_test]
+    fn set_get_receive_self_address() {
+        let address = ContractAddress::new(5040, 12);
+        let address_bytes = to_bytes(&address);
+        let mut out_bytes = [0u8; 16];
+
+        unsafe {
+            set_receive_self_address(address_bytes.as_ptr());
+            get_receive_self_address(out_bytes.as_mut_ptr());
+        };
+
+        let out_address = from_bytes(&out_bytes).unwrap();
+        claim_eq!(address, out_address);
     }
 }
