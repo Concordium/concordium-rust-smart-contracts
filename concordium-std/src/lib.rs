@@ -463,6 +463,7 @@ pub mod constants;
 mod impls;
 pub mod prims;
 mod state_btree;
+pub mod test_env;
 mod traits;
 mod types;
 pub use concordium_contracts_common::*;
