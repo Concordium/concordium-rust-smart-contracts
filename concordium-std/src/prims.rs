@@ -301,6 +301,10 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_self_address(start: *const u8);
 
+    /// Sets parameter `i` of the smart contract to the given value.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
+
     #[cfg(feature = "debug")]
     /// Emit text together with the source location.
     /// This is used as the equivalent of the `dbg!` macro when the
