@@ -13,10 +13,10 @@ std = ["concordium-std/std"]
 bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]
-concordium-std = { version = "10.0", default-features = false }
+concordium-std = { version = "10.1", default-features = false }
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4.2"
+concordium-smart-contract-testing = "4.3"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

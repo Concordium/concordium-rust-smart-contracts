@@ -12,11 +12,11 @@ std = ["concordium-std/std", "concordium-cis2/std"]
 bump_alloc = ["concordium-std/bump_alloc"]
 
 [dependencies]
-concordium-std = {version = "10.0", default-features = false}
-concordium-cis2 = {version = "6.1", default-features = false}
+concordium-std = {version = "10.1", default-features = false}
+concordium-cis2 = {version = "6.2", default-features = false}
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4.2"
+concordium-smart-contract-testing = "4.3"
 concordium-std-derive = "6.0"
 
 [lib]
