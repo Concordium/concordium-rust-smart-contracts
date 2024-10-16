@@ -79,20 +79,29 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_parameter() {
+        let i = 1;
         let param = vec![3u8; 7];
-
-        TestEnv.set_parameter(0, &param);
-
         let mut buf = vec![0u8; 10];
-        let bytes_read = external_call_response().read(&mut stored).unwrap();
 
-        let param_size = unsafe { prims::get_parameter_size(0) };
-        let bytes_written = unsafe { prims::get_parameter_section(0, buf.as_mut_ptr(), 5, 2) };
+        TestEnv.set_parameter(i, &param);
 
+        // Use the prims call to test length and offset
+        let param_size = unsafe { prims::get_parameter_size(i) };
+        let bytes_written = unsafe { prims::get_parameter_section(i, buf.as_mut_ptr(), 5, 2) };
         let expected = vec![0, 0, 3, 3, 3, 3, 3, 0, 0, 0];
 
         claim_eq!(param_size, 7);
         claim_eq!(bytes_written, 5);
         claim_eq!(buf, expected);
+
+        // Use the external call to test the actual function that would be called in
+        // most real scenarios
+        buf = vec![0u8; 7];
+        let bytes_written =
+            external_call_response().read(&mut buf).expect("Unable to read bytes to buffer");
+        let expected = param;
+
+        claim_eq!(buf, expected);
+        claim_eq!(bytes_written, 7);
     }
 }
