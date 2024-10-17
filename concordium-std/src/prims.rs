@@ -305,6 +305,16 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
 
+    /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
+    /// is an invalid index. Otherwise returns bytes written.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn get_event(i: u32, start: *const u8) -> i32;
+
+    /// Gets the size of event number `i` in the smart contract state. Returns `-1` if `i`
+    /// is an invalid index.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn get_event_size(i: u32) -> i32;
+
     #[cfg(feature = "debug")]
     /// Emit text together with the source location.
     /// This is used as the equivalent of the `dbg!` macro when the

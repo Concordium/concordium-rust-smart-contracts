@@ -7,6 +7,8 @@
   - `set_receive_self_address`
   - `set_receive_self_balance`
   - `set_parameter`
+  - `get_event`
+  - `get_event_size`
 
 - Added a more user-friendly interface `TestEnv` that allows users to build
   a test host environment using method chaining and proper types. It supports
@@ -15,6 +17,7 @@
   - `set_receive_balance`
   - `set_receive_self_address`
   - `set_parameter`
+  - `get_event`
 
 ## concordium-std 10.1.0 (2024-04-04)
 
