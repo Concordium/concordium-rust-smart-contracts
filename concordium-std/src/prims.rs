@@ -305,10 +305,14 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
 
+    /// Sets the address of the sender, 32 bytes
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_init_origin(start: *const u8);
+
     /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
     /// is an invalid index. Otherwise returns bytes written.
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
-    pub(crate) fn get_event(i: u32, start: *const u8) -> i32;
+    pub(crate) fn get_event(i: u32, start: *mut u8) -> i32;
 
     /// Gets the size of event number `i` in the smart contract state. Returns `-1` if `i`
     /// is an invalid index.

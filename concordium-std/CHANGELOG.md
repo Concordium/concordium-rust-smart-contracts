@@ -7,6 +7,7 @@
   - `set_receive_self_address`
   - `set_receive_self_balance`
   - `set_parameter`
+  - `set_init_origin`
   - `get_event`
   - `get_event_size`
 
@@ -17,6 +18,7 @@
   - `set_receive_balance`
   - `set_receive_self_address`
   - `set_parameter`
+  - `set_init_origin`
   - `get_event`
 
 ## concordium-std 10.1.0 (2024-04-04)

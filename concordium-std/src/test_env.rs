@@ -1,4 +1,6 @@
-use concordium_contracts_common::{Amount, ContractAddress, SlotTime};
+use concordium_contracts_common::{
+    AccountAddress, Amount, ContractAddress, Serial, SlotTime,
+};
 
 use crate::{prims, to_bytes};
 
@@ -49,6 +51,11 @@ impl TestEnv {
             Some(buf)
         }
     }
+
+    pub fn set_init_origin(self, address: AccountAddress) -> Self {
+        unsafe { prims::set_init_origin(address.0.as_ptr()) };
+        self
+    }
 }
 
 #[cfg(feature = "internal-wasm-test")]
@@ -70,19 +77,12 @@ mod wasm_test {
         }
     }
 
-    fn extern_chain_meta() -> ExternChainMeta { ExternChainMeta {} }
-
-    fn external_call_response() -> ExternCallResponse {
-        ExternCallResponse::new(unsafe { NonZeroU32::new_unchecked(1) })
-    }
-
-    fn receive_context() -> ReceiveContext { ExternContext::default() }
-
     #[concordium_test]
     fn set_get_slot_time() {
+        let extern_chain_meta = ExternChainMeta {};
         let original = Timestamp::from_timestamp_millis(10);
         TestEnv.set_slot_time(original);
-        let stored = extern_chain_meta().block_time();
+        let stored = extern_chain_meta.block_time();
         claim_eq!(original, stored)
     }
 
@@ -96,14 +96,17 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_receive_self_address() {
+        let receive_context: ReceiveContext = ExternContext::default();
         let original = ContractAddress::new(5040, 12);
         TestEnv.set_receive_self_address(original);
-        let stored = receive_context().self_address();
+        let stored = receive_context.self_address();
         claim_eq!(original, stored);
     }
 
     #[concordium_test]
     fn set_get_parameter() {
+        let mut external_call_response =
+            ExternCallResponse::new(unsafe { NonZeroU32::new_unchecked(1) });
         let i = 1;
         let param = vec![3u8; 7];
         let mut buf = vec![0u8; 10];
@@ -122,8 +125,7 @@ mod wasm_test {
         // Use the external call to test the actual function that would be called in
         // most real scenarios
         buf = vec![0u8; 7];
-        let bytes_written =
-            external_call_response().read(&mut buf).expect("Unable to read bytes to buffer");
+        let bytes_written = external_call_response.read(&mut buf).unwrap();
         let expected = param;
 
         claim_eq!(buf, expected);
@@ -136,7 +138,7 @@ mod wasm_test {
         let mut buf = vec![0u8; 10];
 
         let param_size = unsafe { prims::get_parameter_size(i) };
-        let bytes_written = unsafe { prims::get_parameter_section(i, buf.as_mut_ptr(), 5, 2) };
+        let bytes_written = unsafe { prims::get_parameter_section(i, buf.as_mut_ptr(), 0, 0) };
 
         claim_eq!(param_size, -1);
         claim_eq!(param_size, bytes_written);
@@ -184,5 +186,21 @@ mod wasm_test {
     fn get_empty_events() {
         let stored = TestEnv.get_event(0);
         claim_eq!(stored, None);
+    }
+
+    #[concordium_test]
+    fn set_get_init_origin() {
+        let init_context: InitContext = ExternContext::default();
+        // 3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G
+        let address = AccountAddress([
+            105, 117, 36, 6, 204, 147, 159, 201, 12, 166, 167, 59, 87, 206, 225, 9, 150, 53, 71,
+            249, 66, 0, 109, 33, 145, 68, 146, 79, 132, 133, 251, 13,
+        ]);
+        TestEnv.set_init_origin(address);
+
+        let stored = init_context.init_origin();
+        let expected = address;
+
+        claim_eq!(stored, expected);
     }
 }
