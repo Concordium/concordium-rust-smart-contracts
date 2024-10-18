@@ -89,7 +89,7 @@ impl TestEnv {
 
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test {
-    use core::num::NonZeroU32;
+    use core::{num::NonZeroU32, str::FromStr};
 
     use concordium_contracts_common::{ContractAddress, Timestamp};
 
@@ -107,6 +107,8 @@ mod wasm_test {
             state_builder,
         }
     }
+
+    fn crypto_primitives() -> CryptoPrimitives { CryptoPrimitives {} }
 
     fn receive_context() -> ReceiveContext { ExternContext::default() }
 
@@ -280,5 +282,25 @@ mod wasm_test {
 
         claim_eq!(size, entrypoint.size());
         claim_eq!(stored, entrypoint.to_owned());
+    }
+
+    #[concordium_test]
+    fn verify_ed25519_signature() {
+        let _sk_hex = "7eee273f83906eb9a673c0119553b416aa515fc870a730b4e70cdf1a11dc17d3";
+        let pk_hex = "d2af46bb1bd8d656c29a62bda2ca66bd26a0f0aea1e0988c7044003e630ff895";
+        let sig_hex = "99e3c8b2cf832c3c0f6e8031466fe259b1bf86a4309386418cebb6cd7859d62b3431250e54c9cac7659b36743d1c272514ece30c1ce37d4f422d42f84069c007";
+        let msg = b"Hello, this is a test message!";
+
+        // Check valid signature
+        let pk = PublicKeyEd25519::from_str(pk_hex).unwrap();
+        let sig = SignatureEd25519::from_str(sig_hex).unwrap();
+        let is_verified = crypto_primitives().verify_ed25519_signature(pk, sig, msg);
+        claim_eq!(is_verified, true);
+
+        // Check invalid signature
+        let wrong_sig_hex = "1111111111832c3c0f6e8031466fe259b1bf86a4309386418cebb6cd7859d62b3431250e54c9cac7659b36743d1c272514ece30c1ce37d4f422d42f84069c007";
+        let wrong_sig = SignatureEd25519::from_str(wrong_sig_hex).unwrap();
+        let is_verified = crypto_primitives().verify_ed25519_signature(pk, wrong_sig, msg);
+        claim_eq!(is_verified, false);
     }
 }
