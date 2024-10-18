@@ -1,4 +1,6 @@
-use concordium_contracts_common::{AccountAddress, Amount, ContractAddress, Serial, SlotTime, Address};
+use concordium_contracts_common::{
+    AccountAddress, Address, Amount, ContractAddress, EntrypointName, Serial, SlotTime,
+};
 
 use crate::{prims, to_bytes};
 
@@ -62,11 +64,25 @@ impl TestEnv {
         self
     }
 
-    /// Immediate sender of the message (either contract or account).
+    /// Set the immediate sender of the message (either contract or account).
     pub fn set_receive_sender(self, address: Address) -> Self {
         let mut buf = Vec::new();
         address.serial(&mut buf).unwrap();
         unsafe { prims::set_receive_sender(buf.as_ptr()) };
+        self
+    }
+
+    /// Set the owner of the contract.
+    pub fn set_receive_owner(self, address: AccountAddress) -> Self {
+        unsafe { prims::set_receive_owner(address.0.as_ptr()) };
+        self
+    }
+
+    /// Set the receive entrypoint name.
+    pub fn set_receive_entrypoint(self, entrypoint: EntrypointName) -> Self {
+        let mut buf = Vec::new();
+        entrypoint.serial(&mut buf).unwrap();
+        unsafe { prims::set_receive_entrypoint(buf.as_ptr()) };
         self
     }
 }
@@ -174,7 +190,7 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_events() {
-        // Testing primitive calls
+        // Testing primitive calls for testing offset and length parameters
         let event_prim = vec![1u8, 2, 3, 4];
         let store_status =
             unsafe { prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap()) };
@@ -243,5 +259,26 @@ mod wasm_test {
         TestEnv.set_receive_sender(address);
         let stored = receive_context().sender();
         claim_eq!(stored, address);
+    }
+
+    #[concordium_test]
+    fn set_get_receive_owner() {
+        let address = account_address();
+        TestEnv.set_receive_owner(address);
+        let stored = receive_context().owner();
+        claim_eq!(stored, address);
+    }
+
+    #[concordium_test]
+    fn set_get_receive_entrypoint() {
+        let entrypoint = EntrypointName::new("some_entry_point").unwrap();
+
+        TestEnv.set_receive_entrypoint(entrypoint);
+
+        let size = unsafe { prims::get_receive_entrypoint_size() };
+        let stored = receive_context().named_entrypoint();
+
+        claim_eq!(size, entrypoint.size());
+        claim_eq!(stored, entrypoint.to_owned());
     }
 }

@@ -225,6 +225,10 @@ extern "C" {
 
     /// Write the receive entrypoint name into the given location.
     /// It is assumed that the location contains enough space to write the name.
+    ///
+    /// Note that the name is expected to be the receive name encoded as bytes
+    /// without the length, i.e. not a serialized EntrypointName (since it's
+    /// byte-encoding has 2 length bytes) but a String.
     pub fn get_receive_entrypoint(start: *mut u8);
 
     // Getters for the chain meta data
@@ -313,18 +317,26 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_invoker(start: *const u8);
 
-    /// Set the immediate sender of the message, Address (either contract or account).
+    /// Set the immediate sender of the message, Address (either contract or
+    /// account).
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_sender(start: *const u8);
 
+    /// Owner of the contract, AccountAddress.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_owner(start: *const u8);
+
+    /// Set the receive entrypoint name, EntryPointName.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_entrypoint(start: *const u8);
 
     /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
     /// is an invalid index. Otherwise returns bytes written.
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn get_event(i: u32, start: *mut u8) -> i32;
 
-    /// Gets the size of event number `i` in the smart contract state. Returns `-1` if `i`
-    /// is an invalid index.
+    /// Gets the size of event number `i` in the smart contract state. Returns
+    /// `-1` if `i` is an invalid index.
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn get_event_size(i: u32) -> i32;
 

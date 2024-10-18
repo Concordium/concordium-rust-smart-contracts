@@ -2,12 +2,17 @@
 
 ## Unreleased
 
-- Added the following functions in the primitive interface:
+- Added the following functions in the primitive interface, that can only
+  be called in testing environments:
   - `set_slot_time`
   - `set_receive_self_address`
   - `set_receive_self_balance`
   - `set_parameter`
   - `set_init_origin`
+  - `set_receive_invoker`
+  - `set_receive_sender`
+  - `set_receive_owner`
+  - `set_receive_entrypoint`
   - `get_event`
   - `get_event_size`
 
@@ -19,6 +24,10 @@
   - `set_receive_self_address`
   - `set_parameter`
   - `set_init_origin`
+  - `set_receive_invoker`
+  - `set_receive_sender`
+  - `set_receive_owner`
+  - `set_receive_entrypoint`
   - `get_event`
 
 ## concordium-std 10.1.0 (2024-04-04)
