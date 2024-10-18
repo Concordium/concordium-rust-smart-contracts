@@ -1,6 +1,4 @@
-use concordium_contracts_common::{
-    AccountAddress, Amount, ContractAddress, Serial, SlotTime,
-};
+use concordium_contracts_common::{AccountAddress, Amount, ContractAddress, Serial, SlotTime, Address};
 
 use crate::{prims, to_bytes};
 
@@ -14,13 +12,13 @@ impl TestEnv {
         self
     }
 
-    /// Sets the current balance of this smart contract
+    /// Sets the current balance of this smart contract.
     pub fn set_receive_balance(self, balance: Amount) -> Self {
         unsafe { prims::set_receive_self_balance(balance.micro_ccd) };
         self
     }
 
-    /// Sets the address of this smart contract
+    /// Sets the address of this smart contract.
     pub fn set_receive_self_address(self, address: ContractAddress) -> Self {
         unsafe { prims::set_receive_self_address(to_bytes(&address).as_ptr()) };
         self
@@ -52,8 +50,23 @@ impl TestEnv {
         }
     }
 
+    /// Set the address of the sender.
     pub fn set_init_origin(self, address: AccountAddress) -> Self {
         unsafe { prims::set_init_origin(address.0.as_ptr()) };
+        self
+    }
+
+    /// Set the invoker of the top-level transaction.
+    pub fn set_receive_invoker(self, address: AccountAddress) -> Self {
+        unsafe { prims::set_receive_invoker(address.0.as_ptr()) };
+        self
+    }
+
+    /// Immediate sender of the message (either contract or account).
+    pub fn set_receive_sender(self, address: Address) -> Self {
+        let mut buf = Vec::new();
+        address.serial(&mut buf).unwrap();
+        unsafe { prims::set_receive_sender(buf.as_ptr()) };
         self
     }
 }
@@ -67,7 +80,9 @@ mod wasm_test {
     use super::*;
     use crate::*;
 
+    // ----- Helper Functions -----
     // Helper functions to get host data, as a real smart contract would
+
     fn extern_host() -> ExternHost<()> {
         let state_api = ExternStateApi::open();
         let state_builder = StateBuilder::open(state_api);
@@ -76,6 +91,20 @@ mod wasm_test {
             state_builder,
         }
     }
+
+    fn receive_context() -> ReceiveContext { ExternContext::default() }
+
+    fn init_context() -> InitContext { ExternContext::default() }
+
+    fn account_address() -> AccountAddress {
+        // 3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G
+        AccountAddress([
+            105, 117, 36, 6, 204, 147, 159, 201, 12, 166, 167, 59, 87, 206, 225, 9, 150, 53, 71,
+            249, 66, 0, 109, 33, 145, 68, 146, 79, 132, 133, 251, 13,
+        ])
+    }
+
+    // ----- Tests -----
 
     #[concordium_test]
     fn set_get_slot_time() {
@@ -96,10 +125,9 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_receive_self_address() {
-        let receive_context: ReceiveContext = ExternContext::default();
         let original = ContractAddress::new(5040, 12);
         TestEnv.set_receive_self_address(original);
-        let stored = receive_context.self_address();
+        let stored = receive_context().self_address();
         claim_eq!(original, stored);
     }
 
@@ -190,17 +218,30 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_init_origin() {
-        let init_context: InitContext = ExternContext::default();
-        // 3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G
-        let address = AccountAddress([
-            105, 117, 36, 6, 204, 147, 159, 201, 12, 166, 167, 59, 87, 206, 225, 9, 150, 53, 71,
-            249, 66, 0, 109, 33, 145, 68, 146, 79, 132, 133, 251, 13,
-        ]);
+        let address = account_address();
         TestEnv.set_init_origin(address);
+        let stored = init_context().init_origin();
+        claim_eq!(stored, address);
+    }
 
-        let stored = init_context.init_origin();
-        let expected = address;
+    #[concordium_test]
+    fn set_get_receive_invoker() {
+        let address = account_address();
+        TestEnv.set_receive_invoker(address);
+        let stored = receive_context().invoker();
+        claim_eq!(stored, address);
+    }
 
-        claim_eq!(stored, expected);
+    #[concordium_test]
+    fn set_get_receive_sender() {
+        let address = Address::Account(account_address());
+        TestEnv.set_receive_sender(address);
+        let stored = receive_context().sender();
+        claim_eq!(stored, address);
+
+        let address = Address::Contract(ContractAddress::new(3, 7));
+        TestEnv.set_receive_sender(address);
+        let stored = receive_context().sender();
+        claim_eq!(stored, address);
     }
 }

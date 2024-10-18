@@ -205,7 +205,7 @@ extern "C" {
     pub fn state_entry_resize(entry: u64, new_size: u32) -> u32;
 
     // Getter for the init context.
-    /// Address of the sender, 32 bytes
+    /// Address of the sender, AccountAddress.
     pub fn get_init_origin(start: *mut u8);
 
     // Getters for the receive context
@@ -215,7 +215,7 @@ extern "C" {
     pub fn get_receive_self_address(start: *mut u8);
     /// Self-balance of the contract, returns the amount
     pub fn get_receive_self_balance() -> u64;
-    /// Immediate sender of the message (either contract or account).
+    /// Immediate sender of the message, Address (either contract or account).
     pub fn get_receive_sender(start: *mut u8);
     /// Owner of the contract, AccountAddress.
     pub fn get_receive_owner(start: *mut u8);
@@ -305,9 +305,18 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
 
-    /// Sets the address of the sender, 32 bytes
+    /// Sets the address of the sender, AccountAddress
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_init_origin(start: *const u8);
+
+    /// Set the invoker of the top-level transaction, AccountAddress.
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_invoker(start: *const u8);
+
+    /// Set the immediate sender of the message, Address (either contract or account).
+    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    pub(crate) fn set_receive_sender(start: *const u8);
+
 
     /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
     /// is an invalid index. Otherwise returns bytes written.
