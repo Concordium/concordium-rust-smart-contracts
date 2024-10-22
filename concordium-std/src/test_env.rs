@@ -171,7 +171,7 @@ mod wasm_test {
         // Use the external call to test the actual function that would be called in
         // most real scenarios
         buf = vec![0u8; 7];
-        let bytes_written = external_call_response.read(&mut buf).unwrap();
+        let bytes_written = external_call_response.read(&mut buf).unwrap_abort();
         let expected = param;
 
         claim_eq!(buf, expected);
@@ -195,11 +195,11 @@ mod wasm_test {
         // Testing primitive calls for testing offset and length parameters
         let event_prim = vec![1u8, 2, 3, 4];
         let store_status =
-            unsafe { prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap()) };
+            unsafe { prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap_abort()) };
         let event_size = unsafe { prims::get_event_size(0) };
 
         claim_eq!(store_status, 1);
-        claim_eq!(event_size, event_prim.len().try_into().unwrap());
+        claim_eq!(event_size, event_prim.len().try_into().unwrap_abort());
 
         let mut buf = vec![0; event_prim.len()];
         let bytes_written = unsafe { prims::get_event(0, buf.as_mut_ptr()) };
@@ -213,16 +213,16 @@ mod wasm_test {
         let event1 = "Hello, World!".to_owned();
         let event2 = "How are you today?".to_owned();
 
-        logger.log(&event1).unwrap();
-        logger.log(&event2).unwrap();
+        logger.log(&event1).unwrap_abort();
+        logger.log(&event2).unwrap_abort();
 
-        let stored1 = TestEnv.get_event(1).unwrap();
-        let stored2 = TestEnv.get_event(2).unwrap();
+        let stored1 = TestEnv.get_event(1).unwrap_abort();
+        let stored2 = TestEnv.get_event(2).unwrap_abort();
 
         let mut expected1 = Vec::new();
         let mut expected2 = Vec::new();
-        event1.serial(&mut expected1).unwrap();
-        event2.serial(&mut expected2).unwrap();
+        event1.serial(&mut expected1).unwrap_abort();
+        event2.serial(&mut expected2).unwrap_abort();
 
         claim_eq!(stored1, expected1);
         claim_eq!(stored2, expected2);
@@ -273,7 +273,7 @@ mod wasm_test {
 
     #[concordium_test]
     fn set_get_receive_entrypoint() {
-        let entrypoint = EntrypointName::new("some_entry_point").unwrap();
+        let entrypoint = EntrypointName::new("some_entry_point").unwrap_abort();
 
         TestEnv.set_receive_entrypoint(entrypoint);
 
@@ -292,14 +292,14 @@ mod wasm_test {
         let msg = b"Hello, this is a test message!";
 
         // Check valid signature
-        let pk = PublicKeyEd25519::from_str(pk_hex).unwrap();
-        let sig = SignatureEd25519::from_str(sig_hex).unwrap();
+        let pk = PublicKeyEd25519::from_str(pk_hex).unwrap_abort();
+        let sig = SignatureEd25519::from_str(sig_hex).unwrap_abort();
         let is_verified = crypto_primitives().verify_ed25519_signature(pk, sig, msg);
         claim_eq!(is_verified, true);
 
         // Check invalid signature
         let wrong_sig_hex = "1111111111832c3c0f6e8031466fe259b1bf86a4309386418cebb6cd7859d62b3431250e54c9cac7659b36743d1c272514ece30c1ce37d4f422d42f84069c007";
-        let wrong_sig = SignatureEd25519::from_str(wrong_sig_hex).unwrap();
+        let wrong_sig = SignatureEd25519::from_str(wrong_sig_hex).unwrap_abort();
         let is_verified = crypto_primitives().verify_ed25519_signature(pk, wrong_sig, msg);
         claim_eq!(is_verified, false);
     }
