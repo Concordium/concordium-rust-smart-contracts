@@ -328,4 +328,40 @@ mod wasm_test {
             crypto_primitives().verify_ecdsa_secp256k1_signature(pk, wrong_sig, msg_hash);
         claim_eq!(is_verified, false);
     }
+
+    #[concordium_test]
+    fn verify_sha2_256_hash() {
+        let message = b"Si hortum in bibliotheca habes, deerit nihil.";
+        let expected_hash = [
+            87, 255, 24, 254, 129, 99, 56, 112, 99, 91, 127, 204, 207, 212, 94, 87, 174, 104, 43,
+            225, 164, 154, 189, 255, 118, 128, 35, 190, 165, 216, 92, 195,
+        ];
+
+        let received_hash = crypto_primitives().hash_sha2_256(message).0;
+        claim_eq!(expected_hash, received_hash);
+    }
+
+    #[concordium_test]
+    fn verify_sha3_256_hash() {
+        let message = b"In vino veritas.";
+        let expected_hash = [
+            15, 198, 250, 247, 115, 23, 211, 238, 182, 202, 61, 129, 9, 106, 1, 221, 34, 107, 110,
+            179, 65, 220, 70, 86, 157, 168, 34, 133, 148, 209, 196, 104,
+        ];
+
+        let received_hash = crypto_primitives().hash_sha3_256(message).0;
+        claim_eq!(expected_hash, received_hash);
+    }
+
+    #[concordium_test]
+    fn verify_keccak_hash() {
+        let message = b"Non exiguum temporis habemus, sed multum perdidimus. Satis longa vita.";
+        let expected_hash = [
+            123, 67, 197, 112, 252, 146, 236, 171, 213, 100, 175, 224, 79, 157, 159, 58, 207, 154,
+            172, 183, 40, 84, 74, 29, 199, 139, 112, 49, 159, 244, 42, 67,
+        ];
+
+        let received_hash = crypto_primitives().hash_keccak_256(message).0;
+        claim_eq!(expected_hash, received_hash);
+    }
 }
