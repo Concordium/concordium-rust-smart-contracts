@@ -194,8 +194,9 @@ mod wasm_test {
     fn set_get_events() {
         // Testing primitive calls for testing offset and length parameters
         let event_prim = vec![1u8, 2, 3, 4];
-        let store_status =
-            unsafe { prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap_abort()) };
+        let store_status = unsafe {
+            prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap_abort())
+        };
         let event_size = unsafe { prims::get_event_size(0) };
 
         claim_eq!(store_status, 1);
@@ -301,6 +302,30 @@ mod wasm_test {
         let wrong_sig_hex = "1111111111832c3c0f6e8031466fe259b1bf86a4309386418cebb6cd7859d62b3431250e54c9cac7659b36743d1c272514ece30c1ce37d4f422d42f84069c007";
         let wrong_sig = SignatureEd25519::from_str(wrong_sig_hex).unwrap_abort();
         let is_verified = crypto_primitives().verify_ed25519_signature(pk, wrong_sig, msg);
+        claim_eq!(is_verified, false);
+    }
+
+    #[concordium_test]
+    fn verify_ecdsa_secp256k_signature() {
+        let _sk_hex = "49f386482744ea6ea0d92b17c73fbc1729e3c061dd9ddf02e85db8d88b2a157b";
+        let pk_hex = "03b8fa66dda8feccbfcf15fcab18d2b124570f4af23b7961bfbd61f8c1967aca12";
+        let sig_hex = "a9170fc158e040f68dd59ab6c0415cf0b8a8811f92294696aa13dfdc7671407732cb6de20f39ca1fdb159cef3213d980fb32b82b8851c847e8168e125fd20c1c";
+        let msg_hash = [
+            11u8, 236, 151, 183, 34, 12, 80, 68, 186, 215, 67, 68, 119, 118, 54, 234, 68, 106, 196,
+            109, 214, 155, 169, 75, 236, 168, 229, 227, 168, 60, 84, 140,
+        ];
+
+        // Check valid signature
+        let pk = PublicKeyEcdsaSecp256k1::from_str(pk_hex).unwrap_abort();
+        let sig = SignatureEcdsaSecp256k1::from_str(sig_hex).unwrap_abort();
+        let is_verified = crypto_primitives().verify_ecdsa_secp256k1_signature(pk, sig, msg_hash);
+        claim_eq!(is_verified, true);
+
+        // Check invalid signature
+        let wrong_sig_hex = "111111111111111111111111c0415cf0b8a8811f92294696aa13dfdc7671407732cb6de20f39ca1fdb159cef3213d980fb32b82b8851c847e8168e125fd20c1c";
+        let wrong_sig = SignatureEcdsaSecp256k1::from_str(wrong_sig_hex).unwrap_abort();
+        let is_verified =
+            crypto_primitives().verify_ecdsa_secp256k1_signature(pk, wrong_sig, msg_hash);
         claim_eq!(is_verified, false);
     }
 }
