@@ -503,7 +503,7 @@ pub fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 
 /// Initialize contract instance with no token types initially.
 /// Set the account that initialised the contract to be admin
-#[init(contract = "NameToken")]
+#[init(contract = "NameToken", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
 fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(ctx.init_origin(), state_builder))
