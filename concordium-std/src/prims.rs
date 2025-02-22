@@ -340,7 +340,7 @@ extern "C" {
     );
 
     /// Reporting back an error, only exists in debug mode
-    // TODO: Shouldn't this be feature gated with debug? Trivially adding it gives other errors so not sure.
+    // TODO: Shouldn't this be feature gated with debug? Trivially adding it gives other errors.
     pub(crate) fn report_error(
         msg_start: *const u8,
         msg_length: u32,
