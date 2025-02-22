@@ -4,7 +4,7 @@ use concordium_contracts_common::{
 
 use crate::{prims, to_bytes};
 
-struct TestEnv;
+pub struct TestEnv;
 
 impl TestEnv {
     /// Set the slot time in milliseconds.

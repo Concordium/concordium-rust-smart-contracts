@@ -463,6 +463,7 @@ pub mod constants;
 mod impls;
 pub mod prims;
 mod state_btree;
+#[cfg(features = 'wasm-test')]
 pub mod test_env;
 mod traits;
 mod types;

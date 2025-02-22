@@ -297,11 +297,11 @@ extern "C" {
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_slot_time(slot_time: u64);
 
-    /// Sets the address of this smart contract
+    /// Sets the CCD balance of this smart contract
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_self_balance(balance: u64);
 
-    /// Sets the current balance of this smart contract
+    /// Sets the address of this smart contract.
     #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_self_address(start: *const u8);
 
