@@ -280,73 +280,56 @@ extern "C" {
     /// is written starting at the `output` pointer. The output segment
     /// *may* overlap with the data segment.
     pub fn hash_keccak_256(data: *const u8, data_len: u32, output: *mut u8);
+}
 
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
-    /// Reporting back an error, only exists in debug mode
-    pub(crate) fn report_error(
-        msg_start: *const u8,
-        msg_length: u32,
-        filename_start: *const u8,
-        filename_length: u32,
-        line: u32,
-        column: u32,
-    );
-
+// TODO: Documentation here
+#[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
+#[cfg(feature = "wasm-test")]
+extern "C" {
     /// Set the slot time in milliseconds.
     /// The slot time represents the beginning of the smart contract's block.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_slot_time(slot_time: u64);
 
     /// Sets the CCD balance of this smart contract
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_self_balance(balance: u64);
 
     /// Sets the address of this smart contract.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_self_address(start: *const u8);
 
     /// Sets parameter `i` of the smart contract to the given value.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
 
     /// Sets the address of the sender, AccountAddress
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_init_origin(start: *const u8);
 
     /// Set the invoker of the top-level transaction, AccountAddress.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_invoker(start: *const u8);
 
     /// Set the immediate sender of the message, Address (either contract or
     /// account).
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_sender(start: *const u8);
 
     /// Owner of the contract, AccountAddress.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_owner(start: *const u8);
 
     /// Set the receive entrypoint name, EntryPointName.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn set_receive_entrypoint(start: *const u8);
 
     /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
     /// is an invalid index. Otherwise returns bytes written.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn get_event(i: u32, start: *mut u8) -> i32;
 
     /// Gets the size of event number `i` in the smart contract state. Returns
     /// `-1` if `i` is an invalid index.
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
     pub(crate) fn get_event_size(i: u32) -> i32;
 
-    #[cfg(feature = "debug")]
     /// Emit text together with the source location.
     /// This is used as the equivalent of the `dbg!` macro when the
     /// `debug` feature is enabled.
     ///
     /// Note that this function is not allowed on the chain, it is only there to
     /// ease local testing.
+    #[cfg(feature = "debug")]
     pub fn debug_print(
         msg_start: *const u8,
         msg_length: u32,
@@ -356,9 +339,20 @@ extern "C" {
         column: u32,
     );
 
-    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+    /// Reporting back an error, only exists in debug mode
+    // TODO: Shouldn't this be feature gated with debug? Trivially adding it gives other errors so not sure.
+    pub(crate) fn report_error(
+        msg_start: *const u8,
+        msg_length: u32,
+        filename_start: *const u8,
+        filename_length: u32,
+        line: u32,
+        column: u32,
+    );
+
     /// Generating random numbers for randomised testing.
     /// Not available for contracts deployed on the chain.
+    #[cfg(feature = "concordium-quickcheck")]
     pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
 

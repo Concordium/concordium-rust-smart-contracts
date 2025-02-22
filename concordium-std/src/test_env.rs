@@ -46,7 +46,7 @@ impl TestEnv {
         let bytes_written = unsafe { prims::get_event(index, buf.as_mut_ptr()) };
 
         if bytes_written < 0 {
-            return None;
+            None
         } else {
             Some(buf)
         }
@@ -154,18 +154,18 @@ mod wasm_test {
         let mut external_call_response =
             ExternCallResponse::new(unsafe { NonZeroU32::new_unchecked(1) });
         let i = 1;
-        let param = vec![3u8; 7];
-        let mut buf = vec![0u8; 10];
+        let param = vec![1, 2, 3, 4, 5, 6, 7];
+        let mut buf = vec![0u8; 5];
 
         TestEnv.set_parameter(i, &param);
 
         // Use the prims call to test length and offset
         let param_size = unsafe { prims::get_parameter_size(i) };
-        let bytes_written = unsafe { prims::get_parameter_section(i, buf.as_mut_ptr(), 5, 2) };
-        let expected = vec![0, 0, 3, 3, 3, 3, 3, 0, 0, 0];
+        let bytes_written = unsafe { prims::get_parameter_section(i, buf.as_mut_ptr(), 4, 2) };
+        let expected = vec![3, 4, 5, 6, 0];
 
         claim_eq!(param_size, 7);
-        claim_eq!(bytes_written, 5);
+        claim_eq!(bytes_written, 4);
         claim_eq!(buf, expected);
 
         // Use the external call to test the actual function that would be called in

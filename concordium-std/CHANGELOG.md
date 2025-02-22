@@ -1,35 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- Added the following functions in the primitive interface, that can only
-  be called in testing environments:
-  - `set_slot_time`
-  - `set_receive_self_address`
-  - `set_receive_self_balance`
-  - `set_parameter`
-  - `set_init_origin`
-  - `set_receive_invoker`
-  - `set_receive_sender`
-  - `set_receive_owner`
-  - `set_receive_entrypoint`
-  - `get_event`
-  - `get_event_size`
-
-- Added a more user-friendly interface `TestEnv` that allows users to build
-  a test host environment using method chaining and proper types. It supports
-  the following operations:
-  - `set_slot_time`
-  - `set_receive_balance`
-  - `set_receive_self_address`
-  - `set_parameter`
-  - `set_init_origin`
-  - `set_receive_invoker`
-  - `set_receive_sender`
-  - `set_receive_owner`
-  - `set_receive_entrypoint`
-  - `get_event`
-
 ## concordium-std 10.1.0 (2024-04-04)
 
 - Add support for querying the module reference and contract name of an instance,
