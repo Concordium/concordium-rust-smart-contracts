@@ -122,7 +122,7 @@ mod wasm_test {
         ])
     }
 
-    // ----- Tests -----
+    // -------------------- Tests -------------------- //
 
     #[concordium_test]
     fn set_get_slot_time() {
