@@ -282,7 +282,9 @@ extern "C" {
     pub fn hash_keccak_256(data: *const u8, data_len: u32, output: *mut u8);
 }
 
-// TODO: Documentation here
+// Interface to the chain. These functions are assumed to be instantiated by
+// the scheduler with relevant primitives. These represent only the primitives
+// available in a test environment.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
 #[cfg(feature = "wasm-test")]
 extern "C" {
