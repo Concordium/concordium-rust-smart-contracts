@@ -529,9 +529,9 @@ impl Chain {
         // If users use our tools to deploy modules the costs are calculated for them so
         // that deployment should never fail with out of energy. Not requiring energy
         // provides a more ergonomic experience.
-        let Ok(sender_account) = self.accounts
-            .get_mut(&sender.into())
-            .ok_or(AccountDoesNotExist { address: sender }) else {
+        let Ok(sender_account) = self.accounts.get_mut(&sender.into()).ok_or(AccountDoesNotExist {
+            address: sender,
+        }) else {
             // Ensure sender account exists.
             return Err(ModuleDeployError {
                 kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountDoesNotExist {
@@ -1086,11 +1086,13 @@ impl Chain {
         // Ensure the invoker exists.
         let Ok(account_info) = self.account(invoker) else {
             return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist { address: invoker },
+                energy_used:        Energy::from(0),
+                transaction_fee:    Amount::zero(),
+                trace_elements:     Vec::new(),
+                kind:               ContractInvokeErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist {
+                        address: invoker,
+                    },
                 ),
                 module_load_energy: 0.into(),
             });
@@ -1227,11 +1229,13 @@ impl Chain {
 
         let Some(account_info) = self.accounts.get(&invoker.into()) else {
             return Err(ContractInvokeError {
-                energy_used:     Energy::from(0),
-                transaction_fee: Amount::zero(),
-                trace_elements:  Vec::new(),
-                kind:            ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist { address: invoker },
+                energy_used:        Energy::from(0),
+                transaction_fee:    Amount::zero(),
+                trace_elements:     Vec::new(),
+                kind:               ContractInvokeErrorKind::InvokerDoesNotExist(
+                    AccountDoesNotExist {
+                        address: invoker,
+                    },
                 ),
                 module_load_energy: 0.into(),
             });
@@ -1677,6 +1681,7 @@ impl Chain {
                     sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
                     sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
                     sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                    sdk::v2::ChainParameters::V3(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
                 };
             Ok(ExchangeRates {
                 euro_per_energy,
