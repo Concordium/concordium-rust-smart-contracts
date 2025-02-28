@@ -64,11 +64,9 @@ jobs:
           submodules: recursive
 
       - name: Install nightly toolchain with rustfmt available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_FMT }}
-          override: true
           components: rustfmt
 
       - name: Run cargo fmt
@@ -95,11 +93,9 @@ jobs:
           submodules: recursive
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
-          override: true
 
       - name: Run cargo doc
         working-directory: ${{ matrix.crates }}
@@ -118,12 +114,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install Wasm target
-        run: rustup target install wasm32-unknown-unknown
+          target: wasm32-unknown-unknown
 
       - name: Run internal wasm unit test
         working-directory: concordium-std
@@ -157,12 +151,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
           components: clippy
 
       - name: Run cargo clippy
@@ -197,12 +189,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
           components: clippy
 
       - name: Run cargo clippy
@@ -234,12 +224,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
           components: clippy
 
       - name: Run cargo clippy
@@ -273,12 +261,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
           components: clippy
 
       - name: Run cargo clippy, but only for wasm32 target
@@ -298,12 +284,10 @@ jobs:
           submodules: recursive
 
       - name: Install nightly toolchain with check available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
           target: wasm32-unknown-unknown
-          override: true
 
       - name: Run no-std build concordium-std
         working-directory: concordium-std
@@ -345,12 +329,10 @@ jobs:
           submodules: recursive
 
       - name: Install nightly toolchain with check available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
           target: ${{ matrix.target }}
-          override: true
 
       - name: Run cargo check with no-std
         uses: actions-rs/cargo@v1
@@ -381,12 +363,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
 
       - name: Run cargo build with crypto-primitives feature
         uses: actions-rs/cargo@v1
@@ -441,12 +421,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain with clippy available
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
           components: clippy
 
       - name: Run cargo clippy with schema and tests
@@ -478,12 +456,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
 
       - name: Run cargo test
         uses: actions-rs/cargo@v1
@@ -514,12 +490,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.target }}
-          override: true
 
       - name: Run cargo test
         uses: actions-rs/cargo@v1
@@ -534,9 +508,6 @@ jobs:
     needs: [rustfmt, clippy-schema]
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-
         crates:
           - examples/voting
           - examples/eSealing
@@ -575,15 +546,10 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
-          target: ${{ matrix.target }}
-          override: true
-
-      - name: Install Wasm target
-        run: rustup target install wasm32-unknown-unknown
+          target: wasm32-unknown-unknown
 
       - name: Download and install Cargo Concordium
         run: |
