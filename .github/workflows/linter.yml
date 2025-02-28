@@ -548,7 +548,7 @@ jobs:
       - name: Install toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
           target: wasm32-unknown-unknown
 
       - name: Download and install Cargo Concordium
