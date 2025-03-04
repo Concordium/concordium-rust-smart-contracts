@@ -359,7 +359,7 @@ pub struct StateRef<'a, V> {
     pub(crate) _marker_lifetime: PhantomData<&'a V>,
 }
 
-impl<'a, V> StateRef<'a, V> {
+impl<V> StateRef<'_, V> {
     #[inline(always)]
     pub(crate) fn new(value: V) -> Self {
         Self {
@@ -369,7 +369,7 @@ impl<'a, V> StateRef<'a, V> {
     }
 }
 
-impl<'a, V> crate::ops::Deref for StateRef<'a, V> {
+impl<V> crate::ops::Deref for StateRef<'_, V> {
     type Target = V;
 
     #[inline(always)]
@@ -392,7 +392,7 @@ pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
-impl<'a, V: Serial, S: HasStateApi> StateRefMut<'a, V, S> {
+impl<V: Serial, S: HasStateApi> StateRefMut<'_, V, S> {
     #[inline(always)]
     pub(crate) fn new(entry: S::EntryType, state_api: S) -> Self {
         Self {
@@ -493,14 +493,14 @@ pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
-impl<'a, K, V: Serial, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'a, K, V, S> {
+impl<K, V: Serial, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'_, K, V, S> {
     type Target = V;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target { &self.value }
 }
 
-impl<'a, K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'a, K, V, S> {
+impl<K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'_, K, V, S> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.modified = true;
@@ -508,7 +508,7 @@ impl<'a, K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'a
     }
 }
 
-impl<'a, K, V: Serial, S: HasStateApi> Drop for OccupiedEntry<'a, K, V, S> {
+impl<K, V: Serial, S: HasStateApi> Drop for OccupiedEntry<'_, K, V, S> {
     #[inline(always)]
     fn drop(&mut self) {
         if self.modified {

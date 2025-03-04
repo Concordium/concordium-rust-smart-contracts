@@ -615,7 +615,7 @@ fn calculate_message_hash_from_bytes(
     msg_prepend[40..48].copy_from_slice(&ctx.self_address().subindex.to_le_bytes());
 
     // Calculate the message hash.
-    Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], &message_bytes].concat()).0)
+    Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], message_bytes].concat()).0)
 }
 
 /// Validates the message signature and increases the public key nonce.
