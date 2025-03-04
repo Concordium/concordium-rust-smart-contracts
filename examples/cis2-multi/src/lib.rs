@@ -817,10 +817,10 @@ impl State {
 
     /// Check if an address has an role.
     fn has_role(&self, account: &Address, role: Roles) -> bool {
-        return match self.roles.get(account) {
+        match self.roles.get(account) {
             None => false,
             Some(roles) => roles.roles.contains(&role),
-        };
+        }
     }
 }
 

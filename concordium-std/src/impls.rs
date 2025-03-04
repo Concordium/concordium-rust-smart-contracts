@@ -598,7 +598,7 @@ where
     }
 }
 
-impl<'a, K, V, StateApi> OccupiedEntry<'a, K, V, StateApi>
+impl<K, V, StateApi> OccupiedEntry<'_, K, V, StateApi>
 where
     K: Serial,
     V: Serial,
@@ -649,7 +649,7 @@ where
     }
 }
 
-impl<'a, K, V, StateApi> OccupiedEntry<'a, K, V, StateApi>
+impl<K, V, StateApi> OccupiedEntry<'_, K, V, StateApi>
 where
     V: Serial,
     StateApi: HasStateApi,
@@ -909,7 +909,6 @@ where
 
     /// Lookup a mutable reference to the value with the given key. Return
     /// [None] if there is no value with the given key.
-
     pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>> {
         let k = self.key_with_map_prefix(key);
         let entry = self.state_api.lookup_entry(&k)?;
@@ -1045,7 +1044,7 @@ where
     }
 }
 
-impl<'a, K, V, S: HasStateApi> Drop for StateMapIter<'a, K, V, S> {
+impl<K, V, S: HasStateApi> Drop for StateMapIter<'_, K, V, S> {
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
         if let Some(valid) = self.state_iter.take() {
@@ -1150,28 +1149,26 @@ where
     }
 }
 
-impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref
-    for StateRefMut<'a, V, S>
-{
+impl<S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref for StateRefMut<'_, V, S> {
     type Target = V;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target { self.get() }
 }
 
-impl<'a, S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
-    for StateRefMut<'a, V, S>
+impl<S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
+    for StateRefMut<'_, V, S>
 {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
 }
 
 /// When dropped, the value, `V`, is written to the entry in the contract state.
-impl<'a, V: Serial, S: HasStateApi> Drop for StateRefMut<'a, V, S> {
+impl<V: Serial, S: HasStateApi> Drop for StateRefMut<'_, V, S> {
     fn drop(&mut self) { self.store_mutations() }
 }
 
-impl<'a, V, S> StateRefMut<'a, V, S>
+impl<V, S> StateRefMut<'_, V, S>
 where
     V: Serial,
     S: HasStateApi,
@@ -1555,7 +1552,7 @@ impl<T, S> Serial for StateSet<T, S> {
 }
 
 /// Unlock the part of the tree locked by the iterator.
-impl<'a, T, S: HasStateApi> Drop for StateSetIter<'a, T, S> {
+impl<T, S: HasStateApi> Drop for StateSetIter<'_, T, S> {
     #[inline]
     fn drop(&mut self) {
         // Delete the iterator to unlock the subtree.
@@ -2851,7 +2848,6 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
 }
 
 /// #Implementations of the logger.
-
 impl HasLogger for Logger {
     #[inline(always)]
     fn init() -> Self {
