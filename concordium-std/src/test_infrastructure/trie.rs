@@ -5,7 +5,6 @@ use crate::{
     rc::Rc,
     Box, StateEntryId, StateError, Vec,
 };
-use core::convert::TryInto;
 
 const BRANCHING_FACTOR: usize = 16;
 
@@ -178,16 +177,6 @@ impl StateTrie {
             }
         }
     }
-
-    /// Makes a deep clone of the trie. Used for rollbacks.
-    pub(crate) fn clone_deep(&self) -> Self {
-        Self {
-            nodes:           self.nodes.clone_deep(),
-            next_entry_id:   self.next_entry_id.clone(),
-            entry_map:       self.entry_map.clone(),
-            iterator_counts: self.iterator_counts.clone(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -339,20 +328,6 @@ impl Node {
     /// Check whether a node is empty.
     /// A node is considered empty when it has no data and no children.
     fn is_empty(&self) -> bool { self.data.is_none() && self.children.iter().all(|x| x.is_none()) }
-
-    /// Make a deep clone of the node. Used for rollbacks.
-    fn clone_deep(&self) -> Self {
-        Self {
-            data:     self.data.as_ref().map(|d| Rc::new(RefCell::new(d.borrow().clone()))),
-            children: self
-                .children
-                .iter()
-                .map(|child| child.as_ref().map(|child| Box::new(child.clone_deep())))
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(), // This is safe because we know it has the right size and type.
-        }
-    }
 }
 
 #[cfg(test)]
