@@ -14,6 +14,17 @@ impl TestEnv {
         self
     }
 
+    /// Emit text together with the source location.
+    /// This is used as the equivalent of the `dbg!` macro when the
+    /// `debug` feature is enabled.
+    #[cfg(feature = "debug")]
+    pub fn debug_print(self, msg: &str, filename: &str, line: u32, column: u32) -> Self {
+        let msg_bytes = msg.as_bytes();
+        let filename_bytes = filename.as_bytes();
+        unsafe { prims::debug_print(msg_bytes.as_ptr(), msg_bytes.len() as u32, filename_bytes.as_ptr(), filename_bytes.len() as u32, line, column) };
+        self
+    }
+
     /// Sets the current balance of this smart contract.
     pub fn set_receive_balance(self, balance: Amount) -> Self {
         unsafe { prims::set_receive_self_balance(balance.micro_ccd) };
@@ -339,6 +350,12 @@ mod wasm_test {
 
         let received_hash = crypto_primitives().hash_sha2_256(message).0;
         claim_eq!(expected_hash, received_hash);
+    }
+
+    #[concordium_test]
+    #[cfg(feature = "debug")]
+    fn debug_print() {
+        TestEnv.debug_print("Nemo enim fere saltat sobrius, nisi forte insanit.", "cice.ro", 106, 43);
     }
 
     #[concordium_test]
