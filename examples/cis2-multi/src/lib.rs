@@ -817,10 +817,10 @@ impl State {
 
     /// Check if an address has an role.
     fn has_role(&self, account: &Address, role: Roles) -> bool {
-        return match self.roles.get(account) {
+        match self.roles.get(account) {
             None => false,
             Some(roles) => roles.roles.contains(&role),
-        };
+        }
     }
 }
 
@@ -841,12 +841,7 @@ fn get_canonical_address(address: Address) -> ContractResult<Address> {
 // Contract functions
 
 /// Initialize contract instance with no token types.
-#[init(
-    contract = "cis2_multi",
-    parameter = "ContractTokenAmount",
-    event = "Cis2Event<ContractTokenId, ContractTokenAmount>",
-    enable_logger
-)]
+#[init(contract = "cis2_multi", parameter = "ContractTokenAmount", event = "Event", enable_logger)]
 fn contract_init(
     ctx: &InitContext,
     state_builder: &mut StateBuilder,

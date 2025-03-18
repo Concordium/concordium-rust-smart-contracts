@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.4.0
+
+- Update dependency Concordium Rust SDK to support protocol version 8.
+
 ## 4.3.0
 
 - Integrate protocol version 7 cost semantics.

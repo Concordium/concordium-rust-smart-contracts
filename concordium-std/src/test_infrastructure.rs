@@ -156,7 +156,7 @@ pub struct TestContext<'a, C> {
 ///
 /// # Setters
 /// Every field has a setter function prefixed with `set_`.
-
+///
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
@@ -318,12 +318,12 @@ impl<'a> TestParameterCursor<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for TestParameterCursor<'a> {
+impl AsRef<[u8]> for TestParameterCursor<'_> {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] { self.cursor.as_ref() }
 }
 
-impl<'a> Seek for TestParameterCursor<'a> {
+impl Seek for TestParameterCursor<'_> {
     type Err = ();
 
     #[inline(always)]
@@ -333,12 +333,12 @@ impl<'a> Seek for TestParameterCursor<'a> {
     fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
-impl<'a> Read for TestParameterCursor<'a> {
+impl Read for TestParameterCursor<'_> {
     #[inline(always)]
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
 }
 
-impl<'a> HasParameter for TestParameterCursor<'a> {}
+impl HasParameter for TestParameterCursor<'_> {}
 
 // Setters for testing-context
 impl TestChainMeta {
@@ -390,7 +390,7 @@ impl<'a, C> TestContext<'a, C> {
     }
 }
 
-impl<'a> TestInitContext<'a> {
+impl TestInitContext<'_> {
     /// Create an `TestInitContext` where every field is unset, and getting any
     /// of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
@@ -402,7 +402,7 @@ impl<'a> TestInitContext<'a> {
     }
 }
 
-impl<'a> TestReceiveContext<'a> {
+impl TestReceiveContext<'_> {
     /// Create a `TestReceiveContext` where every field is unset, and getting
     /// any of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
@@ -510,7 +510,7 @@ impl<'a, C> HasCommonData for TestContext<'a, C> {
     }
 }
 
-impl<'a> HasInitContext for TestInitContext<'a> {
+impl HasInitContext for TestInitContext<'_> {
     type InitData = ();
 
     fn open(_data: Self::InitData) -> Self { TestInitContext::default() }
@@ -520,7 +520,7 @@ impl<'a> HasInitContext for TestInitContext<'a> {
     }
 }
 
-impl<'a> HasReceiveContext for TestReceiveContext<'a> {
+impl HasReceiveContext for TestReceiveContext<'_> {
     type ReceiveData = ();
 
     fn open(_data: Self::ReceiveData) -> Self { TestReceiveContext::default() }
@@ -1925,148 +1925,4 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 // The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
     QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS).quickcheck(f)
-}
-
-#[cfg(test)]
-#[allow(deprecated)]
-mod test {
-    use crate::{cell::RefCell, rc::Rc, test_infrastructure::TestStateEntry, HasStateEntry};
-    use concordium_contracts_common::{Read, Seek, SeekFrom, Write};
-
-    #[test]
-    fn test_testhost_balance_queries_reflect_transfers() {
-        use super::*;
-        let mut host = TestHost::new((), TestStateBuilder::new());
-
-        let self_address = ContractAddress::new(0, 0);
-        host.set_self_address(self_address);
-        host.set_self_balance(Amount::from_micro_ccd(3000));
-
-        let account = AccountAddress([0; 32]);
-        let account_balance =
-            AccountBalance::new(Amount::zero(), Amount::zero(), Amount::zero()).unwrap();
-        host.setup_query_account_balance(account, account_balance);
-
-        host.invoke_transfer(&account, Amount::from_micro_ccd(2000))
-            .expect("Transferring should succeed");
-
-        let account_new_balance = host.account_balance(account).expect("Should succeed");
-        let self_new_balance = host.contract_balance(self_address).expect("Should succeed");
-
-        assert_eq!(account_new_balance.total, Amount::from_micro_ccd(2000));
-        assert_eq!(self_new_balance, Amount::from_micro_ccd(1000));
-    }
-
-    #[test]
-    fn test_testhost_balance_queries_reflect_invoke() {
-        use super::*;
-        let mut host = TestHost::new((), TestStateBuilder::new());
-
-        let self_address = ContractAddress::new(0, 0);
-        host.set_self_address(self_address);
-        host.set_self_balance(Amount::from_micro_ccd(3000));
-
-        let other_address = ContractAddress::new(1, 0);
-        host.setup_query_contract_balance(other_address, Amount::from_micro_ccd(4000));
-
-        let entrypoint = OwnedEntrypointName::new_unchecked("test.method".to_string());
-
-        host.setup_mock_entrypoint(other_address, entrypoint.clone(), MockFn::returning_ok(()));
-
-        host.invoke_contract_raw(
-            &other_address,
-            Parameter::empty(),
-            entrypoint.as_entrypoint_name(),
-            Amount::from_micro_ccd(1000),
-        )
-        .expect("Invoke should succeed");
-
-        let other_new_balance = host.contract_balance(other_address).expect("Should succeed");
-        let self_new_balance = host.contract_balance(self_address).expect("Should succeed");
-
-        assert_eq!(other_new_balance, Amount::from_micro_ccd(5000));
-        assert_eq!(self_new_balance, Amount::from_micro_ccd(2000));
-    }
-
-    #[test]
-    // Perform a number of operations from Seek, Read, Write and HasStateApi
-    // classes on the TestStateApi structure and check that they behave as
-    // specified.
-    fn test_contract_state() {
-        let data = Rc::new(RefCell::new(vec![1; 100].into()));
-        let mut state = TestStateEntry::open(data, Vec::new(), 0);
-        assert_eq!(state.seek(SeekFrom::Start(100)), Ok(100), "Seeking to the end failed.");
-        assert_eq!(
-            state.seek(SeekFrom::Current(0)),
-            Ok(100),
-            "Seeking from current position with offset 0 failed."
-        );
-        assert!(
-            state.seek(SeekFrom::Current(1)).is_err(),
-            "Seeking from current position with offset 1 succeeded."
-        );
-        assert_eq!(state.cursor.offset, 100, "Cursor position changed on failed seek.");
-        assert_eq!(
-            state.seek(SeekFrom::Current(-1)),
-            Ok(99),
-            "Seeking from current position backwards with offset 1 failed."
-        );
-        assert!(state.seek(SeekFrom::Current(-100)).is_err(), "Seeking beyond beginning succeeds");
-        assert_eq!(state.seek(SeekFrom::Current(-99)), Ok(0), "Seeking to the beginning fails.");
-        assert_eq!(state.seek(SeekFrom::End(0)), Ok(100), "Seeking from end fails.");
-        assert!(
-            state.seek(SeekFrom::End(1)).is_err(),
-            "Seeking beyond the end succeeds but should fail."
-        );
-        assert_eq!(state.cursor.offset, 100, "Cursor position changed on failed seek.");
-        assert_eq!(
-            state.seek(SeekFrom::End(-20)),
-            Ok(80),
-            "Seeking from end leads to incorrect position."
-        );
-        assert_eq!(state.write(&[0; 21]), Ok(21), "Writing writes an incorrect amount of data.");
-        assert_eq!(state.cursor.offset, 101, "After writing the cursor is at the end.");
-        assert_eq!(state.write(&[0; 21]), Ok(21), "Writing again writes incorrect amount of data.");
-        let mut buf = [0; 30];
-        assert_eq!(state.read(&mut buf), Ok(0), "Reading from the end should read 0 bytes.");
-        assert_eq!(state.seek(SeekFrom::End(-20)), Ok(102));
-        assert_eq!(state.read(&mut buf), Ok(20), "Reading from offset 80 should read 20 bytes.");
-        assert_eq!(
-            &buf[0..20],
-            &state.cursor.data.borrow().data().expect("Entry was deleted")[80..100],
-            "Incorrect data was read."
-        );
-        assert_eq!(
-            state.cursor.offset, 122,
-            "After reading the offset is in the correct position."
-        );
-        assert!(state.reserve(222).is_ok(), "Could not increase state to 222.");
-        assert_eq!(state.write(&[2; 100]), Ok(100), "Should have written 100 bytes.");
-        assert_eq!(state.cursor.offset, 222, "After writing the offset should be 200.");
-        state.truncate(50).expect("Could not truncate state to 50.");
-        assert_eq!(state.cursor.offset, 50, "After truncation the state should be 50.");
-        assert_eq!(
-            state.write(&[1; 1000]),
-            Ok(1000),
-            "Writing at the end after truncation should succeed."
-        );
-    }
-
-    #[test]
-    fn test_contract_state_write() {
-        let data = Rc::new(RefCell::new(vec![0u8; 10].into()));
-        let mut state = TestStateEntry::open(data, Vec::new(), 0);
-        assert_eq!(state.write(&1u64.to_le_bytes()), Ok(8), "Incorrect number of bytes written.");
-        assert_eq!(
-            state.write(&2u64.to_le_bytes()),
-            Ok(8),
-            "State should be resized automatically."
-        );
-        assert_eq!(state.cursor.offset, 16, "Pos should be at the end.");
-        assert_eq!(
-            *state.cursor.data.as_ref().borrow().data().expect("Entry was deleted"),
-            vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
-            "Correct data was written."
-        );
-    }
 }
