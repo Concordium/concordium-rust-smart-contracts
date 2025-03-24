@@ -21,7 +21,16 @@ impl TestEnv {
     pub fn debug_print(self, msg: &str, filename: &str, line: u32, column: u32) -> Self {
         let msg_bytes = msg.as_bytes();
         let filename_bytes = filename.as_bytes();
-        unsafe { prims::debug_print(msg_bytes.as_ptr(), msg_bytes.len() as u32, filename_bytes.as_ptr(), filename_bytes.len() as u32, line, column) };
+        unsafe {
+            prims::debug_print(
+                msg_bytes.as_ptr(),
+                msg_bytes.len() as u32,
+                filename_bytes.as_ptr(),
+                filename_bytes.len() as u32,
+                line,
+                column,
+            )
+        };
         self
     }
 
@@ -355,7 +364,12 @@ mod wasm_test {
     #[concordium_test]
     #[cfg(feature = "debug")]
     fn debug_print() {
-        TestEnv.debug_print("Nemo enim fere saltat sobrius, nisi forte insanit.", "cice.ro", 106, 43);
+        TestEnv.debug_print(
+            "Nemo enim fere saltat sobrius, nisi forte insanit.",
+            "cice.ro",
+            106,
+            43,
+        );
     }
 
     #[concordium_test]

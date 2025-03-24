@@ -69,14 +69,7 @@
 //! ```
 
 use self::trie::StateTrie;
-use crate::{
-    boxed::Box,
-    cell::RefCell,
-    cmp,
-    num,
-    rc::Rc,
-    *,
-};
+use crate::{boxed::Box, cell::RefCell, cmp, num, rc::Rc, *};
 use convert::TryInto;
 #[cfg(feature = "concordium-quickcheck")]
 use quickcheck::*;
