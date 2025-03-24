@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Pinned the dependency `base64ct` to version `1.6.0`, since otherwise rust
+  version `1.73` would refuse to build.
+
+## 4.4.0
+
+- Update dependency Concordium Rust SDK to support protocol version 8.
+
 ## 4.3.0
 
 - Integrate protocol version 7 cost semantics.

@@ -280,6 +280,22 @@ extern "C" {
     /// is written starting at the `output` pointer. The output segment
     /// *may* overlap with the data segment.
     pub fn hash_keccak_256(data: *const u8, data_len: u32, output: *mut u8);
+
+    /// Emit text together with the source location.
+    /// This is used as the equivalent of the `dbg!` macro when the
+    /// `debug` feature is enabled.
+    ///
+    /// Note that this function is not allowed on the chain, it is only there to
+    /// ease local testing.
+    #[cfg(feature = "debug")]
+    pub fn debug_print(
+        msg_start: *const u8,
+        msg_length: u32,
+        filename_start: *const u8,
+        filename_length: u32,
+        line: u32,
+        column: u32,
+    );
 }
 
 // Interface to the chain. These functions are assumed to be instantiated by
@@ -325,24 +341,8 @@ extern "C" {
     /// `-1` if `i` is an invalid index.
     pub(crate) fn get_event_size(i: u32) -> i32;
 
-    /// Emit text together with the source location.
-    /// This is used as the equivalent of the `dbg!` macro when the
-    /// `debug` feature is enabled.
-    ///
-    /// Note that this function is not allowed on the chain, it is only there to
-    /// ease local testing.
-    #[cfg(feature = "debug")]
-    pub fn debug_print(
-        msg_start: *const u8,
-        msg_length: u32,
-        filename_start: *const u8,
-        filename_length: u32,
-        line: u32,
-        column: u32,
-    );
-
     /// Reporting back an error, only exists in debug mode
-    // TODO: Shouldn't this be feature gated with debug? Trivially adding it gives other errors.
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn report_error(
         msg_start: *const u8,
         msg_length: u32,
@@ -355,6 +355,7 @@ extern "C" {
     /// Generating random numbers for randomised testing.
     /// Not available for contracts deployed on the chain.
     #[cfg(feature = "concordium-quickcheck")]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
 

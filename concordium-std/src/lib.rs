@@ -393,7 +393,7 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
-#![cfg_attr(not(feature = "std"), no_std, feature(core_intrinsics))]
+#![cfg_attr(not(feature = "std"), no_std, allow(internal_features), feature(core_intrinsics))]
 
 #[cfg(not(feature = "std"))]
 pub extern crate alloc;

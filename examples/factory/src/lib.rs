@@ -85,13 +85,13 @@
 //! product contract must:
 //!
 //! 1. Always be constructed in an uninitialized state, with no balance,
-//! authority or any other state.
+//!     authority or any other state.
 //!
 //! 2. Only permit the `initialize` update operation while it is in the
-//! uninitialized state.
+//!     uninitialized state.
 //!
 //! 3. On a successful call of `initialize`, transition from the uninitialized
-//! state to an initialized state.
+//!     state to an initialized state.
 //!
 //! 4. Never transition back to the uninitialized state.
 //!

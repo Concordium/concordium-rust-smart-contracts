@@ -1,6 +1,6 @@
 [package]
 name = "concordium-smart-contract-testing"
-version = "4.3.0"
+version = "4.4.0"
 edition = "2021"
 rust-version = "1.73"
 license = "MPL-2.0"
@@ -13,10 +13,12 @@ exclude = ["tests"]                                                             
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-concordium-rust-sdk = { version = "5", path = "../concordium-rust-sdk" }
+concordium-rust-sdk = { version = "6", path = "../concordium-rust-sdk" }
 tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"
+# Pinned to version `1.6.0`, since otherwise rust version `1.73` would refuse to build.
+base64ct = "=1.6.0"
 thiserror = "1.0"
 num-bigint = "0.4"
 num-integer = "0.1"

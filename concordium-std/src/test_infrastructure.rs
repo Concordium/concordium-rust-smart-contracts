@@ -155,7 +155,7 @@ pub struct TestContext<'a, C> {
 ///
 /// # Setters
 /// Every field has a setter function prefixed with `set_`.
-
+///
 /// ### Example
 /// Creating an empty context and setting the `init_origin`.
 /// ```rust
@@ -317,12 +317,12 @@ impl<'a> TestParameterCursor<'a> {
     }
 }
 
-impl<'a> AsRef<[u8]> for TestParameterCursor<'a> {
+impl AsRef<[u8]> for TestParameterCursor<'_> {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] { self.cursor.as_ref() }
 }
 
-impl<'a> Seek for TestParameterCursor<'a> {
+impl Seek for TestParameterCursor<'_> {
     type Err = ();
 
     #[inline(always)]
@@ -332,12 +332,12 @@ impl<'a> Seek for TestParameterCursor<'a> {
     fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
 }
 
-impl<'a> Read for TestParameterCursor<'a> {
+impl Read for TestParameterCursor<'_> {
     #[inline(always)]
     fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
 }
 
-impl<'a> HasParameter for TestParameterCursor<'a> {}
+impl HasParameter for TestParameterCursor<'_> {}
 
 // Setters for testing-context
 impl TestChainMeta {
@@ -389,7 +389,7 @@ impl<'a, C> TestContext<'a, C> {
     }
 }
 
-impl<'a> TestInitContext<'a> {
+impl TestInitContext<'_> {
     /// Create an `TestInitContext` where every field is unset, and getting any
     /// of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
@@ -401,7 +401,7 @@ impl<'a> TestInitContext<'a> {
     }
 }
 
-impl<'a> TestReceiveContext<'a> {
+impl TestReceiveContext<'_> {
     /// Create a `TestReceiveContext` where every field is unset, and getting
     /// any of the fields will result in [`fail!`](../macro.fail.html).
     pub fn empty() -> Self { Default::default() }
@@ -509,7 +509,7 @@ impl<'a, C> HasCommonData for TestContext<'a, C> {
     }
 }
 
-impl<'a> HasInitContext for TestInitContext<'a> {
+impl HasInitContext for TestInitContext<'_> {
     type InitData = ();
 
     fn open(_data: Self::InitData) -> Self { TestInitContext::default() }
@@ -519,7 +519,7 @@ impl<'a> HasInitContext for TestInitContext<'a> {
     }
 }
 
-impl<'a> HasReceiveContext for TestReceiveContext<'a> {
+impl HasReceiveContext for TestReceiveContext<'_> {
     type ReceiveData = ();
 
     fn open(_data: Self::ReceiveData) -> Self { TestReceiveContext::default() }
@@ -1199,7 +1199,6 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
     QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS).quickcheck(f)
 }
-
 #[cfg(test)]
 #[allow(deprecated)]
 mod test {
