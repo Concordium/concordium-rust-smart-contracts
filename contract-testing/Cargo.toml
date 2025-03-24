@@ -17,6 +17,8 @@ concordium-rust-sdk = { version = "6", path = "../concordium-rust-sdk" }
 tokio = { version = "1.28", features = ["rt-multi-thread", "time"] }
 sha2 = "0.10"
 anyhow = "1"
+# Pinned to version `1.6.0`, since otherwise rust version `1.73` would refuse to build.
+base64ct = "=1.6.0"
 thiserror = "1.0"
 num-bigint = "0.4"
 num-integer = "0.1"

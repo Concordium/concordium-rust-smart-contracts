@@ -205,7 +205,7 @@ extern "C" {
     pub fn state_entry_resize(entry: u64, new_size: u32) -> u32;
 
     // Getter for the init context.
-    /// Address of the sender, 32 bytes
+    /// Address of the sender, AccountAddress.
     pub fn get_init_origin(start: *mut u8);
 
     // Getters for the receive context
@@ -215,7 +215,7 @@ extern "C" {
     pub fn get_receive_self_address(start: *mut u8);
     /// Self-balance of the contract, returns the amount
     pub fn get_receive_self_balance() -> u64;
-    /// Immediate sender of the message (either contract or account).
+    /// Immediate sender of the message, Address (either contract or account).
     pub fn get_receive_sender(start: *mut u8);
     /// Owner of the contract, AccountAddress.
     pub fn get_receive_owner(start: *mut u8);
@@ -225,6 +225,10 @@ extern "C" {
 
     /// Write the receive entrypoint name into the given location.
     /// It is assumed that the location contains enough space to write the name.
+    ///
+    /// Note that the name is expected to be the receive name encoded as bytes
+    /// without the length, i.e. not a serialized EntrypointName (since it's
+    /// byte-encoding has 2 length bytes) but a String.
     pub fn get_receive_entrypoint(start: *mut u8);
 
     // Getters for the chain meta data
@@ -277,8 +281,68 @@ extern "C" {
     /// *may* overlap with the data segment.
     pub fn hash_keccak_256(data: *const u8, data_len: u32, output: *mut u8);
 
-    #[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+    /// Emit text together with the source location.
+    /// This is used as the equivalent of the `dbg!` macro when the
+    /// `debug` feature is enabled.
+    ///
+    /// Note that this function is not allowed on the chain, it is only there to
+    /// ease local testing.
+    #[cfg(feature = "debug")]
+    pub fn debug_print(
+        msg_start: *const u8,
+        msg_length: u32,
+        filename_start: *const u8,
+        filename_length: u32,
+        line: u32,
+        column: u32,
+    );
+}
+
+// Interface to the chain. These functions are assumed to be instantiated by
+// the scheduler with relevant primitives. These represent only the primitives
+// available in a test environment.
+#[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
+#[cfg(feature = "wasm-test")]
+extern "C" {
+    /// Set the slot time in milliseconds.
+    /// The slot time represents the beginning of the smart contract's block.
+    pub(crate) fn set_slot_time(slot_time: u64);
+
+    /// Sets the CCD balance of this smart contract
+    pub(crate) fn set_receive_self_balance(balance: u64);
+
+    /// Sets the address of this smart contract.
+    pub(crate) fn set_receive_self_address(start: *const u8);
+
+    /// Sets parameter `i` of the smart contract to the given value.
+    pub(crate) fn set_parameter(i: u32, start: *const u8, length: u32);
+
+    /// Sets the address of the sender, AccountAddress
+    pub(crate) fn set_init_origin(start: *const u8);
+
+    /// Set the invoker of the top-level transaction, AccountAddress.
+    pub(crate) fn set_receive_invoker(start: *const u8);
+
+    /// Set the immediate sender of the message, Address (either contract or
+    /// account).
+    pub(crate) fn set_receive_sender(start: *const u8);
+
+    /// Owner of the contract, AccountAddress.
+    pub(crate) fn set_receive_owner(start: *const u8);
+
+    /// Set the receive entrypoint name, EntryPointName.
+    pub(crate) fn set_receive_entrypoint(start: *const u8);
+
+    /// Gets event number `i` in the smart contract state. Returns `-1` if `i`
+    /// is an invalid index. Otherwise returns bytes written.
+    pub(crate) fn get_event(i: u32, start: *mut u8) -> i32;
+
+    /// Gets the size of event number `i` in the smart contract state. Returns
+    /// `-1` if `i` is an invalid index.
+    pub(crate) fn get_event_size(i: u32) -> i32;
+
     /// Reporting back an error, only exists in debug mode
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn report_error(
         msg_start: *const u8,
         msg_length: u32,
@@ -288,25 +352,10 @@ extern "C" {
         column: u32,
     );
 
-    #[cfg(feature = "debug")]
-    /// Emit text together with the source location.
-    /// This is used as the equivalent of the `dbg!` macro when the
-    /// `debug` feature is enabled.
-    ///
-    /// Note that this function is not allowed on the chain, it is only there to
-    /// ease local testing.
-    pub fn debug_print(
-        msg_start: *const u8,
-        msg_length: u32,
-        filename_start: *const u8,
-        filename_length: u32,
-        line: u32,
-        column: u32,
-    );
-
-    #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
     /// Generating random numbers for randomised testing.
     /// Not available for contracts deployed on the chain.
+    #[cfg(feature = "concordium-quickcheck")]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
 

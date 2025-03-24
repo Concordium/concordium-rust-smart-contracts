@@ -23,3 +23,10 @@ Cargo.lock
 
 *.wasm.v1
 *.wasm.v0
+
+# Editor specific
+**/.helix
+
+# Nix artifacts
+**/*.nix
+**/flake.lock
