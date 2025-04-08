@@ -23,21 +23,6 @@ use core::{fmt, str::FromStr};
 /// New maps can be constructed using the
 /// [`new_map`][StateBuilder::new_map] method on the [`StateBuilder`].
 ///
-///
-/// ```
-/// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
-/// /// In an init method:
-/// let mut map1 = state_builder.new_map();
-/// # map1.insert(0u8, 1u8); // Specifies type of map.
-///
-/// # let mut host = TestHost::new((), state_builder);
-/// /// In a receive method:
-/// let mut map2 = host.state_builder().new_map();
-/// # map2.insert(0u16, 1u16);
-/// ```
-///
 /// ## Type parameters
 ///
 /// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
@@ -191,20 +176,6 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// New sets can be constructed using the
 /// [`new_set`][StateBuilder::new_set] method on the [`StateBuilder`].
-///
-/// ```
-/// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
-/// /// In an init method:
-/// let mut set1 = state_builder.new_set();
-/// # set1.insert(0u8); // Specifies type of set.
-///
-/// # let mut host = TestHost::new((), state_builder);
-/// /// In a receive method:
-/// let mut set2 = host.state_builder().new_set();
-/// # set2.insert(0u16);
-/// ```
 ///
 /// ## Type parameters
 ///

@@ -129,31 +129,6 @@ impl Cis2Client {
     /// standard by another contract, it returns
     /// `Ok(SupportResult::SupportBy(Vec<ContractAddress>))`. If there is an
     /// error, it returns `Err`.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use concordium_cis2::*;
-    /// use concordium_std::{test_infrastructure::*, *};
-    /// let mut host = TestHost::new((), TestStateBuilder::new());
-    /// host.setup_mock_entrypoint(
-    ///     ContractAddress::new(0, 0),
-    ///     OwnedEntrypointName::new_unchecked("supports".to_string()),
-    ///     MockFn::new_v1(|_, _, _, _| {
-    ///         Ok((false, SupportsQueryResponse {
-    ///             results: vec![SupportResult::Support],
-    ///         }))
-    ///     }),
-    /// );
-    ///
-    /// let client = Cis2Client::new(ContractAddress::new(0, 0));
-    /// let res: Result<SupportResult, Cis2ClientError<()>> = client.supports_cis2(&host);
-    /// assert!(res.is_ok());
-    /// match res.unwrap() {
-    ///     SupportResult::NoSupport => fail!(),
-    ///     SupportResult::Support => (),
-    ///     SupportResult::SupportBy(_) => fail!(),
-    /// }
-    /// ```
     pub fn supports_cis2<State, E: Deserial>(
         &self,
         host: &impl HasHost<State>,
@@ -173,32 +148,6 @@ impl Cis2Client {
     /// operator of the given contract, it returns `Ok(true)`,
     /// else it returns `Ok(false)`.
     /// If there is an error, it returns `Err`.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use concordium_cis2::*;
-    /// use concordium_std::{test_infrastructure::*, *};
-    ///
-    /// let mut host = TestHost::new((), TestStateBuilder::new());
-    /// host.setup_mock_entrypoint(
-    ///     ContractAddress::new(0, 0),
-    ///     OwnedEntrypointName::new_unchecked("operatorOf".to_string()),
-    ///     MockFn::new_v1(|_, _, _, _| {
-    ///         Ok((false, OperatorOfQueryResponse {
-    ///             0: vec![true],
-    ///         }))
-    ///     }),
-    /// );
-    ///
-    /// let client = Cis2Client::new(ContractAddress::new(0, 0));
-    /// let res: Result<bool, Cis2ClientError<()>> = client.operator_of(
-    ///     &mut host,
-    ///     Address::Account(AccountAddress([1; 32])),
-    ///     Address::Contract(ContractAddress::new(1, 0)),
-    /// );
-    ///
-    /// assert_eq!(res.unwrap(), true);
-    /// ```
     pub fn operator_of<State, E: Deserial>(
         &self,
         host: &impl HasHost<State>,
@@ -221,25 +170,6 @@ impl Cis2Client {
     /// Calls the `balanceOf` entrypoint of the CIS2 contract to get the balance
     /// of the given owner for the given token. If the balance is returned,
     /// it returns `Ok(balance)`, else it returns `Err`.
-    /// # Examples
-    /// ```rust
-    /// use concordium_cis2::*;
-    /// use concordium_std::{test_infrastructure::*, *};
-    /// let mut host = TestHost::new((), TestStateBuilder::new());
-    /// host.setup_mock_entrypoint(
-    ///     ContractAddress::new(0, 0),
-    ///     OwnedEntrypointName::new_unchecked("balanceOf".to_string()),
-    ///     MockFn::new_v1(|_, _, _, _| {
-    ///         Ok((false, BalanceOfQueryResponse::<TokenAmountU8>(vec![1.into()])))
-    ///     }),
-    /// );
-    ///
-    /// let client = Cis2Client::new(ContractAddress::new(0, 0));
-    /// let res: Result<TokenAmountU8, Cis2ClientError<()>> =
-    ///     client.balance_of(&host, TokenIdU8(1), Address::Account(AccountAddress([1; 32])));
-    /// assert!(res.is_ok());
-    /// assert_eq!(res.unwrap(), 1.into());
-    /// ```
     pub fn balance_of<State, T: IsTokenId, A: IsTokenAmount, E: Deserial>(
         &self,
         host: &impl HasHost<State>,
@@ -265,29 +195,6 @@ impl Cis2Client {
     /// If the transfer is successful and the state is modified, it returns
     /// `Ok(true)`, else it returns `Ok(false)`. If there is an error, it
     /// returns `Err`.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use concordium_cis2::*;
-    /// use concordium_std::{test_infrastructure::*, *};
-    /// let mut host = TestHost::new((), TestStateBuilder::new());
-    /// host.setup_mock_entrypoint(
-    ///     ContractAddress::new(0, 0),
-    ///     OwnedEntrypointName::new_unchecked("transfer".to_string()),
-    ///     MockFn::new_v1(|_, _, _, _| Ok((false, ()))),
-    /// );
-    ///
-    /// let client = Cis2Client::new(ContractAddress::new(0, 0));
-    /// let res: Result<bool, Cis2ClientError<()>> = client.transfer(&mut host, Transfer {
-    ///     amount:   TokenAmountU8(1),
-    ///     from:     Address::Account(AccountAddress([1; 32])),
-    ///     to:       Receiver::Account(AccountAddress([2; 32])),
-    ///     token_id: TokenIdU8(1),
-    ///     data:     AdditionalData::empty(),
-    /// });
-    ///
-    /// assert!(res.is_ok());
-    /// ```
     pub fn transfer<State, T: IsTokenId, A: IsTokenAmount, E: Deserial>(
         &self,
         host: &mut impl HasHost<State>,
@@ -304,27 +211,6 @@ impl Cis2Client {
     /// If the update is successful and the state is modified, it returns
     /// `Ok(true)`, else it returns `Ok(false)`. If there is an error, it
     /// returns `Err`.
-    ///
-    /// # Examples
-    /// ```rust
-    /// use concordium_cis2::*;
-    /// use concordium_std::{test_infrastructure::*, *};
-    /// let mut host = TestHost::new((), TestStateBuilder::new());
-    /// host.setup_mock_entrypoint(
-    ///     ContractAddress::new(0, 0),
-    ///     OwnedEntrypointName::new_unchecked("updateOperator".to_string()),
-    ///     MockFn::new_v1(|_, _, _, _| Ok((false, ()))),
-    /// );
-    ///
-    /// let client = Cis2Client::new(ContractAddress::new(0, 0));
-    /// let res: Result<bool, Cis2ClientError<()>> = client.update_operator(
-    ///     &mut host,
-    ///     Address::Account(AccountAddress([1; 32])),
-    ///     OperatorUpdate::Add,
-    /// );
-    ///
-    /// assert!(res.is_ok());
-    /// ```
     pub fn update_operator<State, E: Deserial>(
         &self,
         host: &mut impl HasHost<State>,

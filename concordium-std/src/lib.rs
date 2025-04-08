@@ -473,12 +473,6 @@ pub use state_btree::*;
 pub use traits::*;
 pub use types::*;
 
-#[deprecated(
-    since = "8.1.0",
-    note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
-)]
-pub mod test_infrastructure;
-
 #[cfg(all(feature = "debug", not(feature = "std")))]
 pub use alloc::format;
 #[cfg(all(feature = "debug", feature = "std"))]
