@@ -1642,7 +1642,6 @@ mod tests {
 
     use super::*;
     use quickcheck::*;
-    use test_infrastructure::*;
 
     // Define `Arbitrary` instances for data types used in the contract.
     // The instances are used for randomized by property-based testing.
@@ -1734,7 +1733,9 @@ mod tests {
     /// Not expired and not revoked credential is `Active`
     #[concordium_test]
     fn test_get_status_active() {
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let entry = credential_entry(&mut state_builder);
         let now = Timestamp::from_timestamp_millis(10);
         let expected = CredentialStatus::Active;
@@ -1752,7 +1753,9 @@ mod tests {
     /// that it wasn't revoked.
     #[concordium_test]
     fn test_get_status_expired() {
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut entry = credential_entry(&mut state_builder);
         claim!(!entry.revoked);
         let now = Timestamp::from_timestamp_millis(10);
@@ -1767,7 +1770,9 @@ mod tests {
     /// that it wasn't revoked.
     #[concordium_test]
     fn test_get_status_not_activated() {
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut entry = credential_entry(&mut state_builder);
         claim!(!entry.revoked);
         let now = Timestamp::from_timestamp_millis(10);
@@ -1782,7 +1787,9 @@ mod tests {
     /// always `Revoked` regardless of the valid_from and valid_until values
     #[concordium_quickcheck(num_tests = 500)]
     fn prop_revoked_stays_revoked(data: CredentialInfo, nonce: u64, now: Timestamp) -> bool {
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let entry = CredentialEntry {
             metadata_url:     state_builder.new_box(data.metadata_url),
             revocation_nonce: nonce,
@@ -1804,7 +1811,9 @@ mod tests {
         now: Timestamp,
     ) -> bool {
         let credential_id = data.holder_id;
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut state = State::new(
             &mut state_builder,
             ISSUER_ACCOUNT,
@@ -1837,7 +1846,9 @@ mod tests {
         data: CredentialInfo,
     ) -> bool {
         let credential_id = data.holder_id;
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut state = State::new(
             &mut state_builder,
             ISSUER_ACCOUNT,
@@ -1867,7 +1878,9 @@ mod tests {
         data: CredentialInfo,
     ) -> bool {
         let credential_id = data.holder_id;
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut state = State::new(
             &mut state_builder,
             ISSUER_ACCOUNT,
@@ -1906,7 +1919,9 @@ mod tests {
         credential_type: CredentialType,
         schema_ref: SchemaRef,
     ) -> bool {
-        let mut state_builder = TestStateBuilder::new();
+        let state_api = ExternStateApi::open();
+        let mut state_builder = StateBuilder::open(state_api);
+
         let mut state = State::new(
             &mut state_builder,
             ISSUER_ACCOUNT,

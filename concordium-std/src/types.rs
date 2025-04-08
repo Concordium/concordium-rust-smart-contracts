@@ -44,22 +44,6 @@ use core::{fmt, str::FromStr};
 /// However values may contain references to the low-level state, in particular
 /// maps may be nested.
 ///
-/// ### Low-level state `S`
-///
-/// The type parameter `S` is extra compared to usual Rust collections. As
-/// mentioned above it specifies the [low-level state
-/// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one ([`StateApi`]), which is the
-/// implementation supported by external host functions provided by the chain,
-/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
-/// is only useful for testing with the deprecated
-/// [`test_infrastructure`](crate::test_infrastructure) module.
-///
-/// In user code this type parameter should generally be treated as boilerplate,
-/// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
-/// `StateApi`, unless you intend to use the deprecated testing library.
-///
 /// #### Example
 /// ```rust
 /// # use concordium_std::*;
@@ -190,22 +174,6 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// [`Serialize`](crate::Serialize) **sets cannot be nested**. If this is really
 /// required then a custom solution should be devised using the operations on
 /// `S` (see [HasStateApi](crate::HasStateApi)).
-///
-/// ### Low-level state `S`
-///
-/// The type parameter `S` is extra compared to usual Rust collections. As
-/// mentioned above it specifies the [low-level state
-/// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one ([`StateApi`]), which is the
-/// implementation supported by external host functions provided by the chain,
-/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
-/// is only useful for testing with the deprecated
-/// [`test_infrastructure`](crate::test_infrastructure) module.
-///
-/// In user code this type parameter should generally be treated as boilerplate,
-/// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
-/// `StateApi`, unless you intend to use the deprecated testing library.
 ///
 /// #### Example
 /// ```rust
