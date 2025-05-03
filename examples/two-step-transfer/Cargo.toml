@@ -19,7 +19,7 @@ bump_alloc = ["concordium-std/bump_alloc"]
 version = "*"
 path = "../../concordium-std"
 default-features = false
-features = ["concordium-quickcheck"]
+features = ["concordium-quickcheck", "wasm-test"]
 
 [dev-dependencies]
 concordium-std = { version = "*", path = "../../concordium-std" }
