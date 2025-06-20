@@ -68,7 +68,7 @@ impl InvocationData {
 type InitialInvokeResponse =
     Result<(v1::ReceiveResult<CompiledFunction, DebugTracker>, InvocationData), InvokeResponse>;
 
-impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
+impl EntrypointInvocationHandler<'_, '_> {
     /// Used for handling the *initial* part of invoking an entrypoint.
     ///
     /// **Preconditions:**
