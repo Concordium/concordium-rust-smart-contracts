@@ -33,10 +33,10 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
             ACC_ADDR_OWNER,
             Energy::from(10000),
             InitContractPayload {
-                amount:    Amount::zero(),
-                mod_ref:   deployment.module_reference,
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_PiggyBank".to_string()),
-                param:     OwnedParameter::empty(),
+                param: OwnedParameter::empty(),
             },
         )
         .expect("Initialization should always succeed");
@@ -70,15 +70,18 @@ fn test_insert_intact() {
         Address::Account(ACC_ADDR_OWNER),
         Energy::from(10000),
         UpdateContractPayload {
-            amount:       insert_amount,
-            address:      initialization.contract_address,
+            amount: insert_amount,
+            address: initialization.contract_address,
             receive_name: OwnedReceiveName::new_unchecked("PiggyBank.insert".to_string()),
-            message:      OwnedParameter::empty(),
+            message: OwnedParameter::empty(),
         },
     );
 
     assert!(update.is_ok());
-    assert_eq!(chain.contract_balance(initialization.contract_address), Some(insert_amount));
+    assert_eq!(
+        chain.contract_balance(initialization.contract_address),
+        Some(insert_amount)
+    );
 }
 
 /// Test that the owner can smash an intact piggy bank and receive all of its
@@ -96,10 +99,10 @@ fn test_smash_intact() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("PiggyBank.smash".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Owner is allowed to smash intact piggy bank");
@@ -111,24 +114,28 @@ fn test_smash_intact() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("PiggyBank.view".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Invoking `view` should always succeed");
 
     // Ensure the values returned by the view function are correct.
-    let (state, balance): (PiggyBankState, Amount) =
-        invoke_result.parse_return_value().expect("View should always return a valid result");
+    let (state, balance): (PiggyBankState, Amount) = invoke_result
+        .parse_return_value()
+        .expect("View should always return a valid result");
     assert_eq!(state, PiggyBankState::Smashed);
     assert_eq!(balance, Amount::zero());
-    assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
-        initialization.contract_address,
-        Amount::zero(),
-        ACC_ADDR_OWNER
-    )]);
+    assert_eq!(
+        update.account_transfers().collect::<Vec<_>>(),
+        [(
+            initialization.contract_address,
+            Amount::zero(),
+            ACC_ADDR_OWNER
+        )]
+    );
 }
 
 /// Test that accounts other than the owner cannot smash an intact piggy bank.
@@ -144,10 +151,10 @@ fn test_smash_intact_not_owner() {
             Address::Account(ACC_ADDR_OTHER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("PiggyBank.smash".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect_err("Smashing should only succeed for the owner");
@@ -156,7 +163,11 @@ fn test_smash_intact_not_owner() {
         .parse_return_value()
         .expect("Contract should return a `SmashError` in serialized form");
 
-    assert_eq!(error, SmashError::NotOwner, "Contract did not fail due to a NotOwner error");
+    assert_eq!(
+        error,
+        SmashError::NotOwner,
+        "Contract did not fail due to a NotOwner error"
+    );
     assert_eq!(
         chain.account_balance_available(ACC_ADDR_OTHER),
         Some(ACC_INITIAL_BALANCE - update_err.transaction_fee),
@@ -178,10 +189,10 @@ fn test_smash_smashed() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("PiggyBank.smash".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("The owner should be allowed to smash");
@@ -193,10 +204,10 @@ fn test_smash_smashed() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("PiggyBank.smash".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect_err("The piggybank cannot be smashed more than once");

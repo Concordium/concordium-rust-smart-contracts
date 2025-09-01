@@ -31,10 +31,7 @@ fn test_success() {
     let prod_state = view_product(&chain, product).expect("Get view of initialized product");
     assert_eq!(
         prod_state,
-        ProductState::Initialized(Product {
-            factory,
-            index: 0,
-        })
+        ProductState::Initialized(Product { factory, index: 0 })
     );
 
     // Create and produce a second product (from a different account), and check the
@@ -44,17 +41,23 @@ fn test_success() {
     let prod_state = view_product(&chain, product2).expect("Get view of initialized product");
     assert_eq!(
         prod_state,
-        ProductState::Initialized(Product {
-            factory,
-            index: 1,
-        })
+        ProductState::Initialized(Product { factory, index: 1 })
     );
 
     // Check that the factory records having 2 products, and that they match what we
     // expect.
-    assert_eq!(view_product_count(&chain, factory).expect("View product count successful"), 2);
-    assert_eq!(view_product_at(&chain, factory, 0).expect("View of product at index"), product);
-    assert_eq!(view_product_at(&chain, factory, 1).expect("View of product at index"), product2);
+    assert_eq!(
+        view_product_count(&chain, factory).expect("View product count successful"),
+        2
+    );
+    assert_eq!(
+        view_product_at(&chain, factory, 0).expect("View of product at index"),
+        product
+    );
+    assert_eq!(
+        view_product_at(&chain, factory, 1).expect("View of product at index"),
+        product2
+    );
 }
 
 /// Test that a product instance cannot be produced using an account that did
@@ -72,7 +75,11 @@ fn test_not_authorized() {
     );
     assert_eq!(
         err.reject_code(),
-        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        Some(
+            Reject::from(FactoryError::InitializeFailed)
+                .error_code
+                .get()
+        ),
         "Reject code should be InitializeFailed"
     );
 }
@@ -88,7 +95,11 @@ fn test_double_produce() {
         .expect_err("Should fail when product has already been initialized.");
     assert_eq!(
         err.reject_code(),
-        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        Some(
+            Reject::from(FactoryError::InitializeFailed)
+                .error_code
+                .get()
+        ),
         "Reject code should be InitializeFailed"
     );
 }
@@ -105,7 +116,11 @@ fn test_double_produce_second_factory() {
         .expect_err("Should fail when product has already been initialized.");
     assert_eq!(
         err.reject_code(),
-        Some(Reject::from(FactoryError::InitializeFailed).error_code.get()),
+        Some(
+            Reject::from(FactoryError::InitializeFailed)
+                .error_code
+                .get()
+        ),
         "Reject code should be InitializeFailed"
     );
 }
@@ -139,7 +154,9 @@ fn initialize_chain() -> (Chain, ModuleReference) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Deploy valid module");
 
     (chain, deployment.module_reference)
 }
@@ -147,12 +164,17 @@ fn initialize_chain() -> (Chain, ModuleReference) {
 /// Helper to create an instance of the factory smart contract.
 fn create_factory(chain: &mut Chain, module_ref: ModuleReference) -> ContractAddress {
     chain
-        .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   module_ref,
-            init_name: OwnedContractName::new_unchecked("init_factory".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: module_ref,
+                init_name: OwnedContractName::new_unchecked("init_factory".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize factory")
         .contract_address
 }
@@ -164,12 +186,17 @@ fn create_product(
     creator: AccountAddress,
 ) -> ContractAddress {
     chain
-        .contract_init(SIGNER, creator, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   module_ref,
-            init_name: OwnedContractName::new_unchecked("init_product".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            creator,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: module_ref,
+                init_name: OwnedContractName::new_unchecked("init_product".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize product")
         .contract_address
 }
@@ -187,10 +214,10 @@ fn call_produce(
         Address::Account(invoker),
         Energy::from(100000),
         UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      factory,
+            amount: Amount::zero(),
+            address: factory,
             receive_name: OwnedReceiveName::new_unchecked("factory.produce".to_string()),
-            message:      OwnedParameter::from_serial(&product).unwrap(),
+            message: OwnedParameter::from_serial(&product).unwrap(),
         },
     )
 }
@@ -205,14 +232,16 @@ fn view_product(
         Address::Account(ALICE),
         Energy::from(100000),
         UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      product,
+            amount: Amount::zero(),
+            address: product,
             receive_name: OwnedReceiveName::new_unchecked("product.view".to_string()),
-            message:      OwnedParameter::empty(),
+            message: OwnedParameter::empty(),
         },
     )?;
-    Ok(ProductState::deserial(&mut Cursor::new(success.return_value))
-        .expect("View result deserialization failure"))
+    Ok(
+        ProductState::deserial(&mut Cursor::new(success.return_value))
+            .expect("View result deserialization failure"),
+    )
 }
 
 /// Helper to view the total number of products that have been produced by a
@@ -223,10 +252,10 @@ fn view_product_count(chain: &Chain, factory: ContractAddress) -> Result<u64, Co
         Address::Account(ALICE),
         Energy::from(100000),
         UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      factory,
+            amount: Amount::zero(),
+            address: factory,
             receive_name: OwnedReceiveName::new_unchecked("factory.view_product_count".to_string()),
-            message:      OwnedParameter::empty(),
+            message: OwnedParameter::empty(),
         },
     )?;
     Ok(u64::deserial(&mut Cursor::new(success.return_value))
@@ -245,12 +274,14 @@ fn view_product_at(
         Address::Account(ALICE),
         Energy::from(100000),
         UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      factory,
+            amount: Amount::zero(),
+            address: factory,
             receive_name: OwnedReceiveName::new_unchecked("factory.view_product".to_string()),
-            message:      OwnedParameter::from_serial(&index).unwrap(),
+            message: OwnedParameter::from_serial(&index).unwrap(),
         },
     )?;
-    Ok(ContractAddress::deserial(&mut Cursor::new(success.return_value))
-        .expect("View result deserialization failure"))
+    Ok(
+        ContractAddress::deserial(&mut Cursor::new(success.return_value))
+            .expect("View result deserialization failure"),
+    )
 }

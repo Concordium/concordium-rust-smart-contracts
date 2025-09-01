@@ -25,7 +25,7 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(1000);
 
 #[derive(Deserial, Debug, PartialEq, Eq)]
 pub struct State {
-    admin:     AccountAddress,
+    admin: AccountAddress,
     old_state: String,
     new_state: String,
 }
@@ -51,12 +51,12 @@ fn setup_chain_and_contract() -> (Chain, ContractInitSuccess) {
             ACC_ADDR_OWNER,
             Energy::from(10000),
             InitContractPayload {
-                amount:    Amount::zero(),
-                mod_ref:   deployment.module_reference,
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
                 init_name: OwnedContractName::new_unchecked(
                     "init_smart_contract_upgrade".to_string(),
                 ),
-                param:     OwnedParameter::empty(),
+                param: OwnedParameter::empty(),
             },
         )
         .expect("Initialization of `Contract version1` should always succeed");
@@ -89,7 +89,7 @@ fn test_upgrade_without_migration_function() {
         .expect("`Contract version2` deployment should always succeed");
 
     let input_parameter = UpgradeParams {
-        module:  deployment.module_reference,
+        module: deployment.module_reference,
         migrate: None,
     };
 
@@ -119,26 +119,30 @@ fn test_upgrade_without_migration_function() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "smart_contract_upgrade.view".to_string(),
                 ),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Invoking `view` should always succeed");
 
-    let state: State =
-        invoke.parse_return_value().expect("View should always return a valid result");
+    let state: State = invoke
+        .parse_return_value()
+        .expect("View should always return a valid result");
 
-    assert_eq!(state, State {
-        admin:     ACC_ADDR_OWNER,
-        old_state: "This state should NOT be migrated as part of the smart contract upgrade."
-            .to_string(),
-        new_state: "This state should be migrated as part of the smart contract upgrade."
-            .to_string(),
-    });
+    assert_eq!(
+        state,
+        State {
+            admin: ACC_ADDR_OWNER,
+            old_state: "This state should NOT be migrated as part of the smart contract upgrade."
+                .to_string(),
+            new_state: "This state should be migrated as part of the smart contract upgrade."
+                .to_string(),
+        }
+    );
 }
 
 #[test]
@@ -156,7 +160,7 @@ fn test_upgrade_with_migration_function() {
         .expect("`Contract version2` deployment should always succeed");
 
     let input_parameter = UpgradeParams {
-        module:  deployment.module_reference,
+        module: deployment.module_reference,
         migrate: Some((
             OwnedEntrypointName::new("migration".to_string())
                 .expect("`migration` should be a valid name"),
@@ -190,23 +194,27 @@ fn test_upgrade_with_migration_function() {
             Address::Account(ACC_ADDR_OWNER),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      initialization.contract_address,
+                amount: Amount::zero(),
+                address: initialization.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "smart_contract_upgrade.view".to_string(),
                 ),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Invoking `view` should always succeed");
 
-    let state: State =
-        invoke.parse_return_value().expect("View should always return a valid result");
+    let state: State = invoke
+        .parse_return_value()
+        .expect("View should always return a valid result");
 
-    assert_eq!(state, State {
-        admin:     ACC_ADDR_OWNER,
-        old_state: "This state should be migrated as part of the smart contract upgrade."
-            .to_string(),
-        new_state: "This is the new state.".to_string(),
-    });
+    assert_eq!(
+        state,
+        State {
+            admin: ACC_ADDR_OWNER,
+            old_state: "This state should be migrated as part of the smart contract upgrade."
+                .to_string(),
+            new_state: "This is the new state.".to_string(),
+        }
+    );
 }

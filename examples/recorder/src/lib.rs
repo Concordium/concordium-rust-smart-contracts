@@ -27,7 +27,12 @@ fn init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<Stat
     })
 }
 
-#[receive(contract = "recorder", name = "record", parameter = "AccountAddress", mutable)]
+#[receive(
+    contract = "recorder",
+    name = "record",
+    parameter = "AccountAddress",
+    mutable
+)]
 fn receive_record(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     let address: AccountAddress = ctx.parameter_cursor().get()?;
 
@@ -48,12 +53,20 @@ fn receive_delete(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult
     Ok(res)
 }
 
-#[receive(contract = "recorder", name = "transfer", return_value = "u64", mutable)]
+#[receive(
+    contract = "recorder",
+    name = "transfer",
+    return_value = "u64",
+    mutable
+)]
 fn receive_transfer(_ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<u64> {
     let addresses = &host.state().addresses;
     let mut count = 0;
     for addr in addresses.iter() {
-        if host.invoke_transfer(&addr, Amount::from_micro_ccd(0)).is_ok() {
+        if host
+            .invoke_transfer(&addr, Amount::from_micro_ccd(0))
+            .is_ok()
+        {
             count += 1;
         }
     }
@@ -61,7 +74,11 @@ fn receive_transfer(_ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveRes
     Ok(count)
 }
 
-#[receive(contract = "recorder", name = "list", return_value = "Vec<AccountAddress>")]
+#[receive(
+    contract = "recorder",
+    name = "list",
+    return_value = "Vec<AccountAddress>"
+)]
 fn receive_list(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vec<AccountAddress>> {
     let mut ret: Vec<AccountAddress> = Vec::new();
     for addr in host.state().addresses.iter() {

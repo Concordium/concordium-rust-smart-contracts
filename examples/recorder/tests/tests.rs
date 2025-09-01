@@ -20,16 +20,23 @@ fn tests() {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ACC_0, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ACC_0, module)
+        .expect("Deploy valid module");
 
     // Initialize the contract.
     let initialization = chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_recorder".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_recorder".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Init should succeed");
     let contract_address = initialization.contract_address;
 
@@ -41,11 +48,10 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.record".to_string()),
-                message:      OwnedParameter::from_serial(&ACC_0)
-                    .expect("Serialize account address."),
+                message: OwnedParameter::from_serial(&ACC_0).expect("Serialize account address."),
             },
         )
         .expect("Recording `ACC_0`");
@@ -56,11 +62,10 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.record".to_string()),
-                message:      OwnedParameter::from_serial(&ACC_1)
-                    .expect("Serialize account address."),
+                message: OwnedParameter::from_serial(&ACC_1).expect("Serialize account address."),
             },
         )
         .expect("Recording `ACC_1`");
@@ -72,15 +77,16 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.list".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Viewing list with two elements");
-    let returned_list_1: Vec<AccountAddress> =
-        view_list_1.parse_return_value().expect("Decoding return value");
+    let returned_list_1: Vec<AccountAddress> = view_list_1
+        .parse_return_value()
+        .expect("Decoding return value");
     assert_eq!(returned_list_1[..], [ACC_0, ACC_1]);
 
     // Make the transfers to all accounts.
@@ -91,21 +97,26 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.transfer".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Recording`ACC_1`");
 
     // Check that the contract returns `2` for the number of transfers made.
-    let transfers_made: u64 = update_transfer.parse_return_value().expect("Decoding return value.");
+    let transfers_made: u64 = update_transfer
+        .parse_return_value()
+        .expect("Decoding return value.");
     assert_eq!(transfers_made, 2);
-    assert_eq!(update_transfer.account_transfers().collect::<Vec<_>>()[..], [
-        (contract_address, Amount::zero(), ACC_0),
-        (contract_address, Amount::zero(), ACC_1)
-    ]);
+    assert_eq!(
+        update_transfer.account_transfers().collect::<Vec<_>>()[..],
+        [
+            (contract_address, Amount::zero(), ACC_0),
+            (contract_address, Amount::zero(), ACC_1)
+        ]
+    );
 
     // Check that the 'list' view function now returns an empty list.
     let view_list_2 = chain
@@ -114,14 +125,15 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.list".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Viewing list with two elements");
-    let returned_list_2: Vec<AccountAddress> =
-        view_list_2.parse_return_value().expect("Decoding return value");
+    let returned_list_2: Vec<AccountAddress> = view_list_2
+        .parse_return_value()
+        .expect("Decoding return value");
     assert!(returned_list_2.is_empty());
 }

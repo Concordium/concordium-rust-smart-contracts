@@ -27,12 +27,12 @@ fn test_memory_layout() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "bump_alloc_tests.memory_layout".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&(map, key_1, key_2, expected_sum))
+                message: OwnedParameter::from_serial(&(map, key_1, key_2, expected_sum))
                     .expect("Parameter size is below limit."),
             },
         )
@@ -52,12 +52,12 @@ fn test_max_parameter_len() {
             Address::Account(ACC_0),
             Energy::from(100_000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "bump_alloc_tests.max_parameter_len".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&[42u8; 65535])
+                message: OwnedParameter::from_serial(&[42u8; 65535])
                     .expect("Parameter size is below limit."),
             },
         )
@@ -76,12 +76,12 @@ fn test_allocate_one_mib() {
             Address::Account(ACC_0),
             Energy::from(100_000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "bump_alloc_tests.allocate_one_mib".to_string(),
                 ),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .print_emitted_events()
@@ -100,12 +100,12 @@ fn test_dealloc_last_optimization() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "bump_alloc_tests.dealloc_last_optimization".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&2u64)
+                message: OwnedParameter::from_serial(&2u64)
                     .expect("Parameter size is below limit."),
             },
         )
@@ -124,12 +124,12 @@ fn test_stack_and_static() {
             Address::Account(ACC_0),
             Energy::from(100_000_000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "bump_alloc_tests.stack_and_static".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&("ORIGINAL", 123456, "EVEN"))
+                message: OwnedParameter::from_serial(&("ORIGINAL", 123456, "EVEN"))
                     .expect("Parameter size is below limit."),
             },
         )
@@ -152,12 +152,17 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
         .expect("Deploy valid module");
 
     let init = chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_bump_alloc_tests".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_bump_alloc_tests".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Init contract should succeed");
     (chain, init.contract_address)
 }

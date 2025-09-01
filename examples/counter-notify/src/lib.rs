@@ -77,7 +77,11 @@ fn reentrancy_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> Ini
 /// Tries to call the entrypoint `just-increment` on the sender iff it is a
 /// contract. Fails if the sender is an account or the `just-increment` call
 /// fails.
-#[receive(contract = "reentrancy-attacker", name = "call-just-increment", mutable)]
+#[receive(
+    contract = "reentrancy-attacker",
+    name = "call-just-increment",
+    mutable
+)]
 fn reentrancy_receive(ctx: &ReceiveContext, host: &mut Host<()>) -> ReceiveResult<()> {
     match ctx.sender() {
         Address::Account(_) => fail!(),

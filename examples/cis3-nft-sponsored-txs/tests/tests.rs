@@ -54,11 +54,14 @@ fn test_inside_signature_permit_update_operator() {
     // Check operator in state
     let bob_is_operator_of_alice = operator_of(&chain, contract_address);
 
-    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
+    assert_eq!(
+        bob_is_operator_of_alice,
+        OperatorOfQueryResponse(vec![false])
+    );
 
     // Create input parameters for the `permit` updateOperator function.
     let update_operator = UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     };
     let payload = UpdateOperatorParams(vec![update_operator]);
@@ -68,33 +71,43 @@ fn test_inside_signature_permit_update_operator() {
     // a `signer`. Because these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
+    let signature_map = BTreeMap::from([(
+        0u8,
+        CredentialSignatures {
+            sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
+        },
+    )]);
 
     let mut permit_update_operator_param = PermitParam {
         signature: AccountSignatures {
             sigs: signature_map,
         },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+        signer: ALICE,
+        message: PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
             contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
+            entry_point: OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce: 0,
+            payload: to_bytes(&payload),
         },
     };
 
     // Get the message hash to be signed.
     let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_update_operator_param)
-                .expect("Should be a valid inut parameter"),
-        })
+        .contract_invoke(
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis3_nft.viewMessageHash".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
         .expect("Should be able to query viewMessageHash");
 
     let message_hash: HashSha2256 =
@@ -112,10 +125,10 @@ fn test_inside_signature_permit_update_operator() {
             Address::Account(CHARLIE),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                message: OwnedParameter::from_serial(&permit_update_operator_param)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -127,22 +140,28 @@ fn test_inside_signature_permit_update_operator() {
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Event>>();
 
-    assert_eq!(events, [
-        Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
-            update:   OperatorUpdate::Add,
-            owner:    ALICE_ADDR,
-            operator: BOB_ADDR,
-        })),
-        Event::Nonce(NonceEvent {
-            account: ALICE,
-            nonce:   0,
-        })
-    ]);
+    assert_eq!(
+        events,
+        [
+            Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
+                update: OperatorUpdate::Add,
+                owner: ALICE_ADDR,
+                operator: BOB_ADDR,
+            })),
+            Event::Nonce(NonceEvent {
+                account: ALICE,
+                nonce: 0,
+            })
+        ]
+    );
 
     // Check operator in state
     let bob_is_operator_of_alice = operator_of(&chain, contract_address);
 
-    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![true]));
+    assert_eq!(
+        bob_is_operator_of_alice,
+        OperatorOfQueryResponse(vec![true])
+    );
 }
 
 /// Test permit update operator function. The signature is generated outside
@@ -155,34 +174,43 @@ fn test_outside_signature_permit_update_operator() {
     // Check operator in state
     let bob_is_operator_of_alice = operator_of(&chain, contract_address);
 
-    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![false]));
+    assert_eq!(
+        bob_is_operator_of_alice,
+        OperatorOfQueryResponse(vec![false])
+    );
 
     // Create input parameters for the `permit` updateOperator function.
     let update_operator = UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     };
     let payload = UpdateOperatorParams(vec![update_operator]);
 
     let mut inner_signature_map = BTreeMap::new();
-    inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(SIGNATURE_UPDATE_OPERATOR));
+    inner_signature_map.insert(
+        0u8,
+        concordium_std::Signature::Ed25519(SIGNATURE_UPDATE_OPERATOR),
+    );
 
     let mut signature_map = BTreeMap::new();
-    signature_map.insert(0u8, CredentialSignatures {
-        sigs: inner_signature_map,
-    });
+    signature_map.insert(
+        0u8,
+        CredentialSignatures {
+            sigs: inner_signature_map,
+        },
+    );
 
     let permit_update_operator_param = PermitParam {
         signature: AccountSignatures {
             sigs: signature_map,
         },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+        signer: ALICE,
+        message: PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
             contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
+            entry_point: OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce: 0,
+            payload: to_bytes(&payload),
         },
     };
 
@@ -194,10 +222,10 @@ fn test_outside_signature_permit_update_operator() {
             Address::Account(CHARLIE),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                message: OwnedParameter::from_serial(&permit_update_operator_param)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -209,22 +237,28 @@ fn test_outside_signature_permit_update_operator() {
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Event>>();
 
-    assert_eq!(events, [
-        Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
-            update:   OperatorUpdate::Add,
-            owner:    ALICE_ADDR,
-            operator: BOB_ADDR,
-        })),
-        Event::Nonce(NonceEvent {
-            account: ALICE,
-            nonce:   0,
-        })
-    ]);
+    assert_eq!(
+        events,
+        [
+            Event::Cis2Event(Cis2Event::UpdateOperator(UpdateOperatorEvent {
+                update: OperatorUpdate::Add,
+                owner: ALICE_ADDR,
+                operator: BOB_ADDR,
+            })),
+            Event::Nonce(NonceEvent {
+                account: ALICE,
+                nonce: 0,
+            })
+        ]
+    );
 
     // Check operator in state
     let bob_is_operator_of_alice = operator_of(&chain, contract_address);
 
-    assert_eq!(bob_is_operator_of_alice, OperatorOfQueryResponse(vec![true]));
+    assert_eq!(
+        bob_is_operator_of_alice,
+        OperatorOfQueryResponse(vec![true])
+    );
 }
 
 /// Test permit transfer function. The signature is generated in the test case.
@@ -237,15 +271,18 @@ fn test_inside_signature_permit_transfer() {
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(1), TokenAmountU8(0)]);
+    assert_eq!(
+        balance_of_alice_and_bob.0,
+        [TokenAmountU8(1), TokenAmountU8(0)]
+    );
 
     // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::from_account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::from_account(BOB),
         token_id: TOKEN_1,
-        amount:   ContractTokenAmount::from(1),
-        data:     AdditionalData::empty(),
+        amount: ContractTokenAmount::from(1),
+        data: AdditionalData::empty(),
     };
     let payload = TransferParams::from(vec![transfer]);
 
@@ -254,33 +291,43 @@ fn test_inside_signature_permit_transfer() {
     // a `signer`. Because these two values (`signature` and `signer`) are not
     // read in the `viewMessageHash` function, any value can be used and we choose
     // to use `DUMMY_SIGNATURE` and `ALICE` in the test case below.
-    let signature_map = BTreeMap::from([(0u8, CredentialSignatures {
-        sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
-    })]);
+    let signature_map = BTreeMap::from([(
+        0u8,
+        CredentialSignatures {
+            sigs: BTreeMap::from([(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE))]),
+        },
+    )]);
 
     let mut permit_transfer_param = PermitParam {
         signature: AccountSignatures {
             sigs: signature_map,
         },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+        signer: ALICE,
+        message: PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
             contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
+            entry_point: OwnedEntrypointName::new_unchecked("transfer".into()),
+            nonce: 0,
+            payload: to_bytes(&payload),
         },
     };
 
     // Get the message hash to be signed.
     let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_transfer_param)
-                .expect("Should be a valid inut parameter"),
-        })
+        .contract_invoke(
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis3_nft.viewMessageHash".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&permit_transfer_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
         .expect("Should be able to query viewMessageHash");
 
     let message_hash: HashSha2256 =
@@ -298,10 +345,10 @@ fn test_inside_signature_permit_transfer() {
             BOB_ADDR,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_transfer_param)
+                message: OwnedParameter::from_serial(&permit_transfer_param)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -313,23 +360,29 @@ fn test_inside_signature_permit_transfer() {
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Event>>();
 
-    assert_eq!(events, [
-        Event::Cis2Event(Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_1,
-            amount:   ContractTokenAmount::from(1),
-            from:     ALICE_ADDR,
-            to:       BOB_ADDR,
-        })),
-        Event::Nonce(NonceEvent {
-            account: ALICE,
-            nonce:   0,
-        })
-    ]);
+    assert_eq!(
+        events,
+        [
+            Event::Cis2Event(Cis2Event::Transfer(TransferEvent {
+                token_id: TOKEN_1,
+                amount: ContractTokenAmount::from(1),
+                from: ALICE_ADDR,
+                to: BOB_ADDR,
+            })),
+            Event::Nonce(NonceEvent {
+                account: ALICE,
+                nonce: 0,
+            })
+        ]
+    );
 
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(0), TokenAmountU8(1)]);
+    assert_eq!(
+        balance_of_alice_and_bob.0,
+        [TokenAmountU8(0), TokenAmountU8(1)]
+    );
 }
 
 /// Test permit transfer function. The signature is generated outside this test
@@ -342,15 +395,18 @@ fn test_outside_signature_permit_transfer() {
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(1), TokenAmountU8(0)]);
+    assert_eq!(
+        balance_of_alice_and_bob.0,
+        [TokenAmountU8(1), TokenAmountU8(0)]
+    );
 
     // Create input parameters for the `permit` transfer function.
     let transfer = concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::from_account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::from_account(BOB),
         token_id: TOKEN_1,
-        amount:   ContractTokenAmount::from(1),
-        data:     AdditionalData::empty(),
+        amount: ContractTokenAmount::from(1),
+        data: AdditionalData::empty(),
     };
     let payload = TransferParams::from(vec![transfer]);
 
@@ -358,21 +414,24 @@ fn test_outside_signature_permit_transfer() {
     inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(SIGNATURE_TRANSFER));
 
     let mut signature_map = BTreeMap::new();
-    signature_map.insert(0u8, CredentialSignatures {
-        sigs: inner_signature_map,
-    });
+    signature_map.insert(
+        0u8,
+        CredentialSignatures {
+            sigs: inner_signature_map,
+        },
+    );
 
     let permit_transfer_param = PermitParam {
         signature: AccountSignatures {
             sigs: signature_map,
         },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+        signer: ALICE,
+        message: PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
             contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("transfer".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
+            entry_point: OwnedEntrypointName::new_unchecked("transfer".into()),
+            nonce: 0,
+            payload: to_bytes(&payload),
         },
     };
 
@@ -384,10 +443,10 @@ fn test_outside_signature_permit_transfer() {
             BOB_ADDR,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_transfer_param)
+                message: OwnedParameter::from_serial(&permit_transfer_param)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -399,23 +458,29 @@ fn test_outside_signature_permit_transfer() {
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Event>>();
 
-    assert_eq!(events, [
-        Event::Cis2Event(Cis2Event::Transfer(TransferEvent {
-            token_id: TOKEN_1,
-            amount:   ContractTokenAmount::from(1),
-            from:     ALICE_ADDR,
-            to:       BOB_ADDR,
-        })),
-        Event::Nonce(NonceEvent {
-            account: ALICE,
-            nonce:   0,
-        })
-    ]);
+    assert_eq!(
+        events,
+        [
+            Event::Cis2Event(Cis2Event::Transfer(TransferEvent {
+                token_id: TOKEN_1,
+                amount: ContractTokenAmount::from(1),
+                from: ALICE_ADDR,
+                to: BOB_ADDR,
+            })),
+            Event::Nonce(NonceEvent {
+                account: ALICE,
+                nonce: 0,
+            })
+        ]
+    );
 
     // Check balances in state.
     let balance_of_alice_and_bob = get_balances(&chain, contract_address);
 
-    assert_eq!(balance_of_alice_and_bob.0, [TokenAmountU8(0), TokenAmountU8(1)]);
+    assert_eq!(
+        balance_of_alice_and_bob.0,
+        [TokenAmountU8(0), TokenAmountU8(1)]
+    );
 }
 
 /// Test minting succeeds and the tokens are owned by the given address and
@@ -426,45 +491,60 @@ fn test_minting() {
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
 
     // Check that the tokens are owned by Alice.
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.all_tokens[..], [TOKEN_0, TOKEN_1]);
-    assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
-        owned_tokens: vec![TOKEN_0, TOKEN_1],
-        operators:    Vec::new(),
-    })]);
+    assert_eq!(
+        rv.state,
+        vec![(
+            ALICE_ADDR,
+            ViewAddressState {
+                owned_tokens: vec![TOKEN_0, TOKEN_1],
+                operators: Vec::new(),
+            }
+        )]
+    );
 
     // Check that the events are logged.
     let events = update.events().flat_map(|(_addr, events)| events);
 
-    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
-        events.map(|e| e.parse().expect("Deserialize event")).collect();
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> = events
+        .map(|e| e.parse().expect("Deserialize event"))
+        .collect();
 
     // Check that the correct events are logged.
     // Note: this only looks at the second update event, which is why it only shows
     // TOKEN_1.
-    assert_eq!(events, [
-        Cis2Event::Mint(MintEvent {
-            token_id: TOKEN_1,
-            amount:   TokenAmountU8(1),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     TOKEN_1,
-            metadata_url: MetadataUrl {
-                url:  TOKEN_METADATA_URL.to_string(),
-                hash: None,
-            },
-        }),
-    ]);
+    assert_eq!(
+        events,
+        [
+            Cis2Event::Mint(MintEvent {
+                token_id: TOKEN_1,
+                amount: TokenAmountU8(1),
+                owner: ALICE_ADDR,
+            }),
+            Cis2Event::TokenMetadata(TokenMetadataEvent {
+                token_id: TOKEN_1,
+                metadata_url: MetadataUrl {
+                    url: TOKEN_METADATA_URL.to_string(),
+                    hash: None,
+                },
+            }),
+        ]
+    );
 }
 
 /// Test regular transfer where sender is the owner.
@@ -475,54 +555,77 @@ fn test_account_transfer() {
 
     // Transfer `TOKEN_0` from Alice to Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU8(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU8(1),
+        data: AdditionalData::empty(),
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect("Transfer tokens");
 
     // Check that Bob now has `TOKEN_0` and that Alice still has `TOKEN_1`.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
-    assert_eq!(rv.state, vec![
-        (ALICE_ADDR, ViewAddressState {
-            owned_tokens: vec![TOKEN_1],
-            operators:    Vec::new(),
-        }),
-        (BOB_ADDR, ViewAddressState {
-            owned_tokens: vec![TOKEN_0],
-            operators:    Vec::new(),
-        }),
-    ]);
+    assert_eq!(
+        rv.state,
+        vec![
+            (
+                ALICE_ADDR,
+                ViewAddressState {
+                    owned_tokens: vec![TOKEN_1],
+                    operators: Vec::new(),
+                }
+            ),
+            (
+                BOB_ADDR,
+                ViewAddressState {
+                    owned_tokens: vec![TOKEN_0],
+                    operators: Vec::new(),
+                }
+            ),
+        ]
+    );
 
     // Check that a single transfer event occurred.
     let events = update
         .events()
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Cis2Event<_, _>>>();
-    assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
-        token_id: TOKEN_0,
-        amount:   TokenAmountU8(1),
-        from:     ALICE_ADDR,
-        to:       BOB_ADDR,
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::Transfer(TransferEvent {
+            token_id: TOKEN_0,
+            amount: TokenAmountU8(1),
+            from: ALICE_ADDR,
+            to: BOB_ADDR,
+        }),]
+    );
 }
 
 /// Test that you can add an operator.
@@ -535,17 +638,25 @@ fn test_add_operator() {
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.updateOperator".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis3_nft.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+            },
+        )
         .expect("Update operator");
 
     // Check that an operator event occurred.
@@ -553,16 +664,19 @@ fn test_add_operator() {
         .events()
         .flat_map(|(_addr, events)| events.iter().map(|e| e.parse().expect("Deserialize event")))
         .collect::<Vec<Cis2Event<ContractTokenId, ContractTokenAmount>>>();
-    assert_eq!(events, [Cis2Event::UpdateOperator(UpdateOperatorEvent {
-        operator: BOB_ADDR,
-        owner:    ALICE_ADDR,
-        update:   OperatorUpdate::Add,
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::UpdateOperator(UpdateOperatorEvent {
+            operator: BOB_ADDR,
+            owner: ALICE_ADDR,
+            update: OperatorUpdate::Add,
+        }),]
+    );
 
     // Construct a query parameter to check whether Bob is an operator for Alice.
     let query_params = OperatorOfQueryParams {
         queries: vec![OperatorOfQuery {
-            owner:   ALICE_ADDR,
+            owner: ALICE_ADDR,
             address: BOB_ADDR,
         }],
     };
@@ -570,15 +684,22 @@ fn test_add_operator() {
     // Invoke the operatorOf view entrypoint and check that Bob is an operator for
     // Alice.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.operatorOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.operatorOf".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&query_params).expect("OperatorOf params"),
+            },
+        )
         .expect("Invoke view");
 
-    let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
+    let rv: OperatorOfQueryResponse = invoke
+        .parse_return_value()
+        .expect("OperatorOf return value");
     assert_eq!(rv, OperatorOfQueryResponse(vec![true]));
 }
 
@@ -593,25 +714,33 @@ fn test_unauthorized_sender() {
     // Construct a transfer of `TOKEN_0` from Alice to Bob, which will be submitted
     // by Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU8(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU8(1),
+        data: AdditionalData::empty(),
     }]);
 
     // Notice that Bob is the sender/invoker.
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect_err("Transfer tokens");
 
     // Check that the correct error is returned.
-    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    let rv: ContractError = update
+        .parse_return_value()
+        .expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -623,56 +752,84 @@ fn test_operator_can_transfer() {
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.updateOperator".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis3_nft.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+            },
+        )
         .expect("Update operator");
 
     // Let Bob make a transfer to himself on behalf of Alice.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU8(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU8(1),
+        data: AdditionalData::empty(),
     }]);
 
     chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect("Transfer tokens");
 
     // Check that Bob now has `TOKEN_0` and that Alice still has `TOKEN_1`.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
-    assert_eq!(rv.state, vec![
-        (ALICE_ADDR, ViewAddressState {
-            owned_tokens: vec![TOKEN_1],
-            operators:    vec![BOB_ADDR],
-        }),
-        (BOB_ADDR, ViewAddressState {
-            owned_tokens: vec![TOKEN_0],
-            operators:    Vec::new(),
-        }),
-    ]);
+    assert_eq!(
+        rv.state,
+        vec![
+            (
+                ALICE_ADDR,
+                ViewAddressState {
+                    owned_tokens: vec![TOKEN_1],
+                    operators: vec![BOB_ADDR],
+                }
+            ),
+            (
+                BOB_ADDR,
+                ViewAddressState {
+                    owned_tokens: vec![TOKEN_0],
+                    operators: Vec::new(),
+                }
+            ),
+        ]
+    );
 }
 
 // Test `nonceOf` query. We check that the nonce of `ALICE` is 1 when
@@ -689,7 +846,7 @@ fn test_nonce_of_query() {
 
     // Create input parameters for the `permit` updateOperator function.
     let update_operator = UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     };
     let payload = UpdateOperatorParams(vec![update_operator]);
@@ -704,33 +861,43 @@ fn test_nonce_of_query() {
     inner_signature_map.insert(0u8, concordium_std::Signature::Ed25519(DUMMY_SIGNATURE));
 
     let mut signature_map = BTreeMap::new();
-    signature_map.insert(0u8, CredentialSignatures {
-        sigs: inner_signature_map,
-    });
+    signature_map.insert(
+        0u8,
+        CredentialSignatures {
+            sigs: inner_signature_map,
+        },
+    );
 
     let mut permit_update_operator_param = PermitParam {
         signature: AccountSignatures {
             sigs: signature_map,
         },
-        signer:    ALICE,
-        message:   PermitMessage {
-            timestamp:        Timestamp::from_timestamp_millis(10_000_000_000),
+        signer: ALICE,
+        message: PermitMessage {
+            timestamp: Timestamp::from_timestamp_millis(10_000_000_000),
             contract_address: ContractAddress::new(0, 0),
-            entry_point:      OwnedEntrypointName::new_unchecked("updateOperator".into()),
-            nonce:            0,
-            payload:          to_bytes(&payload),
+            entry_point: OwnedEntrypointName::new_unchecked("updateOperator".into()),
+            nonce: 0,
+            payload: to_bytes(&payload),
         },
     };
 
     // Get the message hash to be signed.
     let invoke = chain
-        .contract_invoke(BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.viewMessageHash".to_string()),
-            message:      OwnedParameter::from_serial(&permit_update_operator_param)
-                .expect("Should be a valid inut parameter"),
-        })
+        .contract_invoke(
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis3_nft.viewMessageHash".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&permit_update_operator_param)
+                    .expect("Should be a valid inut parameter"),
+            },
+        )
         .expect("Should be able to query viewMessageHash");
 
     let message_hash: HashSha2256 =
@@ -748,10 +915,10 @@ fn test_nonce_of_query() {
             Address::Account(CHARLIE),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.permit".to_string()),
-                message:      OwnedParameter::from_serial(&permit_update_operator_param)
+                message: OwnedParameter::from_serial(&permit_update_operator_param)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -768,10 +935,10 @@ fn test_nonce_of_query() {
             Address::Account(ALICE),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.nonceOf".to_string()),
-                message:      OwnedParameter::from_serial(&nonce_query_vector)
+                message: OwnedParameter::from_serial(&nonce_query_vector)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -808,10 +975,10 @@ fn test_public_key_of_query() {
             Address::Account(ALICE),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("cis3_nft.publicKeyOf".to_string()),
-                message:      OwnedParameter::from_serial(&public_key_of_query_vector)
+                message: OwnedParameter::from_serial(&public_key_of_query_vector)
                     .expect("Should be a valid inut parameter"),
             },
         )
@@ -827,7 +994,10 @@ fn test_public_key_of_query() {
         Some(account_public_keys),
         "An existing account should have correct public keys returned"
     );
-    assert!(public_keys_of.0[1].is_none(), "Non existing account should have no public keys");
+    assert!(
+        public_keys_of.0[1].is_none(),
+        "Non existing account should have no public keys"
+    );
 }
 
 /// Get the `TOKEN_1` balances for Alice and Bob.
@@ -839,23 +1009,27 @@ fn get_balances(
         queries: vec![
             BalanceOfQuery {
                 token_id: TOKEN_1,
-                address:  ALICE_ADDR,
+                address: ALICE_ADDR,
             },
             BalanceOfQuery {
                 token_id: TOKEN_1,
-                address:  BOB_ADDR,
+                address: BOB_ADDR,
             },
         ],
     };
 
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&balance_of_params)
-                .expect("BalanceOf params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.balanceOf".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&balance_of_params).expect("BalanceOf params"),
+            },
+        )
         .expect("Invoke balanceOf");
     let rv: ContractBalanceOfQueryResponse =
         invoke.parse_return_value().expect("BalanceOf return value");
@@ -867,21 +1041,28 @@ fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQu
     let operator_of_params = OperatorOfQueryParams {
         queries: vec![OperatorOfQuery {
             address: BOB_ADDR,
-            owner:   ALICE_ADDR,
+            owner: ALICE_ADDR,
         }],
     };
 
     // Check operator in state
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.operatorOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&operator_of_params)
-                .expect("OperatorOf params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.operatorOf".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&operator_of_params)
+                    .expect("OperatorOf params"),
+            },
+        )
         .expect("Invoke operatorOf");
-    let rv: OperatorOfQueryResponse = invoke.parse_return_value().expect("OperatorOf return value");
+    let rv: OperatorOfQueryResponse = invoke
+        .parse_return_value()
+        .expect("OperatorOf return value");
     rv
 }
 
@@ -892,31 +1073,46 @@ fn operator_of(chain: &Chain, contract_address: ContractAddress) -> OperatorOfQu
 /// This function returns the second mint update.
 fn initialize_contract_with_alice_tokens(
     generate_keys: bool,
-) -> (Chain, ContractAddress, ContractInvokeSuccess, Option<AccountKeys>) {
+) -> (
+    Chain,
+    ContractAddress,
+    ContractInvokeSuccess,
+    Option<AccountKeys>,
+) {
     let (mut chain, contract_address, keypairs) = initialize_chain_and_contract(generate_keys);
 
-    let mint_params = MintParams {
-        owner: ALICE_ADDR,
-    };
+    let mint_params = MintParams { owner: ALICE_ADDR };
 
     // Mint `TOKEN_0` to Alice.
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+            },
+        )
         .expect("Mint tokens");
 
     // Mint `TOKEN_1` to Alice.
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis3_nft.mint".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+            },
+        )
         .expect("Mint tokens");
 
     (chain, contract_address, update, keypairs)
@@ -957,28 +1153,39 @@ fn initialize_chain_and_contract(
     };
 
     let balance = AccountBalance {
-        total:  ACC_INITIAL_BALANCE,
+        total: ACC_INITIAL_BALANCE,
         staked: Amount::zero(),
         locked: Amount::zero(),
     };
 
     // Create some accounts on the chain.
-    chain.create_account(Account::new_with_keys(ALICE, balance, account_access_structure));
+    chain.create_account(Account::new_with_keys(
+        ALICE,
+        balance,
+        account_access_structure,
+    ));
     chain.create_account(Account::new(CHARLIE, ACC_INITIAL_BALANCE));
     chain.create_account(Account::new(BOB, ACC_INITIAL_BALANCE));
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Deploy valid module");
 
     // Initialize the auction contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_cis3_nft".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_cis3_nft".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize contract");
 
     (chain, init.contract_address, keypairs)

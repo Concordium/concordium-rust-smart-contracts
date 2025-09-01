@@ -50,7 +50,7 @@ pub type ContractTokenAmount = TokenAmountU8;
 #[derive(Serial, Deserial, SchemaType)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
-    pub owner:  Address,
+    pub owner: Address,
     /// A collection of tokens to mint.
     #[concordium(size_length = 1)]
     pub tokens: collections::BTreeSet<ContractTokenId>,
@@ -63,14 +63,14 @@ pub struct AddressState<S = StateApi> {
     /// The tokens owned by this address.
     pub owned_tokens: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
-    pub operators:    StateSet<Address, S>,
+    pub operators: StateSet<Address, S>,
 }
 
 impl AddressState {
     fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
             owned_tokens: state_builder.new_set(),
-            operators:    state_builder.new_set(),
+            operators: state_builder.new_set(),
         }
     }
 }
@@ -82,9 +82,9 @@ impl AddressState {
 #[concordium(state_parameter = "S")]
 pub struct State<S = StateApi> {
     /// The state for each address.
-    pub state:        StateMap<Address, AddressState<S>, S>,
+    pub state: StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    pub all_tokens:   StateSet<ContractTokenId, S>,
+    pub all_tokens: StateSet<ContractTokenId, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     pub implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -96,7 +96,7 @@ pub struct State<S = StateApi> {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SetImplementorsParams {
     /// The identifier for the standard.
-    pub id:           StandardIdentifierOwned,
+    pub id: StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     pub implementors: Vec<ContractAddress>,
 }
@@ -135,12 +135,16 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self {
+        Cis2Error::Custom(c)
+    }
 }
 
 // Functions for creating, updating and querying the contract state.
@@ -148,8 +152,8 @@ impl State {
     /// Creates a new state with no tokens.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
-            state:        state_builder.new_map(),
-            all_tokens:   state_builder.new_set(),
+            state: state_builder.new_map(),
+            all_tokens: state_builder.new_set(),
             implementors: state_builder.new_map(),
         }
     }
@@ -161,10 +165,15 @@ impl State {
         owner: &Address,
         state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
-        ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
+        ensure!(
+            self.all_tokens.insert(token),
+            CustomContractError::TokenIdAlreadyExists.into()
+        );
 
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         owner_state.owned_tokens.insert(token);
         Ok(())
     }
@@ -223,8 +232,10 @@ impl State {
         ensure_eq!(amount, 1.into(), ContractError::InsufficientFunds);
 
         {
-            let mut from_address_state =
-                self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
+            let mut from_address_state = self
+                .state
+                .get_mut(from)
+                .ok_or(ContractError::InsufficientFunds)?;
             // Find and remove the token from the owner, if nothing is removed, we know the
             // address did not own the token..
             let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
@@ -232,8 +243,10 @@ impl State {
         }
 
         // Add the token to the new owner.
-        let mut to_address_state =
-            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
+        let mut to_address_state = self
+            .state
+            .entry(*to)
+            .or_insert_with(|| AddressState::empty(state_builder));
         to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
@@ -247,8 +260,10 @@ impl State {
         operator: &Address,
         state_builder: &mut StateBuilder,
     ) {
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         owner_state.operators.insert(*operator);
     }
 
@@ -290,7 +305,10 @@ fn build_token_metadata_url(token_id: &ContractTokenId) -> String {
 // Contract functions
 
 /// Initialize contract instance with no token types initially.
-#[init(contract = "cis2_nft", event = "Cis2Event<ContractTokenId, ContractTokenAmount>")]
+#[init(
+    contract = "cis2_nft",
+    event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
+)]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(state_builder))
@@ -299,12 +317,12 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewAddressState {
     pub owned_tokens: Vec<ContractTokenId>,
-    pub operators:    Vec<Address>,
+    pub operators: Vec<Address>,
 }
 
 #[derive(Serialize, SchemaType, PartialEq, Eq, Debug)]
 pub struct ViewState {
-    pub state:      Vec<(Address, ViewAddressState)>,
+    pub state: Vec<(Address, ViewAddressState)>,
     pub all_tokens: Vec<ContractTokenId>,
 }
 
@@ -318,10 +336,13 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     for (k, a_state) in state.state.iter() {
         let owned_tokens = a_state.owned_tokens.iter().map(|x| *x).collect();
         let operators = a_state.operators.iter().map(|x| *x).collect();
-        inner_state.push((*k, ViewAddressState {
-            owned_tokens,
-            operators,
-        }));
+        inner_state.push((
+            *k,
+            ViewAddressState {
+                owned_tokens,
+                operators,
+            },
+        ));
     }
     let all_tokens = state.all_tokens.iter().map(|x| *x).collect();
 
@@ -384,13 +405,15 @@ fn contract_mint(
         }))?;
 
         // Metadata URL for the NFT.
-        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-            token_id,
-            metadata_url: MetadataUrl {
-                url:  build_token_metadata_url(&token_id),
-                hash: None,
+        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+            TokenMetadataEvent {
+                token_id,
+                metadata_url: MetadataUrl {
+                    url: build_token_metadata_url(&token_id),
+                    hash: None,
+                },
             },
-        }))?;
+        ))?;
     }
     Ok(())
 }
@@ -439,7 +462,10 @@ fn contract_transfer(
     {
         let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        ensure!(
+            from == sender || state.is_operator(&sender, &from),
+            ContractError::Unauthorized
+        );
         let to_address = to.address();
         // Update the contract state
         state.transfer(&token_id, amount, &from, &to_address, builder)?;
@@ -503,13 +529,15 @@ fn contract_update_operator(
         }
 
         // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+        logger.log(
+            &Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner: sender,
+                    operator: param.operator,
+                    update: param.update,
+                },
+            ),
+        )?;
     }
 
     Ok(())
@@ -606,10 +634,13 @@ fn contract_token_metadata(
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {
         // Check the token exists.
-        ensure!(host.state().contains_token(&token_id), ContractError::InvalidTokenId);
+        ensure!(
+            host.state().contains_token(&token_id),
+            ContractError::InvalidTokenId
+        );
 
         let metadata_url = MetadataUrl {
-            url:  build_token_metadata_url(&token_id),
+            url: build_token_metadata_url(&token_id),
             hash: None,
         };
         response.push(metadata_url);
@@ -665,10 +696,14 @@ fn contract_supports(
 )]
 fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_account(&ctx.owner()),
+        ContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
-    host.state_mut().set_implementors(params.id, params.implementors);
+    host.state_mut()
+        .set_implementors(params.id, params.implementors);
     Ok(())
 }

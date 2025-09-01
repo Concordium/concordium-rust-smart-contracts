@@ -16,7 +16,9 @@ struct InitParameter;
 
 /// Init function that creates a new contract.
 #[init(contract = "memo", parameter = "InitParameter")]
-fn memo_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> { Ok(()) }
+fn memo_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> {
+    Ok(())
+}
 
 const EXPECTED_PARAMETER_SIZE: u32 = 32;
 
@@ -30,7 +32,9 @@ enum CustomContractError {
 
 /// Mapping errors related to transfer invocations to CustomContractError.
 impl From<TransferError> for CustomContractError {
-    fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+    fn from(_te: TransferError) -> Self {
+        Self::InvokeTransferError
+    }
 }
 
 #[derive(Serialize)]

@@ -29,16 +29,23 @@ fn test() {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ACC_0, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ACC_0, module)
+        .expect("Deploy valid module");
 
     // Initialize the contract.
     let initialization = chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_fib".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_fib".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Init should succeed");
     let contract_address = initialization.contract_address;
 
@@ -50,11 +57,10 @@ fn test() {
             Address::Account(ACC_0),
             Energy::from(50000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.receive".to_string()),
-                message:      OwnedParameter::from_serial(&7u64)
-                    .expect("Parameter has valid size."),
+                message: OwnedParameter::from_serial(&7u64).expect("Parameter has valid size."),
             },
         )
         .expect("Calling receive");
@@ -69,10 +75,10 @@ fn test() {
             Address::Account(ACC_0),
             Energy::from(50000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.view".to_string()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Calling receive");

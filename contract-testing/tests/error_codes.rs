@@ -26,10 +26,10 @@ fn test_error_codes() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_caller".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -56,15 +56,18 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_0)
+                message: OwnedParameter::from_serial(&parameter_0)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_0.return_value, u64::to_le_bytes(0x0100_ffff_ffef));
+    assert_eq!(
+        res_update_0.return_value,
+        u64::to_le_bytes(0x0100_ffff_ffef)
+    );
 
     // Invoke an entrypoint that tries to transfer an amount that it does not have
     // via contract invoke. The expected return code is
@@ -87,15 +90,18 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_1)
+                message: OwnedParameter::from_serial(&parameter_1)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_1.return_value, u64::to_le_bytes(0x0001_0000_0000));
+    assert_eq!(
+        res_update_1.return_value,
+        u64::to_le_bytes(0x0001_0000_0000)
+    );
 
     // Invoke an entrypoint that traps
     // The expected return code is
@@ -116,15 +122,18 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_2)
+                message: OwnedParameter::from_serial(&parameter_2)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_2.return_value, u64::to_le_bytes(0x0002_0000_0000));
+    assert_eq!(
+        res_update_2.return_value,
+        u64::to_le_bytes(0x0002_0000_0000)
+    );
 
     // Invoke an entrypoint that tries to invoke a non-existing contract.
     // The expected return code is
@@ -147,15 +156,18 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_3)
+                message: OwnedParameter::from_serial(&parameter_3)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_3.return_value, u64::to_le_bytes(0x0003_0000_0000));
+    assert_eq!(
+        res_update_3.return_value,
+        u64::to_le_bytes(0x0003_0000_0000)
+    );
 
     // Invoke an entrypoint that tries to invoke a non-existing entrypoint.
     // The expected return code is
@@ -178,15 +190,18 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_4)
+                message: OwnedParameter::from_serial(&parameter_4)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_4.return_value, u64::to_le_bytes(0x0004_0000_0000));
+    assert_eq!(
+        res_update_4.return_value,
+        u64::to_le_bytes(0x0004_0000_0000)
+    );
 
     // Test 5 is omitted as it uses a v0 contract which is not supported in this
     // library.
@@ -212,13 +227,16 @@ fn test_error_codes() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("caller.call".into()),
-                message:      OwnedParameter::from_serial(&parameter_6)
+                message: OwnedParameter::from_serial(&parameter_6)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
-    assert_eq!(res_update_6.return_value, u64::to_le_bytes(0x0006_0000_0000));
+    assert_eq!(
+        res_update_6.return_value,
+        u64::to_le_bytes(0x0006_0000_0000)
+    );
 }

@@ -106,16 +106,16 @@ pub struct TestPolicy {
     /// Current position in the vector of policies. Used to implement
     /// `next_item`.
     position: usize,
-    policy:   Policy<Rc<[(AttributeTag, AttributeValue)]>>,
+    policy: Policy<Rc<[(AttributeTag, AttributeValue)]>>,
 }
 
 impl TestPolicy {
     fn new(policy: OwnedPolicy) -> Self {
         let policy = Policy {
             identity_provider: policy.identity_provider,
-            created_at:        policy.created_at,
-            valid_to:          policy.valid_to,
-            items:             policy.items.into(),
+            created_at: policy.created_at,
+            valid_to: policy.valid_to,
+            items: policy.items.into(),
         };
         Self {
             position: 0,
@@ -134,12 +134,12 @@ impl TestPolicy {
 #[derive(Default, Clone)]
 #[doc(hidden)]
 pub struct TestCommonData<'a> {
-    pub(crate) metadata:  TestChainMeta,
+    pub(crate) metadata: TestChainMeta,
     pub(crate) parameter: Option<&'a [u8]>,
     /// Policy of the creator. We keep the `Option` wrapper
     /// in order that the user can be warned that they are using a policy.
     /// Thus there is a distinction between `Some(Vec::new())` and `None`.
-    pub(crate) policies:  Option<Vec<TestPolicy>>,
+    pub(crate) policies: Option<Vec<TestPolicy>>,
 }
 
 /// Context used for testing. The type parameter C is used to determine whether
@@ -296,10 +296,10 @@ pub type TestReceiveContext<'a> = TestContext<'a, TestReceiveOnlyData>;
 #[derive(Default)]
 #[doc(hidden)]
 pub struct TestReceiveOnlyData {
-    pub(crate) invoker:          Option<AccountAddress>,
-    pub(crate) self_address:     Option<ContractAddress>,
-    pub(crate) sender:           Option<Address>,
-    pub(crate) owner:            Option<AccountAddress>,
+    pub(crate) invoker: Option<AccountAddress>,
+    pub(crate) self_address: Option<ContractAddress>,
+    pub(crate) sender: Option<Address>,
+    pub(crate) owner: Option<AccountAddress>,
     pub(crate) named_entrypoint: Option<OwnedEntrypointName>,
 }
 
@@ -320,22 +320,30 @@ impl<'a> TestParameterCursor<'a> {
 
 impl AsRef<[u8]> for TestParameterCursor<'_> {
     #[inline(always)]
-    fn as_ref(&self) -> &[u8] { self.cursor.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.cursor.as_ref()
+    }
 }
 
 impl Seek for TestParameterCursor<'_> {
     type Err = ();
 
     #[inline(always)]
-    fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(seek) }
+    fn seek(&mut self, seek: SeekFrom) -> Result<u32, Self::Err> {
+        self.cursor.seek(seek)
+    }
 
     #[inline(always)]
-    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
+    fn cursor_position(&self) -> u32 {
+        self.cursor.cursor_position()
+    }
 }
 
 impl Read for TestParameterCursor<'_> {
     #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> { self.cursor.read(buf) }
+    fn read(&mut self, buf: &mut [u8]) -> ParseResult<usize> {
+        self.cursor.read(buf)
+    }
 }
 
 impl HasParameter for TestParameterCursor<'_> {}
@@ -344,7 +352,9 @@ impl HasParameter for TestParameterCursor<'_> {}
 impl TestChainMeta {
     /// Create an `TestChainMeta` where every field is unset, and getting any of
     /// the fields will result in [`fail!`](../macro.fail.html).
-    pub fn empty() -> Self { Default::default() }
+    pub fn empty() -> Self {
+        Default::default()
+    }
 
     /// Set the block slot time
     pub fn set_slot_time(&mut self, value: SlotTime) -> &mut Self {
@@ -381,7 +391,9 @@ impl<'a, C> TestContext<'a, C> {
     }
 
     /// Get a mutable reference to the chain meta data placeholder
-    pub fn metadata_mut(&mut self) -> &mut TestChainMeta { &mut self.common.metadata }
+    pub fn metadata_mut(&mut self) -> &mut TestChainMeta {
+        &mut self.common.metadata
+    }
 
     /// Set the metadata block slot time
     pub fn set_metadata_slot_time(&mut self, value: SlotTime) -> &mut Self {
@@ -393,7 +405,9 @@ impl<'a, C> TestContext<'a, C> {
 impl TestInitContext<'_> {
     /// Create an `TestInitContext` where every field is unset, and getting any
     /// of the fields will result in [`fail!`](../macro.fail.html).
-    pub fn empty() -> Self { Default::default() }
+    pub fn empty() -> Self {
+        Default::default()
+    }
 
     /// Set `init_origin` in the `TestInitContext`
     pub fn set_init_origin(&mut self, value: AccountAddress) -> &mut Self {
@@ -405,7 +419,9 @@ impl TestInitContext<'_> {
 impl TestReceiveContext<'_> {
     /// Create a `TestReceiveContext` where every field is unset, and getting
     /// any of the fields will result in [`fail!`](../macro.fail.html).
-    pub fn empty() -> Self { Default::default() }
+    pub fn empty() -> Self {
+        Default::default()
+    }
 
     pub fn set_invoker(&mut self, value: AccountAddress) -> &mut Self {
         self.custom.invoker = Some(value);
@@ -447,22 +463,30 @@ fn unwrap_ctx_field<A>(opt: Option<A>, name: &str) -> A {
 
 // Getters for testing-context
 impl HasChainMetadata for TestChainMeta {
-    fn slot_time(&self) -> SlotTime { unwrap_ctx_field(self.slot_time, "metadata.slot_time") }
+    fn slot_time(&self) -> SlotTime {
+        unwrap_ctx_field(self.slot_time, "metadata.slot_time")
+    }
 }
 
 pub struct TestIterator {
-    items:    Rc<[(AttributeTag, AttributeValue)]>,
+    items: Rc<[(AttributeTag, AttributeValue)]>,
     position: usize,
 }
 
 impl HasPolicy for TestPolicy {
     type Iterator = TestIterator;
 
-    fn identity_provider(&self) -> IdentityProvider { self.policy.identity_provider }
+    fn identity_provider(&self) -> IdentityProvider {
+        self.policy.identity_provider
+    }
 
-    fn created_at(&self) -> Timestamp { self.policy.created_at }
+    fn created_at(&self) -> Timestamp {
+        self.policy.created_at
+    }
 
-    fn valid_to(&self) -> Timestamp { self.policy.valid_to }
+    fn valid_to(&self) -> Timestamp {
+        self.policy.valid_to
+    }
 
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
         if let Some(item) = self.policy.items.get(self.position) {
@@ -477,7 +501,7 @@ impl HasPolicy for TestPolicy {
 
     fn attributes(&self) -> Self::Iterator {
         TestIterator {
-            items:    self.policy.items.clone(),
+            items: self.policy.items.clone(),
             position: 0,
         }
     }
@@ -503,7 +527,9 @@ impl<'a, C> HasCommonData for TestContext<'a, C> {
         TestParameterCursor::new(unwrap_ctx_field(self.common.parameter, "parameter"))
     }
 
-    fn metadata(&self) -> &Self::MetadataType { &self.common.metadata }
+    fn metadata(&self) -> &Self::MetadataType {
+        &self.common.metadata
+    }
 
     fn policies(&self) -> Self::PolicyIteratorType {
         unwrap_ctx_field(self.common.policies.clone(), "policies").into_iter()
@@ -513,7 +539,9 @@ impl<'a, C> HasCommonData for TestContext<'a, C> {
 impl HasInitContext for TestInitContext<'_> {
     type InitData = ();
 
-    fn open(_data: Self::InitData) -> Self { TestInitContext::default() }
+    fn open(_data: Self::InitData) -> Self {
+        TestInitContext::default()
+    }
 
     fn init_origin(&self) -> AccountAddress {
         unwrap_ctx_field(self.custom.init_origin, "init_origin")
@@ -523,17 +551,25 @@ impl HasInitContext for TestInitContext<'_> {
 impl HasReceiveContext for TestReceiveContext<'_> {
     type ReceiveData = ();
 
-    fn open(_data: Self::ReceiveData) -> Self { TestReceiveContext::default() }
+    fn open(_data: Self::ReceiveData) -> Self {
+        TestReceiveContext::default()
+    }
 
-    fn invoker(&self) -> AccountAddress { unwrap_ctx_field(self.custom.invoker, "invoker") }
+    fn invoker(&self) -> AccountAddress {
+        unwrap_ctx_field(self.custom.invoker, "invoker")
+    }
 
     fn self_address(&self) -> ContractAddress {
         unwrap_ctx_field(self.custom.self_address, "self_address")
     }
 
-    fn sender(&self) -> Address { unwrap_ctx_field(self.custom.sender, "sender") }
+    fn sender(&self) -> Address {
+        unwrap_ctx_field(self.custom.sender, "sender")
+    }
 
-    fn owner(&self) -> AccountAddress { unwrap_ctx_field(self.custom.owner, "owner") }
+    fn owner(&self) -> AccountAddress {
+        unwrap_ctx_field(self.custom.owner, "owner")
+    }
 
     fn named_entrypoint(&self) -> OwnedEntrypointName {
         unwrap_ctx_field(self.custom.named_entrypoint.clone(), "named_entrypoint")
@@ -548,9 +584,7 @@ pub struct TestLogger {
 
 impl HasLogger for TestLogger {
     fn init() -> Self {
-        Self {
-            logs: Vec::new(),
-        }
+        Self { logs: Vec::new() }
     }
 
     fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError> {
@@ -607,15 +641,21 @@ pub enum TestStateError {
 }
 
 impl Default for TestStateError {
-    fn default() -> Self { Self::Default }
+    fn default() -> Self {
+        Self::Default
+    }
 }
 
 impl From<num::TryFromIntError> for TestStateError {
-    fn from(_: num::TryFromIntError) -> Self { TestStateError::Overflow }
+    fn from(_: num::TryFromIntError) -> Self {
+        TestStateError::Overflow
+    }
 }
 
 impl From<TestStateError> for ParseError {
-    fn from(_: TestStateError) -> Self { ParseError::default() }
+    fn from(_: TestStateError) -> Self {
+        ParseError::default()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -631,10 +671,14 @@ pub enum TestStateEntryData {
 
 impl TestStateEntryData {
     /// Create a new TestStateEntryData::EntryExists with the data given.
-    pub(crate) fn new_from(data: Vec<u8>) -> Self { Self::EntryExists(data) }
+    pub(crate) fn new_from(data: Vec<u8>) -> Self {
+        Self::EntryExists(data)
+    }
 
     /// Create a new TestStateEntryData::EntryExists with a new Vec.
-    pub(crate) fn new() -> Self { Self::EntryExists(Vec::new()) }
+    pub(crate) fn new() -> Self {
+        Self::EntryExists(Vec::new())
+    }
 
     /// Tries to get the actual data. Returns an error if the entry has been
     /// deleted.
@@ -656,14 +700,16 @@ impl TestStateEntryData {
 }
 
 impl From<Vec<u8>> for TestStateEntryData {
-    fn from(data: Vec<u8>) -> Self { Self::new_from(data) }
+    fn from(data: Vec<u8>) -> Self {
+        Self::new_from(data)
+    }
 }
 
 #[derive(Debug)]
 /// A state entry used for testing. Implements [`HasStateEntry`].
 pub struct TestStateEntry {
-    pub(crate) cursor:         Cursor<Rc<RefCell<TestStateEntryData>>>,
-    pub(crate) key:            Vec<u8>,
+    pub(crate) cursor: Cursor<Rc<RefCell<TestStateEntryData>>>,
+    pub(crate) key: Vec<u8>,
     pub(crate) state_entry_id: StateEntryId,
 }
 
@@ -695,7 +741,9 @@ impl HasStateApi for TestStateApi {
         self.trie.borrow_mut().create_entry(key)
     }
 
-    fn lookup_entry(&self, key: &[u8]) -> Option<Self::EntryType> { self.trie.borrow().lookup(key) }
+    fn lookup_entry(&self, key: &[u8]) -> Option<Self::EntryType> {
+        self.trie.borrow().lookup(key)
+    }
 
     fn delete_entry(&mut self, entry: Self::EntryType) -> Result<(), StateError> {
         self.trie.borrow_mut().delete_entry(entry)
@@ -743,7 +791,9 @@ impl TestStateApi {
 }
 
 impl Default for TestStateApi {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // Type alias for [`StateBuilder`], which fixes the [`HasHost`] type to
@@ -752,7 +802,9 @@ pub type TestStateBuilder = StateBuilder<TestStateApi>;
 
 impl TestStateBuilder {
     /// Create a new [`Self`] with an empty [`TestStateApi`].
-    pub fn new() -> Self { Self::open(TestStateApi::new()) }
+    pub fn new() -> Self {
+        Self::open(TestStateApi::new())
+    }
 }
 
 /// A closure used in tests for mocking calls to
@@ -785,20 +837,22 @@ type MockFnHash<T> = Box<dyn FnMut(&[u8]) -> T>;
 ///    "crypto-primitives" feature.
 pub struct TestCryptoPrimitives {
     #[cfg(not(feature = "crypto-primitives"))]
-    verify_ed25519_signature_mock:         RefCell<Option<MockFnVerifyEd25519>>,
+    verify_ed25519_signature_mock: RefCell<Option<MockFnVerifyEd25519>>,
     #[cfg(not(feature = "crypto-primitives"))]
     verify_ecdsa_secp256k1_signature_mock: RefCell<Option<MockFnEcdsaSecp256k1>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_sha2_256_mock:                    RefCell<Option<MockFnHash<HashSha2256>>>,
+    hash_sha2_256_mock: RefCell<Option<MockFnHash<HashSha2256>>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_sha3_256_mock:                    RefCell<Option<MockFnHash<HashSha3256>>>,
+    hash_sha3_256_mock: RefCell<Option<MockFnHash<HashSha3256>>>,
     #[cfg(not(feature = "crypto-primitives"))]
-    hash_keccak_256_mock:                  RefCell<Option<MockFnHash<HashKeccak256>>>,
+    hash_keccak_256_mock: RefCell<Option<MockFnHash<HashKeccak256>>>,
 }
 
 /// Create a new [`TestCryptoPrimitives`], for which no mocks has been set up.
 impl Default for TestCryptoPrimitives {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestCryptoPrimitives {
@@ -807,11 +861,11 @@ impl TestCryptoPrimitives {
     pub fn new() -> Self {
         #[cfg(not(feature = "crypto-primitives"))]
         return Self {
-            verify_ed25519_signature_mock:         RefCell::new(None),
+            verify_ed25519_signature_mock: RefCell::new(None),
             verify_ecdsa_secp256k1_signature_mock: RefCell::new(None),
-            hash_sha2_256_mock:                    RefCell::new(None),
-            hash_sha3_256_mock:                    RefCell::new(None),
-            hash_keccak_256_mock:                  RefCell::new(None),
+            hash_sha2_256_mock: RefCell::new(None),
+            hash_sha3_256_mock: RefCell::new(None),
+            hash_keccak_256_mock: RefCell::new(None),
         };
         #[cfg(feature = "crypto-primitives")]
         Self {}
@@ -827,7 +881,8 @@ impl TestCryptoPrimitives {
     /// [link]: HasCryptoPrimitives::verify_ed25519_signature
     pub fn setup_verify_ed25519_signature_mock<F>(&self, mock: F)
     where
-        F: FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool + 'static, {
+        F: FnMut(PublicKeyEd25519, SignatureEd25519, &[u8]) -> bool + 'static,
+    {
         *self.verify_ed25519_signature_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -855,7 +910,8 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha2_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> HashSha2256 + 'static, {
+        F: FnMut(&[u8]) -> HashSha2256 + 'static,
+    {
         *self.hash_sha2_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -868,7 +924,8 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_sha3_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> HashSha3256 + 'static, {
+        F: FnMut(&[u8]) -> HashSha3256 + 'static,
+    {
         *self.hash_sha3_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -881,7 +938,8 @@ impl TestCryptoPrimitives {
     /// [`TestCryptoPrimitives`].
     pub fn setup_hash_keccak_256_mock<F>(&self, mock: F)
     where
-        F: FnMut(&[u8]) -> HashKeccak256 + 'static, {
+        F: FnMut(&[u8]) -> HashKeccak256 + 'static,
+    {
         *self.hash_keccak_256_mock.borrow_mut() = Some(Box::new(mock));
     }
 
@@ -941,7 +999,9 @@ impl HasCryptoPrimitives for TestCryptoPrimitives {
             match (signature, public_key, message_hash) {
                 (Ok(ref signature), Ok(public_key), Ok(message_hash)) => {
                     let verifier = secp256k1::Secp256k1::verification_only();
-                    verifier.verify_ecdsa(&message_hash, signature, &public_key).is_ok()
+                    verifier
+                        .verify_ecdsa(&message_hash, signature, &public_key)
+                        .is_ok()
                 }
                 _ => false,
             }
@@ -1011,7 +1071,9 @@ impl HasStateEntry for TestStateEntry {
     type StateEntryKey = Vec<u8>;
 
     #[inline(always)]
-    fn move_to_start(&mut self) { self.cursor.offset = 0; }
+    fn move_to_start(&mut self) {
+        self.cursor.offset = 0;
+    }
 
     /// Get the size of the data in the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
@@ -1030,13 +1092,19 @@ impl HasStateEntry for TestStateEntry {
     }
 
     /// Get a reference to the key.
-    fn get_key(&self) -> &[u8] { &self.key }
+    fn get_key(&self) -> &[u8] {
+        &self.key
+    }
 
     /// Resize the entry.
     /// Returns an error if the entry has been deleted with delete_prefix.
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
         let new_size = new_size as usize;
-        self.cursor.data.borrow_mut().data_mut()?.resize(new_size, 0);
+        self.cursor
+            .data
+            .borrow_mut()
+            .data_mut()?
+            .resize(new_size, 0);
         if self.cursor.offset > new_size {
             self.cursor.offset = new_size;
         }
@@ -1136,11 +1204,15 @@ impl Seek for TestStateEntry {
     }
 
     #[inline(always)]
-    fn cursor_position(&self) -> u32 { self.cursor.offset as u32 }
+    fn cursor_position(&self) -> u32 {
+        self.cursor.offset as u32
+    }
 }
 
 impl HasCallResponse for Cursor<Vec<u8>> {
-    fn size(&self) -> u32 { self.data.len() as u32 }
+    fn size(&self) -> u32 {
+        self.data.len() as u32
+    }
 }
 
 /// Holds a function used for mocking invocations of contracts with
@@ -1181,7 +1253,8 @@ impl<State> MockFn<State> {
     pub fn new<R, F>(mock_fn_return: F) -> Self
     where
         R: Serial,
-        F: Fn(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<R> + 'static, {
+        F: Fn(Parameter, Amount, &mut Amount, &mut State) -> CallContractResult<R> + 'static,
+    {
         let mock_fn = Box::new(
             move |parameter: Parameter, amount: Amount, balance: &mut Amount, state: &mut State| {
                 match mock_fn_return(parameter, amount, balance, state) {
@@ -1214,9 +1287,7 @@ impl<State> MockFn<State> {
                 }
             },
         );
-        Self {
-            f: mock_fn,
-        }
+        Self { f: mock_fn }
     }
 
     /// A helper that assumes that a V1 contract is invoked. This means that the
@@ -1230,7 +1301,8 @@ impl<State> MockFn<State> {
                 &mut Amount,
                 &mut State,
             ) -> Result<(bool, R), CallContractError<R>>
-            + 'static, {
+            + 'static,
+    {
         Self::new(move |p, a, b, s| {
             mock_fn_return(p, a, b, s).map(|(modified, rv)| (modified, Some(rv)))
         })
@@ -1243,16 +1315,19 @@ impl<State> MockFn<State> {
     where
         R: Serial,
         F: Fn(Parameter, Amount, &mut Amount, &mut State) -> Result<bool, CallContractError<R>>
-            + 'static, {
+            + 'static,
+    {
         Self::new(move |p, a, b, s| mock_fn_return(p, a, b, s).map(|modified| (modified, None)))
     }
 
     /// Create a simple mock function that returns `Ok` with the same
     /// value every time, and signals the state is not changed.
     pub fn returning_ok<R: Clone + Serial + 'static>(return_value: R) -> Self {
-        Self::new(move |_parameter, _amount, _balance, _state| -> CallContractResult<R> {
-            Ok((false, Some(return_value.clone())))
-        })
+        Self::new(
+            move |_parameter, _amount, _balance, _state| -> CallContractResult<R> {
+                Ok((false, Some(return_value.clone())))
+            },
+        )
     }
 
     /// Create a simple mock function that returns `Err` with same error every
@@ -1290,30 +1365,30 @@ pub struct TestHost<State> {
     // MockFn cloneable, but this seemed like the easiest option.
     mocking_fns: Rc<RefCell<MockFnMap<State>>>,
     /// Transfers the contract has made during its execution.
-    transfers:               RefCell<Vec<(AccountAddress, Amount)>>,
+    transfers: RefCell<Vec<(AccountAddress, Amount)>>,
     /// The contract balance. This is updated during execution based on contract
     /// invocations, e.g., a successful transfer from the contract decreases it.
-    contract_balance:        RefCell<Amount>,
+    contract_balance: RefCell<Amount>,
     /// The address of the instance. This is used when querying its own balance.
-    contract_address:        Option<ContractAddress>,
+    contract_address: Option<ContractAddress>,
     /// Map from module references to the mocked results of upgrading to this
     /// particular module.
-    mocking_upgrades:        RefCell<MockUpgradeMap>,
+    mocking_upgrades: RefCell<MockUpgradeMap>,
     /// StateBuilder for the state.
-    state_builder:           StateBuilder<TestStateApi>,
+    state_builder: StateBuilder<TestStateApi>,
     /// State of the instance.
-    state:                   State,
+    state: State,
     /// Account balances, is used when querying the balance of an account.
-    query_account_balances:  RefCell<BTreeMap<AccountAddress, AccountBalance>>,
+    query_account_balances: RefCell<BTreeMap<AccountAddress, AccountBalance>>,
     /// Contract balances, is used when querying the balance of a contract.
     query_contract_balances: RefCell<BTreeMap<ContractAddress, Amount>>,
     /// Current exchange rates, is used when querying the exchange rates.
-    query_exchange_rates:    Option<ExchangeRates>,
+    query_exchange_rates: Option<ExchangeRates>,
     /// List of accounts that will cause a contract invocation to fail.
-    missing_accounts:        BTreeSet<AccountAddress>,
+    missing_accounts: BTreeSet<AccountAddress>,
     /// List of contracts that will cause a query for contract balance to result
     /// in a missing contract error.
-    missing_contracts:       BTreeSet<ContractAddress>,
+    missing_contracts: BTreeSet<ContractAddress>,
 }
 
 impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHost<State> {
@@ -1466,8 +1541,12 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
         };
 
         // Invoke the handler.
-        let (state_modified, res) =
-            (handler.f)(parameter, amount, &mut self.contract_balance.borrow_mut(), &mut state)?;
+        let (state_modified, res) = (handler.f)(
+            parameter,
+            amount,
+            &mut self.contract_balance.borrow_mut(),
+            &mut state,
+        )?;
         if state_modified {
             fail!("State modified in a read-only contract call.");
         }
@@ -1532,7 +1611,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
             .state_api
             .lookup_entry(&[])
             .expect_report("commit_state: Cannot lookup state root.");
-        self.state.serial(&mut root_entry).expect_report("commit_state: Cannot serialize state.");
+        self.state
+            .serial(&mut root_entry)
+            .expect_report("commit_state: Cannot serialize state.");
         let new_state_size = root_entry
             .size()
             .expect_report("commit_state: Cannot get state size. Entry was deleted.");
@@ -1542,17 +1623,25 @@ impl<State: Serial + DeserialWithState<TestStateApi>> HasHost<State> for TestHos
     }
 
     /// Get an immutable reference to the contract state.
-    fn state(&self) -> &State { &self.state }
+    fn state(&self) -> &State {
+        &self.state
+    }
 
     /// Get a mutable reference to the contract state.
-    fn state_mut(&mut self) -> &mut State { &mut self.state }
+    fn state_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
 
     /// Get the contract balance.
     /// This can be set with `set_self_balance` and defaults to 0.
-    fn self_balance(&self) -> Amount { *self.contract_balance.borrow() }
+    fn self_balance(&self) -> Amount {
+        *self.contract_balance.borrow()
+    }
 
     /// Get the state builder.
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> {
+        &mut self.state_builder
+    }
 
     /// Get the state and the state builder.
     fn state_and_builder(&mut self) -> (&mut State, &mut StateBuilder<Self::StateApiType>) {
@@ -1608,7 +1697,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
             .state_api
             .create_entry(&[])
             .expect_report("TestHost::new: Could not store state root.");
-        state.serial(&mut root_entry).expect_report("TestHost::new: cannot serialize state.");
+        state
+            .serial(&mut root_entry)
+            .expect_report("TestHost::new: cannot serialize state.");
         Self {
             mocking_fns: Rc::new(RefCell::new(BTreeMap::new())),
             transfers: RefCell::new(Vec::new()),
@@ -1626,7 +1717,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
     }
 
     /// Retrieve a reference to the underlying state builder.
-    pub fn state_builder(&mut self) -> &mut StateBuilder<TestStateApi> { &mut self.state_builder }
+    pub fn state_builder(&mut self) -> &mut StateBuilder<TestStateApi> {
+        &mut self.state_builder
+    }
 
     /// Set up a mock entrypoint for handling calls to `invoke_contract`.
     ///
@@ -1692,7 +1785,12 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         if self.missing_contracts.contains(&address) {
             fail!("The self_address is marked as a missing contract address.")
         }
-        if self.query_contract_balances.borrow().get(&address).is_some() {
+        if self
+            .query_contract_balances
+            .borrow()
+            .get(&address)
+            .is_some()
+        {
             fail!(
                 "The self_address cannot be setup as a query contract balance. Either use another \
                  address as self_address or another address in 'setup_query_contract_balance'."
@@ -1720,7 +1818,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
                  because the address is marked as a missing account."
             )
         }
-        self.query_account_balances.borrow_mut().insert(address, account_balance);
+        self.query_account_balances
+            .borrow_mut()
+            .insert(address, account_balance);
     }
 
     /// Setup a balance for a contract.
@@ -1744,7 +1844,9 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
                  'set_self_balance' instead."
             )
         }
-        self.query_contract_balances.borrow_mut().insert(address, balance);
+        self.query_contract_balances
+            .borrow_mut()
+            .insert(address, balance);
     }
 
     /// Set the current exchange rates.
@@ -1771,13 +1873,15 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         self.transfers
             .borrow()
             .iter()
-            .filter_map(|(acc, amount)| {
-                if *acc == account {
-                    Some(*amount)
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |(acc, amount)| {
+                    if *acc == account {
+                        Some(*amount)
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect()
     }
 
@@ -1807,7 +1911,12 @@ impl<State: Serial + DeserialWithState<TestStateApi>> TestHost<State> {
         if self.contract_address == Some(contract) {
             fail!("The address of the instance cannot be one of the missing contracts.")
         }
-        if self.query_contract_balances.borrow().get(&contract).is_some() {
+        if self
+            .query_contract_balances
+            .borrow()
+            .get(&contract)
+            .is_some()
+        {
             fail!(
                 "The contract address cannot be setup as a missing contract. It is already setup \
                  for a query contract balance."
@@ -1862,9 +1971,17 @@ impl<State: DeserialWithState<TestStateApi>> TestHost<State> {
     }
 }
 
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 use getrandom::register_custom_getrandom;
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 /// A custom function for generating random numbers.
 /// There is no Wasm primitive to sample random numbers and this function
 /// redirects calls to the `get_random` primitive (host function), which is
@@ -1877,7 +1994,11 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     Ok(())
 }
 
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 // When compiling to Wasm, we register our own custom random number generation
 // function, so all the calls, that depend on `getrandom` (like
 // `from_entropy`) will call our function instead.
@@ -1901,7 +2022,9 @@ const QUICKCHECK_MAX_WITH_DISCARDED_TESTS: u64 = 100_000_000;
 ///
 /// The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    let mut qc = QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS);
+    let mut qc = QuickCheck::new()
+        .tests(num_tests)
+        .max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS);
     let res = qc.quicktest(f);
     match res {
         Ok(n_tests_passed) => {
@@ -1924,5 +2047,8 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 /// A wrapper for QuickCheck test runner for non-wasm targets.
 // The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS).quickcheck(f)
+    QuickCheck::new()
+        .tests(num_tests)
+        .max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS)
+        .quickcheck(f)
 }

@@ -22,37 +22,54 @@ fn test_outside_signature_check() {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists.");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Module deploys.");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Module deploys.");
 
     // Initialize the signature verifier contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10_000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_signature-verifier".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10_000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_signature-verifier".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize signature verifier contract");
 
     // Construct a parameter with an invalid signature.
     let parameter_invalid = VerificationParameter {
         public_key: PublicKeyEd25519([0; 32]),
-        signature:  SignatureEd25519([1; 64]),
-        message:    vec![2; 100],
+        signature: SignatureEd25519([1; 64]),
+        message: vec![2; 100],
     };
 
     // Call the contract with the invalid signature.
     let update_invalid = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      init.contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("signature-verifier.verify".to_string()),
-            message:      OwnedParameter::from_serial(&parameter_invalid)
-                .expect("Parameter has valid size."),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10_000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "signature-verifier.verify".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&parameter_invalid)
+                    .expect("Parameter has valid size."),
+            },
+        )
         .expect("Call signature verifier contract with an invalid signature.");
     // Check that the signature does NOT verify.
-    let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
+    let rv: bool = update_invalid
+        .parse_return_value()
+        .expect("Deserializing bool");
     assert!(!rv, "Signature verification should fail.");
 
     // Construct a parameter with a valid signature.
@@ -64,13 +81,21 @@ fn test_outside_signature_check() {
 
     // Call the contract with the valid signature.
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      init.contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("signature-verifier.verify".to_string()),
-            message:      OwnedParameter::from_serial(&parameter_valid)
-                .expect("Parameter has valid size."),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10_000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "signature-verifier.verify".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&parameter_valid)
+                    .expect("Parameter has valid size."),
+            },
+        )
         .expect("Call signature verifier contract with a valid signature.");
     // Check that the signature verifies.
     let rv: bool = update.parse_return_value().expect("Deserializing bool");
@@ -88,16 +113,23 @@ fn test_inside_signature_check() {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists.");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Module deploys.");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Module deploys.");
 
     // Initialize the signature verifier contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10_000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_signature-verifier".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10_000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_signature-verifier".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize signature verifier contract");
 
     use ed25519_dalek::{Signer, SigningKey};
@@ -113,41 +145,59 @@ fn test_inside_signature_check() {
     // Construct a parameter with an invalid signature.
     let parameter_invalid = VerificationParameter {
         public_key: PublicKeyEd25519(verifying_key.to_bytes()),
-        signature:  SignatureEd25519(signature.to_bytes()),
-        message:    b"wrong_message".to_vec(),
+        signature: SignatureEd25519(signature.to_bytes()),
+        message: b"wrong_message".to_vec(),
     };
 
     // Call the contract with the invalid signature.
     let update_invalid = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      init.contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("signature-verifier.verify".to_string()),
-            message:      OwnedParameter::from_serial(&parameter_invalid)
-                .expect("Parameter has valid size."),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10_000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "signature-verifier.verify".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&parameter_invalid)
+                    .expect("Parameter has valid size."),
+            },
+        )
         .expect("Call signature verifier contract with an invalid signature.");
 
     // Check that the signature does NOT verify.
-    let rv: bool = update_invalid.parse_return_value().expect("Deserializing bool");
+    let rv: bool = update_invalid
+        .parse_return_value()
+        .expect("Deserializing bool");
     assert!(!rv, "Signature verification should fail.");
 
     // Construct a parameter with a valid signature.
     let parameter_valid = VerificationParameter {
         public_key: PublicKeyEd25519(verifying_key.to_bytes()),
-        signature:  SignatureEd25519(signature.to_bytes()),
-        message:    message.to_vec(),
+        signature: SignatureEd25519(signature.to_bytes()),
+        message: message.to_vec(),
     };
 
     // Call the contract with the valid signature.
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10_000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            address:      init.contract_address,
-            receive_name: OwnedReceiveName::new_unchecked("signature-verifier.verify".to_string()),
-            message:      OwnedParameter::from_serial(&parameter_valid)
-                .expect("Parameter has valid size."),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10_000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                address: init.contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "signature-verifier.verify".to_string(),
+                ),
+                message: OwnedParameter::from_serial(&parameter_valid)
+                    .expect("Parameter has valid size."),
+            },
+        )
         .expect("Call signature verifier contract with a valid signature.");
 
     // Check that the signature verifies.

@@ -123,7 +123,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
         K: Serialize + Ord,
-        V: Serial + DeserialWithState<StateApi>, {
+        V: Serial + DeserialWithState<StateApi>,
+    {
         let old_value_option = self.key_value.insert_borrowed(&key, value);
         if old_value_option.is_none() && !self.key_order.insert(key) {
             // Inconsistency between the map and ordered_set.
@@ -144,7 +145,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn remove_and_get(&mut self, key: &K) -> Option<V>
     where
         K: Serialize + Ord,
-        V: Serial + DeserialWithState<StateApi> + Deletable, {
+        V: Serial + DeserialWithState<StateApi> + Deletable,
+    {
         let v = self.key_value.remove_and_get(key);
         if v.is_some() && !self.key_order.remove(key) {
             // Inconsistency between the map and ordered_set.
@@ -158,7 +160,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn remove(&mut self, key: &K)
     where
         K: Serialize + Ord,
-        V: Serial + DeserialWithState<StateApi> + Deletable, {
+        V: Serial + DeserialWithState<StateApi> + Deletable,
+    {
         if self.key_order.remove(key) {
             self.key_value.remove(key);
         }
@@ -168,7 +171,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn get(&self, key: &K) -> Option<StateRef<V>>
     where
         K: Serialize,
-        V: Serial + DeserialWithState<StateApi>, {
+        V: Serial + DeserialWithState<StateApi>,
+    {
         // Minor optimization in the case of the empty collection. Since the length is
         // tracked by the ordered set, we can return early, saving a key lookup.
         if self.key_order.is_empty() {
@@ -182,7 +186,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, StateApi>>
     where
         K: Serialize,
-        V: Serial + DeserialWithState<StateApi>, {
+        V: Serial + DeserialWithState<StateApi>,
+    {
         // Minor optimization in the case of the empty collection. Since the length is
         // tracked by the ordered set, we can return early, saving a key lookup.
         if self.key_order.is_empty() {
@@ -196,7 +201,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn contains_key(&self, key: &K) -> bool
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.contains(key)
     }
 
@@ -205,7 +211,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.higher(key)
     }
 
@@ -214,7 +221,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.eq_or_higher(key)
     }
 
@@ -223,7 +231,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.lower(key)
     }
 
@@ -232,7 +241,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.eq_or_lower(key)
     }
 
@@ -241,7 +251,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn first_key(&self) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.first()
     }
 
@@ -250,17 +261,22 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     #[inline(always)]
     pub fn last_key(&self) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         self.key_order.last()
     }
 
     /// Return the number of elements in the map.
     #[inline(always)]
-    pub fn len(&self) -> u32 { self.key_order.len() }
+    pub fn len(&self) -> u32 {
+        self.key_order.len()
+    }
 
     /// Returns `true` is the map contains no elements.
     #[inline(always)]
-    pub fn is_empty(&self) -> bool { self.key_order.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.key_order.is_empty()
+    }
 
     /// Create an iterator over the entries of [`StateBTreeMap`].
     /// Ordered by `K` ascending.
@@ -268,7 +284,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn iter(&self) -> StateBTreeMapIter<K, V, M> {
         StateBTreeMapIter {
             key_iter: self.key_order.iter(),
-            map:      &self.key_value,
+            map: &self.key_value,
         }
     }
 
@@ -279,7 +295,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn clear(&mut self)
     where
         K: Serialize,
-        V: Serial + DeserialWithState<StateApi> + Deletable, {
+        V: Serial + DeserialWithState<StateApi> + Deletable,
+    {
         self.key_value.clear();
         self.key_order.clear();
     }
@@ -295,7 +312,8 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     pub fn clear_flat(&mut self)
     where
         K: Serialize,
-        V: Serialize, {
+        V: Serialize,
+    {
         self.key_value.clear_flat();
         self.key_order.clear();
     }
@@ -376,16 +394,16 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
 /// ```
 pub struct StateBTreeSet<K, const M: usize = 8> {
     /// Type marker for the key.
-    _marker_key:  PhantomData<K>,
+    _marker_key: PhantomData<K>,
     /// The unique prefix to use for this map in the key-value store.
-    prefix:       StateItemPrefix,
+    prefix: StateItemPrefix,
     /// The API for interacting with the low-level state.
-    state_api:    StateApi,
+    state_api: StateApi,
     /// The ID of the root node of the tree, where None represents the tree is
     /// empty.
-    root:         Option<NodeId>,
+    root: Option<NodeId>,
     /// Tracking the number of items in the tree.
-    len:          u32,
+    len: u32,
     /// Tracking the next available ID for a new node.
     next_node_id: NodeId,
 }
@@ -400,9 +418,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
             state_api,
             root: None,
             len: 0,
-            next_node_id: NodeId {
-                id: 0,
-            },
+            next_node_id: NodeId { id: 0 },
         }
     }
 
@@ -410,7 +426,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// Returns true if the key is new in the collection.
     pub fn insert(&mut self, key: K) -> bool
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let Some(root_id) = self.root else {
             let (node_id, _) = self.create_node(crate::vec![key], Vec::new());
             self.root = Some(node_id);
@@ -452,7 +469,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// Returns `true` if the set contains an element equal to the key.
     pub fn contains(&self, key: &K) -> bool
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let Some(root_node_id) = self.root else {
             return false;
         };
@@ -470,20 +488,24 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     }
 
     /// Return the number of elements in the set.
-    pub fn len(&self) -> u32 { self.len }
+    pub fn len(&self) -> u32 {
+        self.len
+    }
 
     /// Returns `true` is the set contains no elements.
-    pub fn is_empty(&self) -> bool { self.root.is_none() }
+    pub fn is_empty(&self) -> bool {
+        self.root.is_none()
+    }
 
     /// Get an iterator over the elements in the `StateBTreeSet`. The iterator
     /// returns elements in increasing order.
     pub fn iter(&self) -> StateBTreeSetIter<K, M> {
         StateBTreeSetIter {
-            length:            self.len.try_into().unwrap_abort(),
-            next_node:         self.root,
+            length: self.len.try_into().unwrap_abort(),
+            next_node: self.root,
             depth_first_stack: Vec::new(),
-            tree:              self,
-            _marker_lifetime:  Default::default(),
+            tree: self,
+            _marker_lifetime: Default::default(),
         }
     }
 
@@ -491,9 +513,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     pub fn clear(&mut self) {
         // Reset the information.
         self.root = None;
-        self.next_node_id = NodeId {
-            id: 0,
-        };
+        self.next_node_id = NodeId { id: 0 };
         self.len = 0;
         // Then delete every node store in the state.
         // Unwrapping is safe when only using the high-level API.
@@ -504,7 +524,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// provided key. `None` meaning no such key is present in the set.
     pub fn higher(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
@@ -540,7 +561,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// provided key. `None` meaning no such key is present in the set.
     pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
@@ -576,7 +598,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// provided key. `None` meaning no such key is present in the set.
     pub fn lower(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
@@ -607,7 +630,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// provided key. `None` meaning no such key is present in the set.
     pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
 
         let mut node = self.get_node(root_node_id);
@@ -642,7 +666,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// always the minimum of all keys in the set.
     pub fn first(&self) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
         let mut root = self.get_node(root_node_id);
         if root.is_leaf() {
@@ -656,13 +681,16 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// always the maximum of all keys in the set.
     pub fn last(&self) -> Option<StateRef<K>>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let root_node_id = self.root?;
         let mut root = self.get_node(root_node_id);
         if root.is_leaf() {
             Some(StateRef::new(root.keys.pop().unwrap_abort()))
         } else {
-            Some(StateRef::new(self.get_highest_key(&root, root.children.len() - 1)))
+            Some(StateRef::new(
+                self.get_highest_key(&root, root.children.len() - 1),
+            ))
         }
     }
 
@@ -670,7 +698,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// Returns whether such an element was present.
     pub fn remove(&mut self, key: &K) -> bool
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         let Some(root_node_id) = self.root else {
             return false;
         };
@@ -755,7 +784,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// - The node contain more than minimum number of keys.
     fn remove_largest_key(&mut self, mut node: StateRefMut<'_, Node<M, K>, StateApi>) -> K
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         while !node.is_leaf() {
             // Node is not a leaf, so we move further down this subtree.
             let child_index = node.children.len() - 1;
@@ -774,7 +804,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// - The provided `node` contain more than minimum number of keys.
     fn remove_smallest_key(&mut self, mut node: StateRefMut<'_, Node<M, K>, StateApi>) -> K
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         while !node.is_leaf() {
             // Node is not a leaf, so we move further down this subtree.
             let child_index = 0;
@@ -797,7 +828,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         index: usize,
     ) -> StateRefMut<'c, Node<M, K>, StateApi>
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         let mut child = self.get_node_mut(node.children[index]);
         if !child.is_at_min() {
             return child;
@@ -817,7 +849,9 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
                 let swapped_node_key = mem::replace(&mut node.keys[index - 1], largest_key_sibling);
                 child.keys.insert(0, swapped_node_key);
                 if !child.is_leaf() {
-                    child.children.insert(0, smaller_sibling.children.pop().unwrap_abort());
+                    child
+                        .children
+                        .insert(0, smaller_sibling.children.pop().unwrap_abort());
                 }
                 return child;
             }
@@ -864,7 +898,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// `child_index`.
     fn get_highest_key(&self, node: &Node<M, K>, child_index: usize) -> K
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         let mut node = self.get_node(node.children[child_index]);
         while !node.is_leaf() {
             let child_node_id = node.children.last().unwrap_abort();
@@ -880,7 +915,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// `child_index`.
     fn get_lowest_key(&self, node: &Node<M, K>, child_index: usize) -> K
     where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         let mut node = self.get_node(node.children[child_index]);
         while !node.is_leaf() {
             let child_node_id = node.children.first().unwrap_abort();
@@ -903,7 +939,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         child: &mut Node<M, K>,
         mut larger_child: StateRefMut<Node<M, K>, StateApi>,
     ) where
-        K: Ord + Serialize, {
+        K: Ord + Serialize,
+    {
         let parent_key = parent_node.keys.remove(index);
         let larger_child_id = parent_node.children.remove(index + 1);
         child.keys.push(parent_key);
@@ -920,13 +957,14 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         children: Vec<NodeId>,
     ) -> (NodeId, StateRefMut<'b, Node<M, K>, StateApi>)
     where
-        K: Serialize, {
+        K: Serialize,
+    {
         let node_id = self.next_node_id.fetch_and_add();
-        let node = Node {
-            keys,
-            children,
-        };
-        let entry = self.state_api.create_entry(&node_id.as_key(&self.prefix)).unwrap_abort();
+        let node = Node { keys, children };
+        let entry = self
+            .state_api
+            .create_entry(&node_id.as_key(&self.prefix))
+            .unwrap_abort();
         let mut ref_mut: StateRefMut<'_, Node<M, K>, StateApi> =
             StateRefMut::new(entry, self.state_api.clone());
         ref_mut.set(node);
@@ -937,7 +975,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// contract key-value store. Traps if no node was present.
     fn delete_node(&mut self, node_id: NodeId, node: StateRefMut<Node<M, K>, StateApi>)
     where
-        K: Serial, {
+        K: Serial,
+    {
         let key = node_id.as_key(&self.prefix);
         node.drop_without_storing();
         unsafe { prims::state_delete_entry(key.as_ptr(), key.len() as u32) };
@@ -947,7 +986,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// Assumes the given node is not full.
     fn insert_non_full(&mut self, initial_node: StateRefMut<Node<M, K>, StateApi>, key: K) -> bool
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let mut node = initial_node;
         loop {
             let Err(insert_index) = node.keys.binary_search(&key) else {
@@ -996,7 +1036,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
         child: &mut Node<M, K>,
     ) -> StateRefMut<'b, Node<M, K>, StateApi>
     where
-        K: Serialize + Ord, {
+        K: Serialize + Ord,
+    {
         let split_index = Node::<M, K>::MINIMUM_KEY_LEN + 1;
         let (new_larger_sibling_id, new_larger_sibling) = self.create_node(
             child.keys.split_off(split_index),
@@ -1016,7 +1057,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// This assumes the node is present and traps if this is not the case.
     fn get_node<Key>(&self, node_id: NodeId) -> Node<M, Key>
     where
-        Key: Deserial, {
+        Key: Deserial,
+    {
         let key = node_id.as_key(&self.prefix);
         let mut entry = self.state_api.lookup_entry(&key).unwrap_abort();
         entry.get().unwrap_abort()
@@ -1026,7 +1068,8 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
     /// This assumes the node is present and traps if this is not the case.
     fn get_node_mut<'b>(&mut self, node_id: NodeId) -> StateRefMut<'b, Node<M, K>, StateApi>
     where
-        K: Serial, {
+        K: Serial,
+    {
         let key = node_id.as_key(&self.prefix);
         let entry = self.state_api.lookup_entry(&key).unwrap_abort();
         StateRefMut::new(entry, self.state_api.clone())
@@ -1041,16 +1084,16 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 /// [`StateBTreeSet`]. See its documentation for more.
 pub struct StateBTreeSetIter<'a, 'b, K, const M: usize> {
     /// The number of elements left to iterate.
-    length:            usize,
+    length: usize,
     /// Reference to a node in the tree to load and iterate before the current
     /// node.
-    next_node:         Option<NodeId>,
+    next_node: Option<NodeId>,
     /// Tracking the nodes depth first, which are currently being iterated.
     depth_first_stack: Vec<(Node<M, KeyWrapper<K>>, usize)>,
     /// Reference to the set, needed for looking up the nodes.
-    tree:              &'a StateBTreeSet<K, M>,
+    tree: &'a StateBTreeSet<K, M>,
     /// Marker for tracking the lifetime of the key.
-    _marker_lifetime:  PhantomData<&'b K>,
+    _marker_lifetime: PhantomData<&'b K>,
 }
 
 impl<'a, 'b, const M: usize, K> Iterator for StateBTreeSetIter<'a, 'b, K, M>
@@ -1085,7 +1128,9 @@ where
         Some(StateRef::new(key))
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) { (self.length, Some(self.length)) }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.length, Some(self.length))
+    }
 }
 
 /// An iterator over the entries of a [`StateBTreeMap`].
@@ -1098,7 +1143,7 @@ pub struct StateBTreeMapIter<'a, 'b, K, V, const M: usize> {
     /// Iterator over the keys in the map.
     key_iter: StateBTreeSetIter<'a, 'b, K, M>,
     /// Reference to the map holding the values.
-    map:      &'a StateMap<K, V, StateApi>,
+    map: &'a StateMap<K, V, StateApi>,
 }
 
 impl<'a, 'b, const M: usize, K, V> Iterator for StateBTreeMapIter<'a, 'b, K, V, M>
@@ -1116,7 +1161,9 @@ where
         Some((next_key, value))
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) { self.key_iter.size_hint() }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.key_iter.size_hint()
+    }
 }
 
 /// Identifier for a node in the tree. Used to construct the key, where this
@@ -1169,7 +1216,7 @@ struct Node<const M: usize, K> {
     /// List of sorted keys tracked by this node.
     /// This list should never be empty and contain between `M - 1` and `2M
     /// - 1` elements. The root node being the only exception to this.
-    keys:     Vec<K>,
+    keys: Vec<K>,
     /// List of nodes which are children of this node in the tree.
     ///
     /// This list is empty when this node is representing a leaf.
@@ -1193,15 +1240,21 @@ impl<const M: usize, K> Node<M, K> {
 
     /// Check if the node holds the maximum number of keys.
     #[inline(always)]
-    fn is_full(&self) -> bool { self.keys.len() == Self::MAXIMUM_KEY_LEN }
+    fn is_full(&self) -> bool {
+        self.keys.len() == Self::MAXIMUM_KEY_LEN
+    }
 
     /// Check if the node is representing a leaf in the tree.
     #[inline(always)]
-    fn is_leaf(&self) -> bool { self.children.is_empty() }
+    fn is_leaf(&self) -> bool {
+        self.children.is_empty()
+    }
 
     /// Check if the node holds the minimum number of keys.
     #[inline(always)]
-    fn is_at_min(&self) -> bool { self.keys.len() == Self::MINIMUM_KEY_LEN }
+    fn is_at_min(&self) -> bool {
+        self.keys.len() == Self::MINIMUM_KEY_LEN
+    }
 }
 
 /// Wrapper implement the exact same deserial as K, but wraps it in an
@@ -1216,9 +1269,7 @@ struct KeyWrapper<K> {
 impl<K: Deserial> Deserial for KeyWrapper<K> {
     fn deserial<R: Read>(source: &mut R) -> ParseResult<Self> {
         let key = K::deserial(source)?;
-        Ok(Self {
-            key: Some(key),
-        })
+        Ok(Self { key: Some(key) })
     }
 }
 
@@ -1265,7 +1316,9 @@ where
     K: Serialize,
     V: Serial + DeserialWithState<StateApi> + Deletable,
 {
-    fn delete(mut self) { self.clear(); }
+    fn delete(mut self) {
+        self.clear();
+    }
 }
 
 /// This test module relies on the runtime providing host functions and can only
@@ -1311,7 +1364,8 @@ mod wasm_test_btree {
         /// Should only be used while debugging and testing the btree itself.
         fn check_invariants(&self) -> Result<(), InvariantViolation>
         where
-            K: Serialize + Ord, {
+            K: Serialize + Ord,
+        {
             use crate::ops::Deref;
             let Some(root_node_id) = self.root else {
                 return if self.len == 0 {
@@ -1380,7 +1434,8 @@ mod wasm_test_btree {
         /// Should only be used while debugging and testing the btree itself.
         pub(crate) fn debug(&self) -> String
         where
-            K: Serialize + std::fmt::Debug + Ord, {
+            K: Serialize + std::fmt::Debug + Ord,
+        {
             let Some(root_node_id) = self.root else {
                 return format!("no root");
             };
@@ -1392,8 +1447,13 @@ mod wasm_test_btree {
             while let Some(node_id) = stack.pop() {
                 let node: Node<M, K> = self.get_node(node_id);
                 string.push_str(
-                    format!("node {} {:?}: {:#?},\n", node_id.id, node.check_invariants(), node)
-                        .as_str(),
+                    format!(
+                        "node {} {:?}: {:#?},\n",
+                        node_id.id,
+                        node.check_invariants(),
+                        node
+                    )
+                    .as_str(),
                 );
 
                 stack.extend(node.children);
@@ -1409,7 +1469,8 @@ mod wasm_test_btree {
         /// Should only be used while debugging and testing the btree itself.
         pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
         where
-            K: Ord, {
+            K: Ord,
+        {
             for i in 1..self.keys.len() {
                 if &self.keys[i - 1] >= &self.keys[i] {
                     return Err(InvariantViolation::NodeKeysOutOfOrder);
@@ -1992,7 +2053,7 @@ mod wasm_test_btree {
         #[derive(Debug, Clone)]
         struct Mutations<K> {
             expected_keys: crate::collections::BTreeSet<K>,
-            mutations:     Vec<(K, Operation)>,
+            mutations: Vec<(K, Operation)>,
         }
 
         /// The different mutating operations to generate for the btree.

@@ -43,7 +43,7 @@ fn test_init() {
     assert_eq!(
         events[1],
         CredentialEvent::RevocationKey(RevocationKeyEvent {
-            key:    PUBLIC_KEY,
+            key: PUBLIC_KEY,
             action: RevocationKeyAction::Register,
         }),
         "Incorrect revocation key event logged"
@@ -52,7 +52,7 @@ fn test_init() {
         events[2],
         CredentialEvent::Schema(CredentialSchemaRefEvent {
             credential_type: schema.0,
-            schema_ref:      schema.1,
+            schema_ref: schema.1,
         }),
         "Incorrect schema event logged"
     );
@@ -66,7 +66,11 @@ fn test_register_credential() {
     let update = register_credential(&mut chain, init.contract_address);
 
     let credential_status = get_credential_status(&mut chain, init.contract_address, PUBLIC_KEY);
-    assert_eq!(credential_status, CredentialStatus::Active, "Credential is not active");
+    assert_eq!(
+        credential_status,
+        CredentialStatus::Active,
+        "Credential is not active"
+    );
 
     // Check that the correct register event was produced.
     let events = update
@@ -74,22 +78,25 @@ fn test_register_credential() {
         .flat_map(|(_contract, events)| events.iter().map(|e| e.parse().expect("Parsing event")))
         .collect::<Vec<CredentialEvent>>();
 
-    assert_eq!(events, [CredentialEvent::Register(CredentialEventData {
-        holder_id:       PUBLIC_KEY,
-        schema_ref:      SchemaRef {
-            schema_ref: MetadataUrl {
-                url:  CREDENTIAL_SCHEMA_URL.to_string(),
+    assert_eq!(
+        events,
+        [CredentialEvent::Register(CredentialEventData {
+            holder_id: PUBLIC_KEY,
+            schema_ref: SchemaRef {
+                schema_ref: MetadataUrl {
+                    url: CREDENTIAL_SCHEMA_URL.to_string(),
+                    hash: None,
+                },
+            },
+            credential_type: CredentialType {
+                credential_type: CREDENTIAL_TYPE.to_string(),
+            },
+            metadata_url: MetadataUrl {
+                url: CREDENTIAL_METADATA_URL.into(),
                 hash: None,
             },
-        },
-        credential_type: CredentialType {
-            credential_type: CREDENTIAL_TYPE.to_string(),
-        },
-        metadata_url:    MetadataUrl {
-            url:  CREDENTIAL_METADATA_URL.into(),
-            hash: None,
-        },
-    })]);
+        })]
+    );
 }
 
 /// Test the revoke credential entrypoint, when the holder revokes the
@@ -106,18 +113,25 @@ fn test_revoke_by_holder() {
 
     // Check the credential status.
     let credential_status = get_credential_status(&mut chain, init.contract_address, PUBLIC_KEY);
-    assert_eq!(credential_status, CredentialStatus::Revoked, "Credential is not revoked");
+    assert_eq!(
+        credential_status,
+        CredentialStatus::Revoked,
+        "Credential is not revoked"
+    );
 
     // Check that the correct revoke event was produced.
     let events = update
         .events()
         .flat_map(|(_contract, events)| events.iter().map(|e| e.parse().expect("Parsing event")))
         .collect::<Vec<CredentialEvent>>();
-    assert_eq!(events, [CredentialEvent::Revoke(RevokeCredentialEvent {
-        holder_id: PUBLIC_KEY,
-        revoker:   Revoker::Holder,
-        reason:    Some(revocation_reason),
-    })]);
+    assert_eq!(
+        events,
+        [CredentialEvent::Revoke(RevokeCredentialEvent {
+            holder_id: PUBLIC_KEY,
+            revoker: Revoker::Holder,
+            reason: Some(revocation_reason),
+        })]
+    );
 }
 
 /// Test the restore credential entrypoint.
@@ -134,12 +148,16 @@ fn test_contract_restore_credential() {
 
     // Check that the credential status is revoked.
     let credential_status = get_credential_status(&mut chain, init.contract_address, PUBLIC_KEY);
-    assert_eq!(credential_status, CredentialStatus::Revoked, "Credential is not revoked");
+    assert_eq!(
+        credential_status,
+        CredentialStatus::Revoked,
+        "Credential is not revoked"
+    );
 
     // Restore the credential.
     let parameter = RestoreCredentialIssuerParam {
         credential_id: PUBLIC_KEY,
-        reason:        None,
+        reason: None,
     };
 
     let update = chain
@@ -149,12 +167,12 @@ fn test_contract_restore_credential() {
             ISSUER_ADDRESS,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      init.contract_address,
+                amount: Amount::zero(),
+                address: init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "credential_registry.restoreCredential".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&parameter)
+                message: OwnedParameter::from_serial(&parameter)
                     .expect("Parameter has valid size."),
             },
         )
@@ -162,24 +180,31 @@ fn test_contract_restore_credential() {
 
     // Check that the credential status is active again.
     let credential_status = get_credential_status(&mut chain, init.contract_address, PUBLIC_KEY);
-    assert_eq!(credential_status, CredentialStatus::Active, "Credential is not active");
+    assert_eq!(
+        credential_status,
+        CredentialStatus::Active,
+        "Credential is not active"
+    );
 
     // Check that the restore event was produced.
     let events = update
         .events()
         .flat_map(|(_contract, events)| events.iter().map(|e| e.parse().expect("Parsing event")))
         .collect::<Vec<CredentialEvent>>();
-    assert_eq!(events, [CredentialEvent::Restore(RestoreCredentialEvent {
-        holder_id: PUBLIC_KEY,
-        reason:    None,
-    })]);
+    assert_eq!(
+        events,
+        [CredentialEvent::Restore(RestoreCredentialEvent {
+            holder_id: PUBLIC_KEY,
+            reason: None,
+        })]
+    );
 }
 
 // Helpers:
 
 pub fn issuer_metadata() -> MetadataUrl {
     MetadataUrl {
-        url:  ISSUER_METADATA_URL.to_string(),
+        url: ISSUER_METADATA_URL.to_string(),
         hash: None,
     }
 }
@@ -191,7 +216,7 @@ pub fn get_credential_schema() -> (CredentialType, SchemaRef) {
         },
         SchemaRef {
             schema_ref: MetadataUrl {
-                url:  CREDENTIAL_SCHEMA_URL.to_string(),
+                url: CREDENTIAL_SCHEMA_URL.to_string(),
                 hash: None,
             },
         },
@@ -205,16 +230,16 @@ fn register_credential(
 ) -> ContractInvokeSuccess {
     let parameter = RegisterCredentialParam {
         credential_info: CredentialInfo {
-            holder_id:        PUBLIC_KEY,
+            holder_id: PUBLIC_KEY,
             holder_revocable: true,
-            valid_from:       Timestamp::from_timestamp_millis(0),
-            valid_until:      None,
-            metadata_url:     MetadataUrl {
-                url:  CREDENTIAL_METADATA_URL.to_string(),
+            valid_from: Timestamp::from_timestamp_millis(0),
+            valid_until: None,
+            metadata_url: MetadataUrl {
+                url: CREDENTIAL_METADATA_URL.to_string(),
                 hash: None,
             },
         },
-        auxiliary_data:  Vec::new(),
+        auxiliary_data: Vec::new(),
     };
 
     chain
@@ -224,12 +249,12 @@ fn register_credential(
             ISSUER_ADDRESS,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "credential_registry.registerCredential".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&parameter)
+                message: OwnedParameter::from_serial(&parameter)
                     .expect("Parameter has valid size."),
             },
         )
@@ -252,7 +277,7 @@ fn revoke_credential(
     // Create input parameters for revocation.
     let revoke_param = RevokeCredentialHolderParam {
         signature: SIGNATURE,
-        data:      RevocationDataHolder {
+        data: RevocationDataHolder {
             credential_id: PUBLIC_KEY,
             signing_data,
             reason: Some(revocation_reason.clone()),
@@ -266,12 +291,12 @@ fn revoke_credential(
             ISSUER_ADDRESS,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "credential_registry.revokeCredentialHolder".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&revoke_param)
+                message: OwnedParameter::from_serial(&revoke_param)
                     .expect("Parameter has valid size."),
             },
         )
@@ -291,17 +316,19 @@ fn get_credential_status(
             ISSUER_ADDRESS,
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      contract_address,
+                amount: Amount::zero(),
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "credential_registry.credentialStatus".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&key).expect("Parameter has valid size."),
+                message: OwnedParameter::from_serial(&key).expect("Parameter has valid size."),
             },
         )
         .expect("Credential Status call succeeds.");
 
-    credential_status.parse_return_value().expect("Parse credential status")
+    credential_status
+        .parse_return_value()
+        .expect("Parse credential status")
 }
 
 /// Setup chain and contract.
@@ -318,21 +345,26 @@ fn setup() -> (Chain, ContractInitSuccess) {
     let schema = get_credential_schema();
     let init_params = InitParams {
         issuer_metadata: issuer_metadata(),
-        issuer_account:  ISSUER_ACCOUNT.into(),
-        issuer_key:      PUBLIC_KEY,
+        issuer_account: ISSUER_ACCOUNT.into(),
+        issuer_key: PUBLIC_KEY,
         revocation_keys: vec![PUBLIC_KEY],
         credential_type: schema.0.clone(),
-        schema:          schema.1.clone(),
+        schema: schema.1.clone(),
     };
 
     let init = chain
-        .contract_init(SIGNER, ISSUER_ACCOUNT, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_credential_registry".to_string()),
-            param:     OwnedParameter::from_serial(&init_params)
-                .expect("Parameter has valid size."),
-        })
+        .contract_init(
+            SIGNER,
+            ISSUER_ACCOUNT,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_credential_registry".to_string()),
+                param: OwnedParameter::from_serial(&init_params)
+                    .expect("Parameter has valid size."),
+            },
+        )
         .expect("Contract initializes successfully");
     (chain, init)
 }

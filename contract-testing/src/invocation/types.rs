@@ -53,8 +53,8 @@ pub(crate) struct EntrypointInvocationHandler<'a, 'b> {
 pub(super) enum Next {
     /// The next action is to resume execution after handling the interrupt.
     Resume {
-        data:     InvocationData,
-        config:   Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
+        data: InvocationData,
+        config: Box<ReceiveInterruptedState<CompiledFunction, ReceiveContext<Vec<u8>>>>,
         /// This is [`None`] if we are going to resume after a call to a
         /// contract. And [`Some`] if we have an immediate handler that
         /// immediately produces a response.
@@ -62,8 +62,8 @@ pub(super) enum Next {
     },
     /// The next action is to start executing an entrypoint.
     Initial {
-        sender:                    Address,
-        payload:                   UpdateContractPayload,
+        sender: Address,
+        payload: UpdateContractPayload,
         /// If execution of the entrypoint fails then it does not produce any
         /// trace. We store the trace in one "global" (per transaction)
         /// vector. This field is used to determine how far back we need
@@ -93,7 +93,7 @@ pub(super) struct Changes {
     /// The accounts which have changes. These are indexed by account address
     /// equivalence classes so that account aliases are resolved to the same
     /// account.
-    pub(super) accounts:  BTreeMap<AccountAddressEq, AccountChanges>,
+    pub(super) accounts: BTreeMap<AccountAddressEq, AccountChanges>,
 }
 
 /// Data held for an account during the execution of a contract entrypoint.
@@ -107,7 +107,7 @@ pub(super) struct AccountChanges {
     /// Should never be modified.
     pub(super) original_balance: Amount,
     /// The change in the account balance.
-    pub(super) balance_delta:    AmountDelta,
+    pub(super) balance_delta: AmountDelta,
 }
 
 /// Data held for a contract during the execution of a contract entrypoint.
@@ -115,16 +115,16 @@ pub(super) struct AccountChanges {
 pub(super) struct ContractChanges {
     /// An index that is used to check whether a caller contract has been
     /// modified after invoking another contract (due to reentrancy).
-    pub(super) modification_index:    u32,
+    pub(super) modification_index: u32,
     /// Represents how much the contract's self balance has changed.
-    pub(super) self_balance_delta:    AmountDelta,
+    pub(super) self_balance_delta: AmountDelta,
     /// The original contract balance, i.e. the one that is persisted. Should
     /// never be modified.
     pub(super) self_balance_original: Amount,
     /// The potentially modified contract state.
-    pub(super) state:                 Option<MutableState>,
+    pub(super) state: Option<MutableState>,
     /// The potentially changed module.
-    pub(super) module:                Option<ModuleReference>,
+    pub(super) module: Option<ModuleReference>,
 }
 
 /// Data needed to recursively process a contract entrypoint to completion.
@@ -137,30 +137,30 @@ pub(super) struct ContractChanges {
 #[derive(Debug)]
 pub(super) struct InvocationData {
     /// The sender.
-    pub(super) sender:                    Address,
+    pub(super) sender: Address,
     /// The contract being called.
-    pub(super) address:                   ContractAddress,
+    pub(super) address: ContractAddress,
     /// The name of the contract.
-    pub(super) contract_name:             OwnedContractName,
+    pub(super) contract_name: OwnedContractName,
     /// The entrypoint to execute.
-    pub(super) entrypoint:                OwnedEntrypointName,
+    pub(super) entrypoint: OwnedEntrypointName,
     /// The amount sent from the sender to the contract.
-    pub(super) amount:                    Amount,
+    pub(super) amount: Amount,
     /// The parameter given to the entrypoint.
-    pub(super) parameter:                 OwnedParameter,
+    pub(super) parameter: OwnedParameter,
     /// The current state.
-    pub(super) state:                     MutableState,
+    pub(super) state: MutableState,
     /// A checkpoint in the list of trace elements.
     /// We reset to this size in case of failure of execution.
     pub(super) trace_elements_checkpoint: usize,
     /// A checkpoint on the next modification index.
     /// We reset `next_modification_index` to this value in case of failure of
     /// execution.
-    pub(super) next_mod_idx_checkpoint:   u32,
+    pub(super) next_mod_idx_checkpoint: u32,
     /// The modification index before making an invocation.
     /// Differs from the `next_mod_idx_checkpoint` in that this value can be
     /// altered during the execution of a single entrypoint.
-    pub(super) mod_idx_before_invoke:     u32,
+    pub(super) mod_idx_before_invoke: u32,
 }
 
 /// A positive or negative delta in for an [`Amount`].
@@ -176,9 +176,7 @@ pub(super) enum AmountDelta {
 #[derive(Debug)]
 pub(crate) enum TestConfigurationError {
     /// The method ran out of energy.
-    OutOfEnergy {
-        debug_trace: DebugTracker,
-    },
+    OutOfEnergy { debug_trace: DebugTracker },
     /// The balance of an account or contract oveflowed while adding a new
     /// [`Amount`]. On the chain there is roughly 10 billion CCD, which
     /// means that overflows of amounts cannot occur.

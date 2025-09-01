@@ -37,14 +37,16 @@ struct State {}
 
 /// Init function that creates a new smart contract.
 #[init(contract = "account_signature_checks")]
-fn init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> { Ok(State {}) }
+fn init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
+    Ok(State {})
+}
 
 #[derive(Deserial, SchemaType)]
 struct CheckParam {
     address: AccountAddress,
-    sigs:    AccountSignatures,
+    sigs: AccountSignatures,
     #[concordium(size_length = 4)]
-    data:    Vec<u8>,
+    data: Vec<u8>,
 }
 
 /// View function that checks the signature with account keys on the provided

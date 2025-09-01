@@ -63,7 +63,9 @@ pub enum ContractError {
 }
 
 impl<A> From<CallContractError<A>> for ContractError {
-    fn from(_: CallContractError<A>) -> Self { Self::ContractInvokeError }
+    fn from(_: CallContractError<A>) -> Self {
+        Self::ContractInvokeError
+    }
 }
 
 type ContractResult<A> = Result<A, ContractError>;
@@ -72,9 +74,7 @@ type ContractResult<A> = Result<A, ContractError>;
 #[init(contract = "icecream", parameter = "ContractAddress")]
 fn contract_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     let weather_service: ContractAddress = ctx.parameter_cursor().get()?;
-    Ok(State {
-        weather_service,
-    })
+    Ok(State { weather_service })
 }
 
 /// Attempt purchasing icecream from the icecream vendor.
@@ -134,7 +134,11 @@ fn contract_replace_weather_service(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
 ) -> ContractResult<()> {
-    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated);
+    ensure_eq!(
+        Address::Account(ctx.owner()),
+        ctx.sender(),
+        ContractError::Unauthenticated
+    );
     let new_weather_service: ContractAddress = ctx.parameter_cursor().get()?;
     host.state_mut().weather_service = new_weather_service;
     Ok(())
@@ -150,7 +154,12 @@ fn weather_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitRes
 }
 
 /// Get the current weather.
-#[receive(contract = "weather", name = "get", return_value = "Weather", error = "ContractError")]
+#[receive(
+    contract = "weather",
+    name = "get",
+    return_value = "Weather",
+    error = "ContractError"
+)]
 fn weather_get(_ctx: &ReceiveContext, host: &Host<Weather>) -> ContractResult<Weather> {
     Ok(*host.state())
 }
@@ -164,7 +173,11 @@ fn weather_get(_ctx: &ReceiveContext, host: &Host<Weather>) -> ContractResult<We
     error = "ContractError"
 )]
 fn weather_set(ctx: &ReceiveContext, host: &mut ExternHost<Weather>) -> ContractResult<()> {
-    ensure_eq!(Address::Account(ctx.owner()), ctx.sender(), ContractError::Unauthenticated); // Only the owner can update the weather.
+    ensure_eq!(
+        Address::Account(ctx.owner()),
+        ctx.sender(),
+        ContractError::Unauthenticated
+    ); // Only the owner can update the weather.
     *host.state_mut() = ctx.parameter_cursor().get()?;
     Ok(())
 }

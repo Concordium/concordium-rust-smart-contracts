@@ -19,24 +19,36 @@ fn tests() {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ACC_0, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ACC_0, module)
+        .expect("Deploy valid module");
 
     // Initialize the contract.
     let init_counter = chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_counter-notify".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_counter-notify".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Init of counter-notify contract should succeed");
     let init_reentrancy = chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_reentrancy-attacker".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_reentrancy-attacker".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Init of reentrancy-attacker should succeed");
 
     let update = chain
@@ -46,12 +58,12 @@ fn tests() {
             Address::Account(ACC_0),
             Energy::from(5000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      init_counter.contract_address,
+                amount: Amount::zero(),
+                address: init_counter.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked(
                     "counter-notify.increment-and-notify".to_string(),
                 ),
-                message:      OwnedParameter::from_serial(&(
+                message: OwnedParameter::from_serial(&(
                     init_reentrancy.contract_address,
                     EntrypointName::new_unchecked("call-just-increment"),
                 ))
@@ -63,7 +75,8 @@ fn tests() {
     use concordium_smart_contract_testing::ContractTraceElement::*;
 
     // Check that the correct calls and events occured.
-    assert!(matches!(update.effective_trace_elements().collect::<Vec<_>>()[..], [
+    assert!(
+        matches!(update.effective_trace_elements().collect::<Vec<_>>()[..], [
         Interrupted {
             address: ContractAddress {
                 index:    0,
@@ -110,9 +123,13 @@ fn tests() {
                 ..
             },
         },
-    ] if rcv_name_1 == "counter-notify.just-increment" && rcv_name_2 == "reentrancy-attacker.call-just-increment" && rcv_name_3 == "counter-notify.increment-and-notify"));
+    ] if rcv_name_1 == "counter-notify.just-increment" && rcv_name_2 == "reentrancy-attacker.call-just-increment" && rcv_name_3 == "counter-notify.increment-and-notify")
+    );
 
     // Check that the contract observed the reentrancy attack.
     let rv: ReentryOccurance = update.parse_return_value().unwrap();
-    assert!(rv == ReentryOccurance::ReentryAttack, "Re-entrancy attack not observed.");
+    assert!(
+        rv == ReentryOccurance::ReentryAttack,
+        "Re-entrancy attack not observed."
+    );
 }

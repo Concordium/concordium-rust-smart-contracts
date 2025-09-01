@@ -24,10 +24,10 @@ fn test_transfer() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_transfer".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -41,16 +41,19 @@ fn test_transfer() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      contract_address,
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("transfer.forward".into()),
-                message:      OwnedParameter::from_serial(&helpers::ACC_0)
+                message: OwnedParameter::from_serial(&helpers::ACC_0)
                     .expect("Parameter has valid size"),
-                amount:       Amount::from_micro_ccd(123),
+                amount: Amount::from_micro_ccd(123),
             },
         )
         .expect("Updating contract should succeed");
     // Contract should have forwarded the amount and thus have balance == 0.
-    assert_eq!(Amount::zero(), chain.get_contract(contract_address).unwrap().self_balance);
+    assert_eq!(
+        Amount::zero(),
+        chain.get_contract(contract_address).unwrap().self_balance
+    );
 
     // Deposit 1000 micro CCD.
     chain
@@ -60,10 +63,10 @@ fn test_transfer() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      contract_address,
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("transfer.deposit".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::from_micro_ccd(1000),
+                message: OwnedParameter::empty(),
+                amount: Amount::from_micro_ccd(1000),
             },
         )
         .expect("Updating contract should succeed");
@@ -79,10 +82,10 @@ fn test_transfer() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      contract_address,
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("transfer.send".into()),
-                message:      parameter.clone(),
-                amount:       Amount::zero(),
+                message: parameter.clone(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating contract should succeed");
@@ -91,30 +94,33 @@ fn test_transfer() {
         Amount::from_micro_ccd(1000 - 17),
         chain.get_contract(contract_address).unwrap().self_balance
     );
-    assert_eq!(res_update.effective_trace_elements_cloned()[..], [
-        ContractTraceElement::Interrupted {
-            address: contract_address,
-            events:  Vec::new(),
-        },
-        ContractTraceElement::Transferred {
-            from:   contract_address,
-            amount: Amount::from_micro_ccd(17),
-            to:     helpers::ACC_0,
-        },
-        ContractTraceElement::Resumed {
-            address: contract_address,
-            success: true,
-        },
-        ContractTraceElement::Updated {
-            data: InstanceUpdatedEvent {
-                address:          contract_address,
-                amount:           Amount::zero(),
-                receive_name:     OwnedReceiveName::new_unchecked("transfer.send".into()),
-                contract_version: WasmVersion::V1,
-                instigator:       Address::Account(helpers::ACC_0),
-                message:          parameter,
-                events:           Vec::new(),
+    assert_eq!(
+        res_update.effective_trace_elements_cloned()[..],
+        [
+            ContractTraceElement::Interrupted {
+                address: contract_address,
+                events: Vec::new(),
             },
-        }
-    ])
+            ContractTraceElement::Transferred {
+                from: contract_address,
+                amount: Amount::from_micro_ccd(17),
+                to: helpers::ACC_0,
+            },
+            ContractTraceElement::Resumed {
+                address: contract_address,
+                success: true,
+            },
+            ContractTraceElement::Updated {
+                data: InstanceUpdatedEvent {
+                    address: contract_address,
+                    amount: Amount::zero(),
+                    receive_name: OwnedReceiveName::new_unchecked("transfer.send".into()),
+                    contract_version: WasmVersion::V1,
+                    instigator: Address::Account(helpers::ACC_0),
+                    message: parameter,
+                    events: Vec::new(),
+                },
+            }
+        ]
+    )
 }

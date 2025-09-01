@@ -38,10 +38,10 @@ fn test_new_parameter_limit() {
             helpers::ACC_0,
             Energy::from(80000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_relax".into()),
-                param:     parameter.clone(), // Check parameter size limit on init.
-                amount:    Amount::zero(),
+                param: parameter.clone(), // Check parameter size limit on init.
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -53,10 +53,10 @@ fn test_new_parameter_limit() {
             Address::Account(helpers::ACC_0),
             Energy::from(700000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("relax.param".into()),
-                message:      parameter, // Check parameter size limit on updates.
-                amount:       Amount::zero(),
+                message: parameter, // Check parameter size limit on updates.
+                amount: Amount::zero(),
             },
         )
         .expect("Updating contract should succeed");
@@ -74,11 +74,11 @@ fn test_new_return_value_limit() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      contract_address,
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("relax.return-value".into()),
-                message:      OwnedParameter::from_serial(&100_000u32)
+                message: OwnedParameter::from_serial(&100_000u32)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating contract should succeed");
@@ -96,11 +96,10 @@ fn test_new_log_limit() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      contract_address,
+                address: contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("relax.logs".into()),
-                message:      OwnedParameter::from_serial(&64u32)
-                    .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                message: OwnedParameter::from_serial(&64u32).expect("Parameter has valid size"),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating contract should succeed");
@@ -128,10 +127,10 @@ fn deploy_and_init() -> (Chain, ContractAddress) {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_relax".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");

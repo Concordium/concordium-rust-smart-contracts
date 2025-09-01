@@ -108,11 +108,17 @@ mod wasm_test {
         }
     }
 
-    fn crypto_primitives() -> CryptoPrimitives { CryptoPrimitives {} }
+    fn crypto_primitives() -> CryptoPrimitives {
+        CryptoPrimitives {}
+    }
 
-    fn receive_context() -> ReceiveContext { ExternContext::default() }
+    fn receive_context() -> ReceiveContext {
+        ExternContext::default()
+    }
 
-    fn init_context() -> InitContext { ExternContext::default() }
+    fn init_context() -> InitContext {
+        ExternContext::default()
+    }
 
     fn account_address() -> AccountAddress {
         // 3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G
@@ -195,7 +201,10 @@ mod wasm_test {
         // Testing primitive calls for testing offset and length parameters
         let event_prim = vec![1u8, 2, 3, 4];
         let store_status = unsafe {
-            prims::log_event(event_prim.as_ptr(), event_prim.len().try_into().unwrap_abort())
+            prims::log_event(
+                event_prim.as_ptr(),
+                event_prim.len().try_into().unwrap_abort(),
+            )
         };
         let event_size = unsafe { prims::get_event_size(0) };
 
