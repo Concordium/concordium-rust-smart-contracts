@@ -11,7 +11,6 @@ on:
 name: Clippy & fmt
 
 env:
-  RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.73"
   RUST_VERSION_TESTING_LIBRARY: "1.73"
   CARGO_CONCORDIUM_VERSION: "4.2.0"
@@ -66,7 +65,7 @@ jobs:
       - name: Install nightly toolchain with rustfmt available
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.RUST_FMT }}
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
       - name: Run cargo fmt

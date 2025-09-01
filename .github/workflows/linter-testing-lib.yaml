@@ -28,8 +28,7 @@ on:
   workflow_dispatch: # allows manual trigger
 
 env:
-  RUST_FMT: nightly-2023-04-01-x86_64-unknown-linux-gnu
-  RUST_CLIPPY: 1.73
+  RUST_VERSION: 1.73
 
 jobs:
   "lint_fmt":
@@ -48,7 +47,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.RUST_FMT }}
+          toolchain: ${{ env.RUST_VERSION }}
           override: true
           components: rustfmt
       - name: Format
@@ -74,7 +73,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.RUST_CLIPPY }}
+          toolchain: ${{ env.RUST_VERSION }}
           override: true
       - name: Docs
         working-directory: ${{ matrix.build-dir }}
@@ -99,7 +98,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.RUST_CLIPPY }}
+          toolchain: ${{ env.RUST_VERSION }}
           override: true
           components: clippy
       - name: Clippy
@@ -125,7 +124,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.RUST_CLIPPY }}
+          toolchain: ${{ env.RUST_VERSION }}
           override: true
       - name: Test
         working-directory: ${{ matrix.build-dir }}
