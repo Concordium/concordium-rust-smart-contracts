@@ -23,5 +23,11 @@ thiserror = "1.0"
 num-bigint = "0.4"
 num-integer = "0.1"
 
+# Pin versions to be compatible with 1.73. Remove pins when MSRV is pumped
+rayon = ">=1.0, <1.11"
+rayon-core = ">=1.0, <1.13"
+serde_with = ">=3.0, <3.13"
+ed25519-dalek = ">=2.0, <2.2.0"
+
 [dev-dependencies]
 rand = "0.8"
