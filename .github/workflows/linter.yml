@@ -336,6 +336,7 @@ jobs:
 
       - name: Run cargo check with no-std
         run: |
+          set
           echo "CARGO_BUILD_RUSTFLAGS: $CARGO_BUILD_RUSTFLAGS"
           echo "RUSTFLAGS: $RUSTFLAGS"
           cargo build --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
