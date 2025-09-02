@@ -4,7 +4,6 @@
 //! signatures.
 use concordium_std::*;
 use core::fmt::Debug;
-const a:u8= 1;
 
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum Error {
