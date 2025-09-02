@@ -335,10 +335,8 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Run cargo check with no-std
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
+        run: |
+          cargo build --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
 
   check-crypto-examples:
     name: Check crypto examples
