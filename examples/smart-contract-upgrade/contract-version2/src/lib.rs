@@ -27,7 +27,7 @@ use concordium_std::*;
 /// The smart contract state.
 #[derive(Serialize, SchemaType, Clone)]
 pub struct State {
-    admin:     AccountAddress,
+    admin: AccountAddress,
     old_state: String,
     new_state: String,
 }
@@ -35,9 +35,9 @@ pub struct State {
 /// The old smart contract state from `contract-version1`.
 #[derive(Serialize, SchemaType, Clone)]
 pub struct OldState {
-    admin:                    AccountAddress,
+    admin: AccountAddress,
     not_to_be_migrated_state: String,
-    to_be_migrated_state:     String,
+    to_be_migrated_state: String,
 }
 
 /// The parameter type for the contract function `upgrade`.
@@ -48,7 +48,7 @@ pub struct OldState {
 #[derive(Serialize, SchemaType)]
 struct UpgradeParams {
     /// The new module reference.
-    module:  ModuleReference,
+    module: ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
@@ -87,17 +87,25 @@ impl From<UpgradeError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 type ContractResult<A> = Result<A, CustomContractError>;
 
 /// Init function that creates a new smart contract.
 #[init(contract = "smart_contract_upgrade")]
-fn contract_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> { Ok(()) }
+fn contract_init(_ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<()> {
+    Ok(())
+}
 
 /// View function that returns the content of the state.
-#[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
+#[receive(
+    contract = "smart_contract_upgrade",
+    name = "view",
+    return_value = "State"
+)]
 fn contract_view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
@@ -117,13 +125,16 @@ fn contract_view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveRes
 )]
 fn contract_migration(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractResult<()> {
     // Check that only this contract instance can call this function.
-    ensure!(ctx.sender().matches_contract(&ctx.self_address()), CustomContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_contract(&ctx.self_address()),
+        CustomContractError::Unauthorized
+    );
 
     // Read the old top-level contract state.
     let state: OldState = host.state().read_root()?;
 
     let new_state = State {
-        admin:     state.admin,
+        admin: state.admin,
         old_state: state.to_be_migrated_state,
         new_state: "This is the new state.".to_string(),
     };
@@ -161,7 +172,10 @@ fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractRe
     let state: State = host.state().read_root()?;
 
     // Check that only the admin is authorized to upgrade the smart contract.
-    ensure!(ctx.sender().matches_account(&state.admin), CustomContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_account(&state.admin),
+        CustomContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: UpgradeParams = ctx.parameter_cursor().get()?;
     // Trigger the upgrade.

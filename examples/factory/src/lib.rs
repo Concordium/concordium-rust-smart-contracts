@@ -182,7 +182,7 @@ pub mod factory {
         /// not allow for more than 2^64 smart contracts.
         next_product: u64,
         /// Index of the product smart contract instances.
-        products:     StateMap<u64, ContractAddress, S>,
+        products: StateMap<u64, ContractAddress, S>,
     }
 
     /// Errors
@@ -210,7 +210,7 @@ pub mod factory {
         // Creating `State`
         let state = FactoryState {
             next_product: 0,
-            products:     state_builder.new_map(),
+            products: state_builder.new_map(),
         };
         Ok(state)
     }
@@ -257,14 +257,23 @@ pub mod factory {
         let product_module_ref = host
             .contract_module_reference(product_address)
             .or(Err(FactoryError::NonExistentProduct))?;
-        ensure_eq!(self_module_ref, product_module_ref, FactoryError::InvalidProduct);
+        ensure_eq!(
+            self_module_ref,
+            product_module_ref,
+            FactoryError::InvalidProduct
+        );
         // Check the product contract name is correct.
         // As this module contains both the factory and product contracts, it is not
         // enough to check just the module reference, because we want to ensure
         // that the would-be product is not an instance of the factory contract.
-        let product_name =
-            host.contract_name(product_address).or(Err(FactoryError::NonExistentProduct))?;
-        ensure_eq!(product_name, PRODUCT_INIT_NAME, FactoryError::InvalidProduct);
+        let product_name = host
+            .contract_name(product_address)
+            .or(Err(FactoryError::NonExistentProduct))?;
+        ensure_eq!(
+            product_name,
+            PRODUCT_INIT_NAME,
+            FactoryError::InvalidProduct
+        );
         // Update the state
         let state = host.state_mut();
         let next_product = state.next_product;
@@ -311,7 +320,11 @@ pub mod factory {
         host: &Host<FactoryState>,
     ) -> Result<ContractAddress, FactoryError> {
         let param: u64 = ctx.parameter_cursor().get()?;
-        let ca = host.state().products.get(&param).ok_or(FactoryError::NonExistentProduct)?;
+        let ca = host
+            .state()
+            .products
+            .get(&param)
+            .ok_or(FactoryError::NonExistentProduct)?;
         Ok(ca.to_owned())
     }
 }
@@ -328,7 +341,7 @@ pub mod product {
         /// The factory that created the product.
         pub factory: ContractAddress,
         /// The index given to the product by the factory.
-        pub index:   u64,
+        pub index: u64,
     }
 
     /// The overall state of a product, which may or may not yet have been
@@ -394,7 +407,11 @@ pub mod product {
     ) -> Result<(), ProductError> {
         let state = host.state_mut();
         // Check that the contract has not already been initialized.
-        ensure_eq!(*state, ProductState::Uninitialized, ProductError::AlreadyInitialized);
+        ensure_eq!(
+            *state,
+            ProductState::Uninitialized,
+            ProductError::AlreadyInitialized
+        );
         // Check that the invoker is the owner of the contract.
         ensure_eq!(ctx.invoker(), ctx.owner(), ProductError::NotAuthorized);
         // The index is supplied as a parameter by the factory.
@@ -406,10 +423,7 @@ pub mod product {
             _ => Err(ProductError::SenderIsAccountAddress)?,
         };
         // Initialize the state.
-        let product = Product {
-            index,
-            factory,
-        };
+        let product = Product { index, factory };
         *state = ProductState::Initialized(product);
         Ok(())
     }

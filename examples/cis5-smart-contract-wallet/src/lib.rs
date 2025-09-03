@@ -105,7 +105,7 @@ pub enum Event {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
     /// The nonce that was used in the message.
-    pub nonce:      u64,
+    pub nonce: u64,
     /// Account that signed the message.
     pub public_key: PublicKeyEd25519,
 }
@@ -117,9 +117,9 @@ pub struct DepositCcdEvent {
     /// The CCD amount assigned to a public key.
     pub ccd_amount: Amount,
     /// The address that invoked the deposit entrypoint.
-    pub from:       Address,
+    pub from: Address,
     /// The public key that the CCD amount is assigned to.
-    pub to:         PublicKeyEd25519,
+    pub to: PublicKeyEd25519,
 }
 
 /// The `DepositCis2TokensEvent` is logged whenever a token amount received by
@@ -145,9 +145,9 @@ pub struct WithdrawCcdEvent {
     /// The CCD amount withdrawn.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be withdrawn from.
-    pub from:       PublicKeyEd25519,
+    pub from: PublicKeyEd25519,
     /// The address that the CCD amount is withdrawn to.
-    pub to:         Address,
+    pub to: Address,
 }
 
 /// The `WithdrawCis2TokensEvent` is logged whenever a token amount held by a
@@ -174,9 +174,9 @@ pub struct TransferCcdEvent {
     /// The CCD amount transferred.
     pub ccd_amount: Amount,
     /// The public key that the CCD amount will be transferred from.
-    pub from:       PublicKeyEd25519,
+    pub from: PublicKeyEd25519,
     /// The public key that the CCD amount is transferred to.
-    pub to:         PublicKeyEd25519,
+    pub to: PublicKeyEd25519,
 }
 
 /// The `TransferCis2TokensEvent` is logged whenever a token amount held
@@ -203,10 +203,10 @@ struct State<S = StateApi> {
     token_balances:
         StateMap<(ContractAddress, ContractTokenId, PublicKeyEd25519), ContractTokenAmount, S>,
     /// The CCD balances stored in the state.
-    ccd_balances:    StateMap<PublicKeyEd25519, Amount, S>,
+    ccd_balances: StateMap<PublicKeyEd25519, Amount, S>,
     /// A map with contract addresses providing implementations of additional
     /// standards.
-    implementors:    StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// A registry to link a public key to its next nonce. The nonce is used to
     /// prevent replay attacks of the signed message. The nonce is increased
     /// sequentially every time a signed message (corresponding to the
@@ -221,9 +221,9 @@ impl State {
     /// Creates a new state with empty balances.
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
-            ccd_balances:    state_builder.new_map(),
-            token_balances:  state_builder.new_map(),
-            implementors:    state_builder.new_map(),
+            ccd_balances: state_builder.new_map(),
+            token_balances: state_builder.new_map(),
+            implementors: state_builder.new_map(),
             nonces_registry: state_builder.new_map(),
         }
     }
@@ -231,7 +231,10 @@ impl State {
     /// Gets the current CCD balance of a given public key.
     /// Returns a balance of 0 if the public key does not exist in the state.
     fn balance_ccd(&self, public_key: &PublicKeyEd25519) -> Amount {
-        self.ccd_balances.get(public_key).map(|s| *s).unwrap_or_else(Amount::zero)
+        self.ccd_balances
+            .get(public_key)
+            .map(|s| *s)
+            .unwrap_or_else(Amount::zero)
     }
 
     /// Gets the current balance of a given token ID, a given token contract,
@@ -271,8 +274,10 @@ impl State {
                     .ok_or(CustomContractError::InsufficientFunds)?;
             }
 
-            let mut to_public_key_ccd_balance =
-                self.ccd_balances.entry(to_public_key).or_insert_with(Amount::zero);
+            let mut to_public_key_ccd_balance = self
+                .ccd_balances
+                .entry(to_public_key)
+                .or_insert_with(Amount::zero);
 
             *to_public_key_ccd_balance = (*to_public_key_ccd_balance)
                 .checked_add(ccd_amount)
@@ -306,7 +311,11 @@ impl State {
             {
                 let mut from_cis2_token_balance = self
                     .token_balances
-                    .entry((cis2_token_contract_address, token_id.clone(), from_public_key))
+                    .entry((
+                        cis2_token_contract_address,
+                        token_id.clone(),
+                        from_public_key,
+                    ))
                     .occupied_or(CustomContractError::InsufficientFunds)?;
 
                 ensure!(
@@ -402,7 +411,11 @@ trait IsMessage {
 // Contract functions
 
 /// Initializes the contract instance with no balances.
-#[init(contract = "smart_contract_wallet", event = "Event", error = "CustomContractError")]
+#[init(
+    contract = "smart_contract_wallet",
+    event = "Event",
+    error = "CustomContractError"
+)]
 fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State::empty(state_builder))
 }
@@ -433,11 +446,15 @@ fn deposit_ccd(
 ) -> ReceiveResult<()> {
     let to: PublicKeyEd25519 = ctx.parameter_cursor().get()?;
 
-    let mut public_key_balance =
-        host.state_mut().ccd_balances.entry(to).or_insert_with(Amount::zero);
+    let mut public_key_balance = host
+        .state_mut()
+        .ccd_balances
+        .entry(to)
+        .or_insert_with(Amount::zero);
 
-    *public_key_balance =
-        (*public_key_balance).checked_add(amount).ok_or(CustomContractError::Overflow)?;
+    *public_key_balance = (*public_key_balance)
+        .checked_add(amount)
+        .ok_or(CustomContractError::Overflow)?;
 
     logger.log(&Event::DepositCcd(DepositCcdEvent {
         ccd_amount: amount,
@@ -487,7 +504,11 @@ fn deposit_cis2_tokens(
     let mut cis2_token_balance = host
         .state_mut()
         .token_balances
-        .entry((sender_contract_address, cis2_hook_param.token_id.clone(), cis2_hook_param.data))
+        .entry((
+            sender_contract_address,
+            cis2_hook_param.token_id.clone(),
+            cis2_hook_param.data,
+        ))
         .or_insert_with(|| TokenAmountU256(0.into()));
 
     // A well designed CIS-2 token contract should not overflow.
@@ -527,9 +548,9 @@ impl SigningAmount for TokenAmount {}
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TokenAmount {
     /// The token amount signed in the message.
-    pub token_amount:                ContractTokenAmount,
+    pub token_amount: ContractTokenAmount,
     /// The token id of the token signed in the message.
-    pub token_id:                    ContractTokenId,
+    pub token_id: ContractTokenId,
     /// The token contract of the token signed in the message.
     pub cis2_token_contract_address: ContractAddress,
 }
@@ -539,11 +560,11 @@ pub struct TokenAmount {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Withdraw<T: SigningAmount> {
     /// The address receiving the CCD or tokens being withdrawn.
-    pub to:              Receiver,
+    pub to: Receiver,
     /// The amount being withdrawn.
     pub withdraw_amount: T,
     /// Some additional data for the receive hook function.
-    pub data:            AdditionalData,
+    pub data: AdditionalData,
 }
 
 /// The withdraw message that is signed by the signer.
@@ -551,24 +572,28 @@ pub struct Withdraw<T: SigningAmount> {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct WithdrawMessage<T: SigningAmount> {
     /// The entry_point that the signature is intended for.
-    pub entry_point:           OwnedEntrypointName,
+    pub entry_point: OwnedEntrypointName,
     /// A timestamp to make the signatures expire.
-    pub expiry_time:           Timestamp,
+    pub expiry_time: Timestamp,
     /// A nonce to prevent replay attacks.
-    pub nonce:                 u64,
+    pub nonce: u64,
     /// The recipient public key of the service fee.
     pub service_fee_recipient: PublicKeyEd25519,
     /// The amount of CCD or tokens to be received as a service fee.
-    pub service_fee_amount:    T,
+    pub service_fee_amount: T,
     /// List of withdrawals.
     #[concordium(size_length = 2)]
-    pub simple_withdraws:      Vec<Withdraw<T>>,
+    pub simple_withdraws: Vec<Withdraw<T>>,
 }
 
 impl<T: SigningAmount> IsMessage for WithdrawMessage<T> {
-    fn expiry_time(&self) -> Timestamp { self.expiry_time }
+    fn expiry_time(&self) -> Timestamp {
+        self.expiry_time
+    }
 
-    fn nonce(&self) -> u64 { self.nonce }
+    fn nonce(&self) -> u64 {
+        self.nonce
+    }
 }
 
 /// A batch of withdrawals signed by a signer.
@@ -576,11 +601,11 @@ impl<T: SigningAmount> IsMessage for WithdrawMessage<T> {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct WithdrawBatch<T: SigningAmount> {
     /// The signer public key.
-    pub signer:    PublicKeyEd25519,
+    pub signer: PublicKeyEd25519,
     /// The signature.
     pub signature: SignatureEd25519,
     /// The message being signed.
-    pub message:   WithdrawMessage<T>,
+    pub message: WithdrawMessage<T>,
 }
 
 /// The parameter type for the contract functions
@@ -615,7 +640,9 @@ fn calculate_message_hash_from_bytes(
     msg_prepend[40..48].copy_from_slice(&ctx.self_address().subindex.to_le_bytes());
 
     // Calculate the message hash.
-    Ok(crypto_primitives.hash_sha2_256(&[&msg_prepend[0..48], message_bytes].concat()).0)
+    Ok(crypto_primitives
+        .hash_sha2_256(&[&msg_prepend[0..48], message_bytes].concat())
+        .0)
 }
 
 /// Validates the message signature and increases the public key nonce.
@@ -634,14 +661,21 @@ fn validate_signature_and_increase_nonce<T: IsMessage + Serial>(
     ctx: &ReceiveContext,
 ) -> ContractResult<()> {
     // Check that the signature is not expired.
-    ensure!(message.expiry_time() > ctx.metadata().slot_time(), CustomContractError::Expired);
+    ensure!(
+        message.expiry_time() > ctx.metadata().slot_time(),
+        CustomContractError::Expired
+    );
 
     // Calculate the message hash.
     let message_hash: [u8; 32] =
         calculate_message_hash_from_bytes(&to_bytes(&message), crypto_primitives, ctx)?;
 
     // Get the nonce.
-    let mut entry = host.state_mut().nonces_registry.entry(signer).or_insert_with(|| 0);
+    let mut entry = host
+        .state_mut()
+        .nonces_registry
+        .entry(signer)
+        .or_insert_with(|| 0);
 
     // Check the nonce to prevent replay attacks.
     ensure_eq!(message.nonce(), *entry, CustomContractError::NonceMismatch);
@@ -752,7 +786,11 @@ fn withdraw_ccd(
             simple_withdraws,
         } = message.clone();
 
-        ensure_eq!(entry_point, "withdrawCcd", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(
+            entry_point,
+            "withdrawCcd",
+            CustomContractError::WrongEntryPoint.into()
+        );
 
         validate_signature_and_increase_nonce(
             message,
@@ -764,7 +802,8 @@ fn withdraw_ccd(
         )?;
 
         // Transfer service fee
-        host.state_mut().transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
+        host.state_mut()
+            .transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
 
         for Withdraw {
             to,
@@ -805,8 +844,8 @@ fn withdraw_ccd(
 
             logger.log(&Event::WithdrawCcd(WithdrawCcdEvent {
                 ccd_amount: withdraw_amount,
-                from:       signer,
-                to:         to_address,
+                from: signer,
+                to: to_address,
             }))?;
         }
 
@@ -872,7 +911,11 @@ fn withdraw_cis2_tokens(
             simple_withdraws,
         } = message.clone();
 
-        ensure_eq!(entry_point, "withdrawCis2Tokens", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(
+            entry_point,
+            "withdrawCis2Tokens",
+            CustomContractError::WrongEntryPoint.into()
+        );
 
         validate_signature_and_increase_nonce(
             message,
@@ -960,7 +1003,7 @@ fn withdraw_cis2_tokens(
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct Transfer<T: SigningAmount> {
     /// The public key receiving the tokens being transferred.
-    pub to:              PublicKeyEd25519,
+    pub to: PublicKeyEd25519,
     /// The amount of tokens being transferred.
     pub transfer_amount: T,
 }
@@ -970,24 +1013,28 @@ pub struct Transfer<T: SigningAmount> {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TransferMessage<T: SigningAmount> {
     /// The entry_point that the signature is intended for.
-    pub entry_point:           OwnedEntrypointName,
+    pub entry_point: OwnedEntrypointName,
     /// A timestamp to make the signatures expire.
-    pub expiry_time:           Timestamp,
+    pub expiry_time: Timestamp,
     /// A nonce to prevent replay attacks.
-    pub nonce:                 u64,
+    pub nonce: u64,
     /// The recipient public key of the service fee.
     pub service_fee_recipient: PublicKeyEd25519,
     /// The amount of CCD or tokens to be received as a service fee.
-    pub service_fee_amount:    T,
+    pub service_fee_amount: T,
     /// List of transfers.
     #[concordium(size_length = 2)]
-    pub simple_transfers:      Vec<Transfer<T>>,
+    pub simple_transfers: Vec<Transfer<T>>,
 }
 
 impl<T: SigningAmount> IsMessage for TransferMessage<T> {
-    fn expiry_time(&self) -> Timestamp { self.expiry_time }
+    fn expiry_time(&self) -> Timestamp {
+        self.expiry_time
+    }
 
-    fn nonce(&self) -> u64 { self.nonce }
+    fn nonce(&self) -> u64 {
+        self.nonce
+    }
 }
 
 /// A batch of transfers signed by a signer.
@@ -995,11 +1042,11 @@ impl<T: SigningAmount> IsMessage for TransferMessage<T> {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct TransferBatch<T: SigningAmount> {
     /// The signer public key.
-    pub signer:    PublicKeyEd25519,
+    pub signer: PublicKeyEd25519,
     /// The signature.
     pub signature: SignatureEd25519,
     /// The message being signed.
-    pub message:   TransferMessage<T>,
+    pub message: TransferMessage<T>,
 }
 
 /// The parameter type for the contract functions
@@ -1109,7 +1156,11 @@ fn transfer_ccd(
             simple_transfers,
         } = message.clone();
 
-        ensure_eq!(entry_point, "transferCcd", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(
+            entry_point,
+            "transferCcd",
+            CustomContractError::WrongEntryPoint.into()
+        );
 
         validate_signature_and_increase_nonce(
             message,
@@ -1121,7 +1172,8 @@ fn transfer_ccd(
         )?;
 
         // Transfer service fee
-        host.state_mut().transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
+        host.state_mut()
+            .transfer_ccd(signer, service_fee_recipient, service_fee_amount, logger)?;
 
         for Transfer {
             to,
@@ -1129,7 +1181,8 @@ fn transfer_ccd(
         } in simple_transfers
         {
             // Update the contract state
-            host.state_mut().transfer_ccd(signer, to, transfer_amount, logger)?;
+            host.state_mut()
+                .transfer_ccd(signer, to, transfer_amount, logger)?;
         }
 
         logger.log(&Event::Nonce(NonceEvent {
@@ -1192,7 +1245,11 @@ fn transfer_cis2_tokens(
             simple_transfers,
         } = message.clone();
 
-        ensure_eq!(entry_point, "transferCis2Tokens", CustomContractError::WrongEntryPoint.into());
+        ensure_eq!(
+            entry_point,
+            "transferCis2Tokens",
+            CustomContractError::WrongEntryPoint.into()
+        );
 
         validate_signature_and_increase_nonce(
             message,
@@ -1244,7 +1301,7 @@ fn transfer_cis2_tokens(
 #[derive(Serialize, SchemaType)]
 struct SetImplementorsParams {
     /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
+    id: StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     implementors: Vec<ContractAddress>,
 }
@@ -1264,11 +1321,15 @@ struct SetImplementorsParams {
 )]
 fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), CustomContractError::UnAuthorized);
+    ensure!(
+        ctx.sender().matches_account(&ctx.owner()),
+        CustomContractError::UnAuthorized
+    );
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
-    host.state_mut().set_implementors(params.id, params.implementors);
+    host.state_mut()
+        .set_implementors(params.id, params.implementors);
 
     Ok(())
 }
@@ -1325,7 +1386,9 @@ pub struct CcdBalanceOfResponse(#[concordium(size_length = 2)] pub Vec<Amount>);
 
 /// Conversion helper function.
 impl From<Vec<Amount>> for CcdBalanceOfResponse {
-    fn from(results: Vec<Amount>) -> Self { CcdBalanceOfResponse(results) }
+    fn from(results: Vec<Amount>) -> Self {
+        CcdBalanceOfResponse(results)
+    }
 }
 
 /// The function queries the CCD balances of a list of public keys.
@@ -1360,11 +1423,11 @@ fn contract_ccd_balance_of(
 #[derive(Serialize, SchemaType)]
 pub struct Cis2BalanceOfQuery {
     /// The ID of the token.
-    pub token_id:                    ContractTokenId,
+    pub token_id: ContractTokenId,
     /// The token contract address.
     pub cis2_token_contract_address: ContractAddress,
     /// The public key.
-    pub public_key:                  PublicKeyEd25519,
+    pub public_key: PublicKeyEd25519,
 }
 
 /// The parameter type for the contract function `cis2BalanceOf`.
@@ -1387,7 +1450,9 @@ pub struct Cis2BalanceOfResponse(#[concordium(size_length = 2)] pub Vec<Contract
 
 /// Conversion helper function.
 impl From<Vec<ContractTokenAmount>> for Cis2BalanceOfResponse {
-    fn from(results: Vec<ContractTokenAmount>) -> Self { Cis2BalanceOfResponse(results) }
+    fn from(results: Vec<ContractTokenAmount>) -> Self {
+        Cis2BalanceOfResponse(results)
+    }
 }
 
 /// The function queries the token balances of a list of public keys.
@@ -1438,7 +1503,9 @@ pub struct VecOfPublicKeyEd25519 {
 pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
 
 impl From<Vec<u64>> for NonceOfQueryResponse {
-    fn from(results: concordium_std::Vec<u64>) -> Self { NonceOfQueryResponse(results) }
+    fn from(results: concordium_std::Vec<u64>) -> Self {
+        NonceOfQueryResponse(results)
+    }
 }
 
 /// Get the nonces of public keys.
@@ -1462,7 +1529,12 @@ fn contract_nonce_of(
     let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
     for public_key in params.queries {
         // Query the next nonce.
-        let nonce = host.state().nonces_registry.get(&public_key).map(|nonce| *nonce).unwrap_or(0);
+        let nonce = host
+            .state()
+            .nonces_registry
+            .get(&public_key)
+            .map(|nonce| *nonce)
+            .unwrap_or(0);
 
         response.push(nonce);
     }

@@ -35,22 +35,27 @@ fn test_amount_forward_on_correct_policy() {
 
     // Send money from Bob to Alice.
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(50_000), UpdateContractPayload {
-            amount:       amount_to_send,
-            address:      contract_address,
-            receive_name: OwnedReceiveName::new_unchecked(
-                "transfer-policy-check.receive".to_string(),
-            ),
-            message:      OwnedParameter::empty(),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(50_000),
+            UpdateContractPayload {
+                amount: amount_to_send,
+                address: contract_address,
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "transfer-policy-check.receive".to_string(),
+                ),
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Contract update succeeds.");
 
     // Check that the money was forwarded.
-    assert_eq!(update.account_transfers().collect::<Vec<_>>(), [(
-        contract_address,
-        amount_to_send,
-        ALICE
-    )]);
+    assert_eq!(
+        update.account_transfers().collect::<Vec<_>>(),
+        [(contract_address, amount_to_send, ALICE)]
+    );
 }
 
 // Helpers:
@@ -59,9 +64,9 @@ fn test_amount_forward_on_correct_policy() {
 fn policy_with_country(country_code: [u8; 2]) -> OwnedPolicy {
     let policies = OwnedPolicy {
         identity_provider: 0,
-        created_at:        Timestamp::from_timestamp_millis(0),
-        valid_to:          Timestamp::from_timestamp_millis(1000),
-        items:             vec![(attributes::COUNTRY_OF_RESIDENCE, country_code.into())],
+        created_at: Timestamp::from_timestamp_millis(0),
+        valid_to: Timestamp::from_timestamp_millis(1000),
+        items: vec![(attributes::COUNTRY_OF_RESIDENCE, country_code.into())],
     };
 
     policies
@@ -79,16 +84,25 @@ fn init() -> (Chain, ContractAddress) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists.");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Module deploys.");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Module deploys.");
 
     // Initialize the transfer policy check contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10_000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_transfer-policy-check".to_string()),
-            param:     OwnedParameter::from_serial(&ALICE).expect("Parameter has valid size."),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10_000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked(
+                    "init_transfer-policy-check".to_string(),
+                ),
+                param: OwnedParameter::from_serial(&ALICE).expect("Parameter has valid size."),
+            },
+        )
         .expect("Initialize transfer policy check contract");
 
     (chain, init.contract_address)

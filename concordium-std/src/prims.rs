@@ -497,7 +497,9 @@ mod host_dummy_functions {
     }
 
     #[no_mangle]
-    extern "C" fn get_slot_time() -> u64 { unimplemented!("Dummy function! Not to be executed") }
+    extern "C" fn get_slot_time() -> u64 {
+        unimplemented!("Dummy function! Not to be executed")
+    }
 
     #[no_mangle]
     extern "C" fn verify_ed25519_signature(

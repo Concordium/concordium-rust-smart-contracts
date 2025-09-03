@@ -143,10 +143,10 @@ use core::{fmt, str::FromStr};
 /// [hm]: crate::collections::HashMap
 /// [btm]: crate::collections::BTreeMap
 pub struct StateMap<K, V, S> {
-    pub(crate) _marker_key:   PhantomData<K>,
+    pub(crate) _marker_key: PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
-    pub(crate) prefix:        StateItemPrefix,
-    pub(crate) state_api:     S,
+    pub(crate) prefix: StateItemPrefix,
+    pub(crate) state_api: S,
 }
 
 #[derive(Debug)]
@@ -157,8 +157,8 @@ pub struct StateMap<K, V, S> {
 /// This `struct` is created by the [`iter`][StateMap::iter] method on
 /// [`StateMap`]. See its documentation for more.
 pub struct StateMapIter<'a, K, V, S: HasStateApi> {
-    pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_api:        S,
+    pub(crate) state_iter: Option<S::IterType>,
+    pub(crate) state_api: S,
     pub(crate) _lifetime_marker: PhantomData<&'a (K, V)>,
 }
 
@@ -170,8 +170,8 @@ pub struct StateMapIter<'a, K, V, S: HasStateApi> {
 /// This `struct` is created by the [`iter_mut`][StateMap::iter_mut] method on
 /// [`StateMap`]. See its documentation for more.
 pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
-    pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_api:        S,
+    pub(crate) state_iter: Option<S::IterType>,
+    pub(crate) state_api: S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
@@ -301,8 +301,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// [hs]: crate::collections::HashSet
 /// [bts]: crate::collections::BTreeSet
 pub struct StateSet<T, S> {
-    pub(crate) _marker:   PhantomData<T>,
-    pub(crate) prefix:    StateItemPrefix,
+    pub(crate) _marker: PhantomData<T>,
+    pub(crate) prefix: StateItemPrefix,
     pub(crate) state_api: S,
 }
 
@@ -313,8 +313,8 @@ pub struct StateSet<T, S> {
 /// This `struct` is created by the [`iter`][StateSet::iter] method on
 /// [`StateSet`]. See its documentation for more.
 pub struct StateSetIter<'a, T, S: HasStateApi> {
-    pub(crate) state_iter:       Option<S::IterType>,
-    pub(crate) state_api:        S,
+    pub(crate) state_iter: Option<S::IterType>,
+    pub(crate) state_api: S,
     pub(crate) _marker_lifetime: PhantomData<&'a T>,
 }
 
@@ -331,20 +331,18 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 /// is the state.
 pub struct StateBox<T: Serial, S: HasStateApi> {
     pub(crate) state_api: S,
-    pub(crate) inner:     UnsafeCell<StateBoxInner<T, S>>,
+    pub(crate) inner: UnsafeCell<StateBoxInner<T, S>>,
 }
 
 pub(crate) enum StateBoxInner<T, S: HasStateApi> {
     /// Value is loaded in memory, and we have a backing entry.
     Loaded {
-        entry:    S::EntryType,
+        entry: S::EntryType,
         modified: bool,
-        value:    T,
+        value: T,
     },
     /// We only have the memory location at which the value is stored.
-    Reference {
-        prefix: StateItemPrefix,
-    },
+    Reference { prefix: StateItemPrefix },
 }
 
 #[derive(Debug)]
@@ -355,7 +353,7 @@ pub(crate) enum StateBoxInner<T, S: HasStateApi> {
 /// The type implements [`Deref`][crate::ops::Deref] to `V`, and that is the
 /// intended, and only, way to use it.
 pub struct StateRef<'a, V> {
-    pub(crate) value:            V,
+    pub(crate) value: V,
     pub(crate) _marker_lifetime: PhantomData<&'a V>,
 }
 
@@ -373,7 +371,9 @@ impl<V> crate::ops::Deref for StateRef<'_, V> {
     type Target = V;
 
     #[inline(always)]
-    fn deref(&self) -> &Self::Target { &self.value }
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 #[derive(Debug)]
@@ -386,9 +386,9 @@ impl<V> crate::ops::Deref for StateRef<'_, V> {
 pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
     /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
     /// the entry without `StateRefMut` being mutable.
-    pub(crate) entry:            UnsafeCell<S::EntryType>,
-    pub(crate) state_api:        S,
-    pub(crate) lazy_value:       UnsafeCell<Option<V>>,
+    pub(crate) entry: UnsafeCell<S::EntryType>,
+    pub(crate) state_api: S,
+    pub(crate) lazy_value: UnsafeCell<Option<V>>,
     pub(crate) _marker_lifetime: PhantomData<&'a mut V>,
 }
 
@@ -423,8 +423,8 @@ pub type Key = Vec<u8>;
 
 /// Represents the data in a node in the state trie.
 pub struct StateEntry {
-    pub(crate) state_entry_id:   StateEntryId,
-    pub(crate) key:              Key,
+    pub(crate) state_entry_id: StateEntryId,
+    pub(crate) key: Key,
     pub(crate) current_position: u32,
 }
 
@@ -434,7 +434,7 @@ pub struct StateEntry {
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
 pub struct VacantEntryRaw<S> {
-    pub(crate) key:       Key,
+    pub(crate) key: Key,
     pub(crate) state_api: S,
 }
 
@@ -464,9 +464,9 @@ pub enum EntryRaw<StateApi: HasStateApi> {
 /// Differs from [`VacantEntryRaw`] in that this automatically handles
 /// serialization.
 pub struct VacantEntry<'a, K, V, S> {
-    pub(crate) key:              K,
-    pub(crate) key_bytes:        Vec<u8>,
-    pub(crate) state_api:        S,
+    pub(crate) key: K,
+    pub(crate) key_bytes: Vec<u8>,
+    pub(crate) state_api: S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
@@ -483,13 +483,13 @@ pub struct VacantEntry<'a, K, V, S> {
 /// serialization and provides convenience methods for modifying the value via
 /// the [`DerefMut`](crate::ops::DerefMut) implementation.
 pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
-    pub(crate) key:              K,
-    pub(crate) value:            V,
+    pub(crate) key: K,
+    pub(crate) value: V,
     /// Indicates whether the value should be stored by the drop implementation.
     /// This is set when deref_mut method is called only, since that is when we
     /// **might** implicitly mutate the value.
-    pub(crate) modified:         bool,
-    pub(crate) state_entry:      S::EntryType,
+    pub(crate) modified: bool,
+    pub(crate) state_entry: S::EntryType,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
 }
 
@@ -497,7 +497,9 @@ impl<K, V: Serial, S: HasStateApi> crate::ops::Deref for OccupiedEntry<'_, K, V,
     type Target = V;
 
     #[inline(always)]
-    fn deref(&self) -> &Self::Target { &self.value }
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 impl<K, V: Serial, S: HasStateApi> crate::ops::DerefMut for OccupiedEntry<'_, K, V, S> {
@@ -554,7 +556,7 @@ pub struct ExternParameter {
 #[derive(Debug)]
 pub struct ExternCallResponse {
     /// The index of the call response.
-    pub(crate) i:                NonZeroU32,
+    pub(crate) i: NonZeroU32,
     pub(crate) current_position: u32,
 }
 
@@ -599,7 +601,7 @@ pub enum CallContractError<ReturnValueType> {
     MessageFailed,
     /// Contract that was called rejected with the given reason.
     LogicReject {
-        reason:       i32,
+        reason: i32,
         return_value: ReturnValueType,
     },
     /// Execution of a contract call triggered a runtime error.
@@ -723,9 +725,9 @@ pub struct AttributesCursor {
     /// `created_at` and `valid_to` will require.
     pub(crate) current_position: u32,
     /// The number of remaining items in the policy.
-    pub(crate) remaining_items:  u16,
+    pub(crate) remaining_items: u16,
     /// The total number of items. Used for creating new attribute cursors.
-    pub(crate) total_items:      u16,
+    pub(crate) total_items: u16,
 }
 
 /// An iterator over the attributes of a policy.
@@ -765,7 +767,7 @@ pub struct NotPayableError;
 /// A return value can also be provided.
 #[derive(Eq, PartialEq, Debug)]
 pub struct Reject {
-    pub error_code:   crate::num::NonZeroI32,
+    pub error_code: crate::num::NonZeroI32,
     pub return_value: Option<Vec<u8>>,
 }
 
@@ -784,7 +786,7 @@ impl Default for Reject {
     #[inline(always)]
     fn default() -> Self {
         Self {
-            error_code:   unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
+            error_code: unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN) },
             return_value: None,
         }
     }
@@ -1111,7 +1113,7 @@ pub type CallResponse = ExternCallResponse;
 ///
 /// **Typically referred to via the alias [`Host`].**
 pub struct ExternHost<State> {
-    pub state:         State,
+    pub state: State,
     pub state_builder: StateBuilder<ExternStateApi>,
 }
 
@@ -1135,7 +1137,9 @@ pub struct StateBuilder<S = StateApi> {
 
 impl<S> StateBuilder<S> {
     #[doc(hidden)]
-    pub fn into_inner(self) -> S { self.state_api }
+    pub fn into_inner(self) -> S {
+        self.state_api
+    }
 }
 
 /// A struct for which HasCryptoPrimitives is implemented via the crypto host
@@ -1192,7 +1196,9 @@ pub struct ExternStateApi;
 impl ExternStateApi {
     /// Open the contract state. Only one instance can be opened at the same
     /// time.
-    pub fn open() -> Self { Self }
+    pub fn open() -> Self {
+        Self
+    }
 }
 
 /// Operations backed by host functions for the low-level interface.
@@ -1200,7 +1206,7 @@ impl ExternStateApi {
 /// **Typically referred to via the alias [`LowLevelHost`].**
 #[derive(Default)]
 pub struct ExternLowLevelHost {
-    pub(crate) state_api:     ExternStateApi,
+    pub(crate) state_api: ExternStateApi,
     pub(crate) state_builder: StateBuilder<ExternStateApi>,
 }
 
@@ -1257,7 +1263,7 @@ pub enum StateError {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MetadataUrl {
     /// The URL following the specification RFC1738.
-    pub url:  crate::String,
+    pub url: crate::String,
     /// A optional hash of the content.
     pub hash: Option<[u8; 32]>,
 }

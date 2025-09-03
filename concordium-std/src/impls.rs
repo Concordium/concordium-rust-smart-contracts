@@ -19,7 +19,9 @@ pub(crate) use concordium_contracts_common::*;
 /// Mapped to i32::MIN + 1.
 impl convert::From<()> for Reject {
     #[inline(always)]
-    fn from(_: ()) -> Self { unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) }.into() }
+    fn from(_: ()) -> Self {
+        unsafe { num::NonZeroI32::new_unchecked(i32::MIN + 1) }.into()
+    }
 }
 
 /// Mapped to i32::MIN + 2.
@@ -136,9 +138,9 @@ impl<T> From<CallContractError<T>> for Reject {
             CallContractError::MessageFailed => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 19).into()
             },
-            CallContractError::LogicReject {
-                ..
-            } => unsafe { crate::num::NonZeroI32::new_unchecked(i32::MIN + 20).into() },
+            CallContractError::LogicReject { .. } => unsafe {
+                crate::num::NonZeroI32::new_unchecked(i32::MIN + 20).into()
+            },
             CallContractError::Trap => unsafe {
                 crate::num::NonZeroI32::new_unchecked(i32::MIN + 21).into()
             },
@@ -236,7 +238,9 @@ impl HasStateEntry for StateEntry {
     type StateEntryKey = ();
 
     #[inline(always)]
-    fn move_to_start(&mut self) { self.current_position = 0; }
+    fn move_to_start(&mut self) {
+        self.current_position = 0;
+    }
 
     #[inline(always)]
     fn size(&self) -> Result<u32, Self::Error> {
@@ -255,7 +259,9 @@ impl HasStateEntry for StateEntry {
         Ok(())
     }
 
-    fn get_key(&self) -> &[u8] { &self.key }
+    fn get_key(&self) -> &[u8] {
+        &self.key
+    }
 
     fn resize(&mut self, new_size: u32) -> Result<(), Self::Error> {
         let res = unsafe { prims::state_entry_resize(self.state_entry_id, new_size) };
@@ -321,7 +327,9 @@ impl Seek for StateEntry {
     }
 
     #[inline(always)]
-    fn cursor_position(&self) -> u32 { self.current_position }
+    fn cursor_position(&self) -> u32 {
+        self.current_position
+    }
 }
 
 impl Read for StateEntry {
@@ -426,7 +434,12 @@ impl Write for StateEntry {
             return Err(());
         }
         let num_bytes = unsafe {
-            prims::state_entry_write(self.state_entry_id, buf.as_ptr(), len, self.current_position)
+            prims::state_entry_write(
+                self.state_entry_id,
+                buf.as_ptr(),
+                len,
+                self.current_position,
+            )
         };
         if num_bytes == u32::MAX {
             return Err(()); // Entry did not exist.
@@ -439,16 +452,15 @@ impl Write for StateEntry {
 impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
     /// Create a new `VacantEntryRaw`.
     pub(crate) fn new(key: Key, state_api: StateApi) -> Self {
-        Self {
-            key,
-            state_api,
-        }
+        Self { key, state_api }
     }
 
     /// Gets a reference to the key that would be used when inserting a value
     /// through the `VacantEntryRaw`.
     #[inline(always)]
-    pub fn key(&self) -> &[u8] { &self.key }
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
 
     /// Sets the value of the entry with the [`VacantEntryRaw`’s](Self) key.
     pub fn insert_raw(mut self, value: &[u8]) -> Result<StateApi::EntryType, StateError> {
@@ -477,33 +489,39 @@ impl<StateApi: HasStateApi> VacantEntryRaw<StateApi> {
 impl<StateApi: HasStateApi> OccupiedEntryRaw<StateApi> {
     /// Create a new `OccupiedEntryRaw`.
     pub(crate) fn new(state_entry: StateApi::EntryType) -> Self {
-        Self {
-            state_entry,
-        }
+        Self { state_entry }
     }
 
     /// Gets a reference to the key that would be used when inserting a value
     /// through the `OccupiedEntryRaw`.
     #[inline(always)]
-    pub fn key(&self) -> &[u8] { self.state_entry.get_key() }
+    pub fn key(&self) -> &[u8] {
+        self.state_entry.get_key()
+    }
 
     /// Gets a reference to the [`HasStateEntry`] type in the entry.
     #[inline(always)]
-    pub fn get_ref(&self) -> &StateApi::EntryType { &self.state_entry }
+    pub fn get_ref(&self) -> &StateApi::EntryType {
+        &self.state_entry
+    }
 
     /// Converts the entry into its [`HasStateEntry`] type.
     ///
     /// If you need multiple mutable references to the `OccupiedEntryRaw`, see
     /// [`get_mut`][Self::get_mut].
     #[inline(always)]
-    pub fn get(self) -> StateApi::EntryType { self.state_entry }
+    pub fn get(self) -> StateApi::EntryType {
+        self.state_entry
+    }
 
     /// Gets a mutable reference to the [`HasStateEntry`] type in the entry.
     ///
     /// If you need access to a [`HasStateEntry`], which can outlive the
     /// `OccupiedEntryRaw`, see [`get`][Self::get].
     #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut StateApi::EntryType { &mut self.state_entry }
+    pub fn get_mut(&mut self) -> &mut StateApi::EntryType {
+        &mut self.state_entry
+    }
 
     /// Sets the value of the entry with the `OccupiedEntryRaw`'s key.
     pub fn insert_raw(&mut self, value: &[u8]) {
@@ -576,11 +594,15 @@ where
 
     /// Get a reference to the `VacantEntry`'s key.
     #[inline(always)]
-    pub fn key(&self) -> &K { &self.key }
+    pub fn key(&self) -> &K {
+        &self.key
+    }
 
     /// Take ownership of the key.
     #[inline(always)]
-    pub fn into_key(self) -> K { self.key }
+    pub fn into_key(self) -> K {
+        self.key
+    }
 
     /// Sets the value of the entry with the `VacantEntry`'s key.
     pub fn insert(mut self, value: V) -> OccupiedEntry<'a, K, V, StateApi> {
@@ -617,11 +639,15 @@ where
 
     /// Get a reference to the key that is associated with this entry.
     #[inline(always)]
-    pub fn key(&self) -> &K { &self.key }
+    pub fn key(&self) -> &K {
+        &self.key
+    }
 
     /// Get an immutable reference to the value contained in this entry.
     #[inline(always)]
-    pub fn get_ref(&self) -> &V { &self.value }
+    pub fn get_ref(&self) -> &V {
+        &self.value
+    }
 
     /// Modify the value in the entry, and possibly return
     /// some information.
@@ -632,7 +658,8 @@ where
         // that the type of the closure is really `for<'b>FnOnce<&'b mut V> -> A`.
         // In particular, the lifetime of the reference the closure gets is not tied directly to the
         // lifetime of `Self`.
-        F: FnOnce(&mut V) -> A, {
+        F: FnOnce(&mut V) -> A,
+    {
         let res = f(&mut self.value);
         self.store_value();
         res
@@ -642,7 +669,8 @@ where
     /// aborting the update.
     pub fn try_modify<F, A, E>(&mut self, f: F) -> Result<A, E>
     where
-        F: FnOnce(&mut V) -> Result<A, E>, {
+        F: FnOnce(&mut V) -> Result<A, E>,
+    {
         let res = f(&mut self.value)?;
         self.store_value();
         Ok(res)
@@ -678,11 +706,15 @@ where
 {
     /// Return whether the entry is vacant.
     #[inline(always)]
-    pub fn is_vacant(&self) -> bool { matches!(self, Entry::Vacant(_)) }
+    pub fn is_vacant(&self) -> bool {
+        matches!(self, Entry::Vacant(_))
+    }
 
     /// Return whether the entry is occupied.
     #[inline(always)]
-    pub fn is_occupied(&self) -> bool { matches!(self, Entry::Occupied(_)) }
+    pub fn is_occupied(&self) -> bool {
+        matches!(self, Entry::Occupied(_))
+    }
 
     /// If the entry is [`Occupied`](Entry::Occupied) return `Ok`. Otherwise
     /// return the supplied error.
@@ -717,7 +749,8 @@ where
     /// function if empty.
     pub fn or_insert_with<F>(self, default: F) -> OccupiedEntry<'a, K, V, StateApi>
     where
-        F: FnOnce() -> V, {
+        F: FnOnce() -> V,
+    {
         match self {
             Entry::Vacant(vac) => vac.insert(default()),
             Entry::Occupied(oe) => oe,
@@ -731,7 +764,8 @@ where
     /// inconsistent.** If the entry is vacant no changes are made.
     pub fn and_try_modify<F, E>(mut self, f: F) -> Result<Entry<'a, K, V, StateApi>, E>
     where
-        F: FnOnce(&mut V) -> Result<(), E>, {
+        F: FnOnce(&mut V) -> Result<(), E>,
+    {
         if let Entry::Occupied(ref mut occ) = self {
             occ.try_modify(f)?;
         }
@@ -742,7 +776,8 @@ where
     /// If the entry is vacant no changes are made.
     pub fn and_modify<F>(mut self, f: F) -> Entry<'a, K, V, StateApi>
     where
-        F: FnOnce(&mut V), {
+        F: FnOnce(&mut V),
+    {
         if let Entry::Occupied(ref mut occ) = self {
             occ.modify(f);
         }
@@ -832,9 +867,7 @@ impl HasStateApi for ExternStateApi {
         match iterator_id {
             OK_NONE => Err(StateError::SubtreeWithPrefixNotFound),
             ERR => Err(StateError::IteratorLimitForPrefixExceeded),
-            iterator_id => Ok(ExternStateIter {
-                iterator_id,
-            }),
+            iterator_id => Ok(ExternStateIter { iterator_id }),
         }
     }
 
@@ -947,7 +980,9 @@ where
     /// when you're finished with it. Otherwise, it will remain in the
     /// contract state.
     #[must_use]
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> { self.insert_borrowed(&key, value) }
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.insert_borrowed(&key, value)
+    }
 
     /// Get an entry for the given key.
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S> {
@@ -965,7 +1000,9 @@ where
     }
 
     /// Return `true` if the map contains no elements.
-    pub fn is_empty(&self) -> bool { self.state_api.lookup_entry(&self.prefix).is_none() }
+    pub fn is_empty(&self) -> bool {
+        self.state_api.lookup_entry(&self.prefix).is_none()
+    }
 
     /// Clears the map, removing all key-value pairs.
     /// This also includes values pointed at, if `V`, for example, is a
@@ -973,7 +1010,8 @@ where
     /// instead.**
     pub fn clear(&mut self)
     where
-        V: Deletable, {
+        V: Deletable,
+    {
         // Delete all values pointed at by the statemap. This is necessary if `V` is a
         // StateBox/StateMap.
         for (_, value) in self.iter() {
@@ -995,7 +1033,8 @@ where
     /// be possible.
     pub fn clear_flat(&mut self)
     where
-        V: Deserial, {
+        V: Deserial,
+    {
         // Delete only the map itself since the values have no pointers to state.
         // Thus there will be no dangling references.
         // Unwrapping is safe when only using the high-level API.
@@ -1030,7 +1069,8 @@ where
     /// This also deletes the value in the state.
     pub fn remove(&mut self, key: &K)
     where
-        V: Deletable, {
+        V: Deletable,
+    {
         if let Some(v) = self.remove_and_get(key) {
             v.delete()
         }
@@ -1072,13 +1112,13 @@ where
     pub fn iter(&self) -> StateMapIter<'_, K, V, S> {
         match self.state_api.iterator(&self.prefix) {
             Ok(state_iter) => StateMapIter {
-                state_iter:       Some(state_iter),
-                state_api:        self.state_api.clone(),
+                state_iter: Some(state_iter),
+                state_api: self.state_api.clone(),
                 _lifetime_marker: PhantomData,
             },
             Err(StateError::SubtreeWithPrefixNotFound) => StateMapIter {
-                state_iter:       None,
-                state_api:        self.state_api.clone(),
+                state_iter: None,
+                state_api: self.state_api.clone(),
                 _lifetime_marker: PhantomData,
             },
             _ => crate::trap(),
@@ -1090,13 +1130,13 @@ where
     pub fn iter_mut(&mut self) -> StateMapIterMut<'_, K, V, S> {
         match self.state_api.iterator(&self.prefix) {
             Ok(state_iter) => StateMapIterMut {
-                state_iter:       Some(state_iter),
-                state_api:        self.state_api.clone(),
+                state_iter: Some(state_iter),
+                state_api: self.state_api.clone(),
                 _lifetime_marker: PhantomData,
             },
             Err(StateError::SubtreeWithPrefixNotFound) => StateMapIterMut {
-                state_iter:       None,
-                state_api:        self.state_api.clone(),
+                state_iter: None,
+                state_api: self.state_api.clone(),
                 _lifetime_marker: PhantomData,
             },
             _ => crate::trap(),
@@ -1115,7 +1155,7 @@ where
         let mut entry = self.state_iter.as_mut()?.next()?;
         let key = entry.get_key();
         let mut key_cursor = Cursor {
-            data:   key,
+            data: key,
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
@@ -1138,14 +1178,17 @@ where
 
         let key_bytes = entry.get_key();
         let mut key_cursor = Cursor {
-            data:   key_bytes,
+            data: key_bytes,
             offset: 8, // Items in a map always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
         let k = K::deserial(&mut key_cursor).unwrap_abort();
         // we do not load the value here, only on demand. This allows iteration over
         // keys to be reasonably efficient.
-        Some((StateRef::new(k), StateRefMut::new(entry, self.state_api.clone())))
+        Some((
+            StateRef::new(k),
+            StateRefMut::new(entry, self.state_api.clone()),
+        ))
     }
 }
 
@@ -1153,19 +1196,25 @@ impl<S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::Deref for Sta
     type Target = V;
 
     #[inline(always)]
-    fn deref(&self) -> &Self::Target { self.get() }
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
 }
 
 impl<S: HasStateApi, V: Serial + DeserialWithState<S>> crate::ops::DerefMut
     for StateRefMut<'_, V, S>
 {
     #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
 }
 
 /// When dropped, the value, `V`, is written to the entry in the contract state.
 impl<V: Serial, S: HasStateApi> Drop for StateRefMut<'_, V, S> {
-    fn drop(&mut self) { self.store_mutations() }
+    fn drop(&mut self) {
+        self.store_mutations()
+    }
 }
 
 impl<V, S> StateRefMut<'_, V, S>
@@ -1178,7 +1227,8 @@ where
     /// implicitly.
     pub fn get(&self) -> &V
     where
-        V: DeserialWithState<S>, {
+        V: DeserialWithState<S>,
+    {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1192,7 +1242,8 @@ where
     /// happen implicitly.
     pub fn get_mut(&mut self) -> &mut V
     where
-        V: DeserialWithState<S>, {
+        V: DeserialWithState<S>,
+    {
         let lv = unsafe { &mut *self.lazy_value.get() };
         if let Some(v) = lv {
             v
@@ -1204,7 +1255,8 @@ where
     /// Load the value referenced by the entry from the chain data.
     fn load_value(&self) -> V
     where
-        V: DeserialWithState<S>, {
+        V: DeserialWithState<S>,
+    {
         // Safe to unwrap below, since the entry can only be `None`, using methods which
         // are consuming self.
         let entry = unsafe { &mut *self.entry.get() };
@@ -1226,7 +1278,8 @@ where
     pub fn update<F>(&mut self, f: F)
     where
         V: DeserialWithState<S>,
-        F: FnOnce(&mut V), {
+        F: FnOnce(&mut V),
+    {
         let lv = self.lazy_value.get_mut();
         // Safe to unwrap below, since the entry can only be `None`, using methods which
         // are consuming self.
@@ -1257,11 +1310,15 @@ where
     }
 
     /// Drop the ref without storing mutations to the state entry.
-    pub(crate) fn drop_without_storing(mut self) { *self.lazy_value.get_mut() = None; }
+    pub(crate) fn drop_without_storing(mut self) {
+        *self.lazy_value.get_mut() = None;
+    }
 }
 
 impl<K, V, S> Serial for StateMap<K, V, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(&self.prefix)
+    }
 }
 
 impl<T, S> StateSet<T, S>
@@ -1284,7 +1341,9 @@ where
     }
 
     /// Returns `true` if the set contains no elements.
-    pub fn is_empty(&self) -> bool { self.state_api.lookup_entry(&self.prefix).is_none() }
+    pub fn is_empty(&self) -> bool {
+        self.state_api.lookup_entry(&self.prefix).is_none()
+    }
 
     /// Returns `true` if the set contains a value.
     pub fn contains(&self, value: &T) -> bool {
@@ -1342,13 +1401,13 @@ impl<T, S: HasStateApi> StateSet<T, S> {
     pub fn iter(&self) -> StateSetIter<T, S> {
         match self.state_api.iterator(&self.prefix) {
             Ok(state_iter) => StateSetIter {
-                state_iter:       Some(state_iter),
-                state_api:        self.state_api.clone(),
+                state_iter: Some(state_iter),
+                state_api: self.state_api.clone(),
                 _marker_lifetime: PhantomData,
             },
             Err(StateError::SubtreeWithPrefixNotFound) => StateSetIter {
-                state_iter:       None,
-                state_api:        self.state_api.clone(),
+                state_iter: None,
+                state_api: self.state_api.clone(),
                 _marker_lifetime: PhantomData,
             },
             _ => crate::trap(),
@@ -1373,13 +1432,8 @@ impl<T: Serial, S: HasStateApi> StateBox<T, S> {
     /// trie.
     pub(crate) fn get_location(&self) -> &[u8] {
         match unsafe { &*self.inner.get() } {
-            StateBoxInner::Loaded {
-                entry,
-                ..
-            } => entry.get_key(),
-            StateBoxInner::Reference {
-                prefix,
-            } => &prefix[..],
+            StateBoxInner::Loaded { entry, .. } => entry.get_key(),
+            StateBoxInner::Reference { prefix } => &prefix[..],
         }
     }
 }
@@ -1388,12 +1442,16 @@ impl<S: HasStateApi, T: Serial + DeserialWithState<S>> crate::ops::Deref for Sta
     type Target = T;
 
     #[inline(always)]
-    fn deref(&self) -> &Self::Target { self.get() }
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
 }
 
 impl<S: HasStateApi, T: Serial + DeserialWithState<S>> crate::ops::DerefMut for StateBox<T, S> {
     #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target { self.get_mut() }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
 }
 
 impl<T: Serial, S: HasStateApi> Drop for StateBox<T, S> {
@@ -1421,13 +1479,9 @@ fn get_with_inner<'a, T: Serial + DeserialWithState<S>, S: HasStateApi>(
 ) -> (&'a mut T, &'a mut bool) {
     let (entry, value) = match inner {
         StateBoxInner::Loaded {
-            value,
-            modified,
-            ..
+            value, modified, ..
         } => return (value, modified),
-        StateBoxInner::Reference {
-            prefix,
-        } => {
+        StateBoxInner::Reference { prefix } => {
             let mut entry = state_api.lookup_entry(prefix).unwrap_abort();
             // new entry, positioned at the start.
             let value = T::deserial_with_state(state_api, &mut entry).unwrap_abort();
@@ -1441,13 +1495,9 @@ fn get_with_inner<'a, T: Serial + DeserialWithState<S>, S: HasStateApi>(
     };
     match inner {
         StateBoxInner::Loaded {
-            value,
-            modified,
-            ..
+            value, modified, ..
         } => (value, modified),
-        StateBoxInner::Reference {
-            ..
-        } => {
+        StateBoxInner::Reference { .. } => {
             // We just set it to loaded.
             unsafe { crate::hint::unreachable_unchecked() }
         }
@@ -1491,7 +1541,8 @@ where
     /// [`update`](Self::update).
     pub fn update<F, A>(&mut self, f: F) -> A
     where
-        F: FnOnce(&mut T) -> A, {
+        F: FnOnce(&mut T) -> A,
+    {
         let (entry, value) = self.ensure_cached();
         // Mutate the value (perhaps only in memory, depends on the type).
         let res = f(value);
@@ -1506,14 +1557,8 @@ where
     fn ensure_cached(&mut self) -> (&mut S::EntryType, &mut T) {
         let inner = self.inner.get_mut();
         let (entry, modified, value) = match inner {
-            StateBoxInner::Loaded {
-                entry,
-                value,
-                ..
-            } => return (entry, value),
-            StateBoxInner::Reference {
-                prefix,
-            } => {
+            StateBoxInner::Loaded { entry, value, .. } => return (entry, value),
+            StateBoxInner::Reference { prefix } => {
                 let mut entry = self.state_api.lookup_entry(prefix).unwrap_abort();
                 // new entry, positioned at the start.
                 let value = T::deserial_with_state(&self.state_api, &mut entry).unwrap_abort();
@@ -1526,14 +1571,8 @@ where
             value,
         };
         match inner {
-            StateBoxInner::Loaded {
-                entry,
-                value,
-                ..
-            } => (entry, value),
-            StateBoxInner::Reference {
-                ..
-            } => {
+            StateBoxInner::Loaded { entry, value, .. } => (entry, value),
+            StateBoxInner::Reference { .. } => {
                 // We just set it to loaded
                 unsafe { crate::hint::unreachable_unchecked() }
             }
@@ -1548,7 +1587,9 @@ impl<T: Serial, S: HasStateApi> Serial for StateBox<T, S> {
 }
 
 impl<T, S> Serial for StateSet<T, S> {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_all(&self.prefix) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_all(&self.prefix)
+    }
 }
 
 /// Unlock the part of the tree locked by the iterator.
@@ -1573,7 +1614,7 @@ where
         let entry = self.state_iter.as_mut()?.next()?;
         let key = entry.get_key();
         let mut key_cursor = Cursor {
-            data:   key,
+            data: key,
             offset: 8, // Items in a set always start with the set prefix which is 8 bytes.
         };
         // Unwrapping is safe when only using the high-level API.
@@ -1614,22 +1655,30 @@ impl Read for ExternParameter {
 impl HasSize for ExternParameterDataPlaceholder {
     #[inline(always)]
     // parameter 0 always exists so this is correct
-    fn size(&self) -> u32 { unsafe { prims::get_parameter_size(0) as u32 } }
+    fn size(&self) -> u32 {
+        unsafe { prims::get_parameter_size(0) as u32 }
+    }
 }
 
 impl HasSize for ExternParameter {
     #[inline(always)]
-    fn size(&self) -> u32 { self.cursor.data.size() }
+    fn size(&self) -> u32 {
+        self.cursor.data.size()
+    }
 }
 
 impl Seek for ExternParameter {
     type Err = ();
 
     #[inline(always)]
-    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> { self.cursor.seek(pos) }
+    fn seek(&mut self, pos: SeekFrom) -> Result<u32, Self::Err> {
+        self.cursor.seek(pos)
+    }
 
     #[inline(always)]
-    fn cursor_position(&self) -> u32 { self.cursor.cursor_position() }
+    fn cursor_position(&self) -> u32 {
+        self.cursor.cursor_position()
+    }
 }
 
 impl HasParameter for ExternParameter {}
@@ -1665,7 +1714,9 @@ impl HasCallResponse for ExternCallResponse {
     // CallResponse can only be constured in this crate. As a result whenever it is
     // constructed it will point to a valid parameter, which means that
     // `get_parameter_size` will always return a non-negative value.
-    fn size(&self) -> u32 { unsafe { prims::get_parameter_size(self.i.get()) as u32 } }
+    fn size(&self) -> u32 {
+        unsafe { prims::get_parameter_size(self.i.get()) as u32 }
+    }
 }
 
 /// # Trait implementations for the chain metadata.
@@ -1713,11 +1764,17 @@ impl AttributesCursor {
 impl HasPolicy for Policy<AttributesCursor> {
     type Iterator = PolicyAttributesIter;
 
-    fn identity_provider(&self) -> IdentityProvider { self.identity_provider }
+    fn identity_provider(&self) -> IdentityProvider {
+        self.identity_provider
+    }
 
-    fn created_at(&self) -> Timestamp { self.created_at }
+    fn created_at(&self) -> Timestamp {
+        self.created_at
+    }
 
-    fn valid_to(&self) -> Timestamp { self.valid_to }
+    fn valid_to(&self) -> Timestamp {
+        self.valid_to
+    }
 
     #[inline(always)]
     fn next_item(&mut self, buf: &mut [u8; 31]) -> Option<(AttributeTag, u8)> {
@@ -1728,8 +1785,8 @@ impl HasPolicy for Policy<AttributesCursor> {
         PolicyAttributesIter {
             cursor: AttributesCursor {
                 current_position: 0,
-                remaining_items:  self.items.total_items,
-                total_items:      self.items.total_items,
+                remaining_items: self.items.total_items,
+                total_items: self.items.total_items,
             },
         }
     }
@@ -1747,7 +1804,9 @@ impl Iterator for PolicyAttributesIter {
 }
 
 impl ExactSizeIterator for PolicyAttributesIter {
-    fn len(&self) -> usize { self.cursor.remaining_items as usize }
+    fn len(&self) -> usize {
+        self.cursor.remaining_items as usize
+    }
 }
 
 /// An iterator over policies using host functions to supply the data.
@@ -1755,7 +1814,7 @@ impl ExactSizeIterator for PolicyAttributesIter {
 /// and [ExactSizeIterator](https://doc.rust-lang.org/std/iter/trait.ExactSizeIterator.html) traits.
 pub struct PoliciesIterator {
     /// Position in the policies binary serialization.
-    pos:             u32,
+    pos: u32,
     /// Number of remaining items in the stream.
     remaining_items: u16,
 }
@@ -1779,7 +1838,9 @@ impl Iterator for PoliciesIterator {
         let ip_part: [u8; 4] = buf[2..2 + 4].try_into().unwrap_abort();
         let created_at_part: [u8; 8] = buf[2 + 4..2 + 4 + 8].try_into().unwrap_abort();
         let valid_to_part: [u8; 8] = buf[2 + 4 + 8..2 + 4 + 8 + 8].try_into().unwrap_abort();
-        let len_part: [u8; 2] = buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2].try_into().unwrap_abort();
+        let len_part: [u8; 2] = buf[2 + 4 + 8 + 8..2 + 4 + 8 + 8 + 2]
+            .try_into()
+            .unwrap_abort();
         let identity_provider = IdentityProvider::from_le_bytes(ip_part);
         let created_at = Timestamp::from_timestamp_millis(u64::from_le_bytes(created_at_part));
         let valid_to = Timestamp::from_timestamp_millis(u64::from_le_bytes(valid_to_part));
@@ -1807,7 +1868,9 @@ impl Iterator for PoliciesIterator {
 
 impl ExactSizeIterator for PoliciesIterator {
     #[inline(always)]
-    fn len(&self) -> usize { self.remaining_items as usize }
+    fn len(&self) -> usize {
+        self.remaining_items as usize
+    }
 }
 
 impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
@@ -1817,7 +1880,9 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
     type PolicyType = Policy<AttributesCursor>;
 
     #[inline(always)]
-    fn metadata(&self) -> &Self::MetadataType { &ExternChainMeta {} }
+    fn metadata(&self) -> &Self::MetadataType {
+        &ExternChainMeta {}
+    }
 
     fn policies(&self) -> PoliciesIterator {
         let mut buf: MaybeUninit<[u8; 2]> = MaybeUninit::uninit();
@@ -1826,13 +1891,15 @@ impl<T: sealed::ContextType> HasCommonData for ExternContext<T> {
             buf.assume_init()
         };
         PoliciesIterator {
-            pos:             2, // 2 because we already read 2 bytes.
+            pos: 2, // 2 because we already read 2 bytes.
             remaining_items: u16::from_le_bytes(buf),
         }
     }
 
     #[inline(always)]
-    fn parameter_cursor(&self) -> Self::ParamType { ExternParameter::default() }
+    fn parameter_cursor(&self) -> Self::ParamType {
+        ExternParameter::default()
+    }
 }
 
 /// Tag of the transfer operation expected by the host. See [prims::invoke].
@@ -1974,7 +2041,10 @@ fn parse_call_response_code(code: u64) -> CallContractResult<ExternCallResponse>
         let tag = 0x80_0000u32; // Mask for the first bit.
         if tag & rv != 0 {
             // Check the bit, indicating a contract state change.
-            Ok((true, NonZeroU32::new(rv & !tag).map(ExternCallResponse::new)))
+            Ok((
+                true,
+                NonZeroU32::new(rv & !tag).map(ExternCallResponse::new),
+            ))
         } else {
             Ok((false, NonZeroU32::new(rv).map(ExternCallResponse::new)))
         }
@@ -2160,14 +2230,20 @@ fn invoke_transfer_worker(receiver: &AccountAddress, amount: Amount) -> Transfer
             receiver.as_ref() as *const [u8; ACCOUNT_ADDRESS_SIZE] as *const u8,
             ACCOUNT_ADDRESS_SIZE,
         );
-        (bytes.as_mut_ptr() as *mut u8).add(ACCOUNT_ADDRESS_SIZE).copy_from_nonoverlapping(
-            &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
-            8,
-        );
+        (bytes.as_mut_ptr() as *mut u8)
+            .add(ACCOUNT_ADDRESS_SIZE)
+            .copy_from_nonoverlapping(
+                &amount.micro_ccd.to_le_bytes() as *const [u8; 8] as *const u8,
+                8,
+            );
         bytes.assume_init()
     };
     let response = unsafe {
-        prims::invoke(INVOKE_TRANSFER_TAG, data.as_ptr(), (ACCOUNT_ADDRESS_SIZE + 8) as u32)
+        prims::invoke(
+            INVOKE_TRANSFER_TAG,
+            data.as_ptr(),
+            (ACCOUNT_ADDRESS_SIZE + 8) as u32,
+        )
     };
     parse_transfer_response_code(response)
 }
@@ -2207,8 +2283,13 @@ fn query_account_balance_worker(address: &AccountAddress) -> QueryAccountBalance
 /// two extern hosts below.
 fn query_contract_balance_worker(address: &ContractAddress) -> QueryContractBalanceResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
-    let response =
-        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_BALANCE_TAG, data.as_ptr() as *const u8, 16) };
+    let response = unsafe {
+        prims::invoke(
+            INVOKE_QUERY_CONTRACT_BALANCE_TAG,
+            data.as_ptr() as *const u8,
+            16,
+        )
+    };
     let mut return_value = parse_query_contract_balance_response_code(response)?;
     Ok(Amount::deserial(&mut return_value).unwrap_abort())
 }
@@ -2243,7 +2324,11 @@ fn check_account_signature_worker(
     signatures.serial(&mut buffer).unwrap_abort();
 
     let response = unsafe {
-        prims::invoke(INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG, buffer.as_ptr(), buffer.len() as u32)
+        prims::invoke(
+            INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG,
+            buffer.as_ptr(),
+            buffer.len() as u32,
+        )
     };
     // Be explicit that the buffer must survive up to here.
     drop(buffer);
@@ -2258,7 +2343,11 @@ fn query_contract_module_reference_worker(
 ) -> QueryContractModuleReferenceResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
     let response = unsafe {
-        prims::invoke(INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG, data.as_ptr() as *const u8, 16)
+        prims::invoke(
+            INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG,
+            data.as_ptr() as *const u8,
+            16,
+        )
     };
     let mut return_value = parse_query_contract_module_reference_response_code(response)?;
     Ok(ModuleReference::deserial(&mut return_value).unwrap_abort())
@@ -2269,8 +2358,13 @@ fn query_contract_module_reference_worker(
 #[cfg(feature = "p7")]
 fn query_contract_name_worker(address: &ContractAddress) -> QueryContractNameResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
-    let response =
-        unsafe { prims::invoke(INVOKE_QUERY_CONTRACT_NAME_TAG, data.as_ptr() as *const u8, 16) };
+    let response = unsafe {
+        prims::invoke(
+            INVOKE_QUERY_CONTRACT_NAME_TAG,
+            data.as_ptr() as *const u8,
+            16,
+        )
+    };
     parse_query_contract_name_response_code(response)
 }
 
@@ -2282,9 +2376,7 @@ where
     /// should exist during contract execution, thus this should only be
     /// called at the very beginning of execution.
     pub fn open(state: S) -> Self {
-        Self {
-            state_api: state,
-        }
+        Self { state_api: state }
     }
 
     /// Provide clone of [`HasStateApi`] instance and new key prefix
@@ -2393,7 +2485,9 @@ where
         next_collection_prefix_entry.move_to_start();
 
         // Increment the collection prefix
-        next_collection_prefix_entry.write_u64(collection_prefix + 1).unwrap_abort(); // Writing to state cannot fail.
+        next_collection_prefix_entry
+            .write_u64(collection_prefix + 1)
+            .unwrap_abort(); // Writing to state cannot fail.
 
         collection_prefix.to_le_bytes()
     }
@@ -2480,7 +2574,11 @@ where
             // So we refresh it.
             if let Ok(new_state) = S::deserial_with_state(
                 &self.state_builder.state_api,
-                &mut self.state_builder.state_api.lookup_entry(&[]).unwrap_abort(),
+                &mut self
+                    .state_builder
+                    .state_api
+                    .lookup_entry(&[])
+                    .unwrap_abort(),
             ) {
                 self.state = new_state;
             } else {
@@ -2519,7 +2617,9 @@ where
     }
 
     #[inline(always)]
-    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
+    fn exchange_rates(&self) -> ExchangeRates {
+        query_exchange_rates_worker()
+    }
 
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
@@ -2554,12 +2654,20 @@ where
         query_contract_name_worker(&address)
     }
 
-    fn state(&self) -> &S { &self.state }
+    fn state(&self) -> &S {
+        &self.state
+    }
 
-    fn state_mut(&mut self) -> &mut S { &mut self.state }
+    fn state_mut(&mut self) -> &mut S {
+        &mut self.state
+    }
 
     fn commit_state(&mut self) {
-        let mut root_entry = self.state_builder.state_api.lookup_entry(&[]).unwrap_abort();
+        let mut root_entry = self
+            .state_builder
+            .state_api
+            .lookup_entry(&[])
+            .unwrap_abort();
         self.state.serial(&mut root_entry).unwrap_abort();
         let new_state_size = root_entry.size().unwrap_abort();
         root_entry.truncate(new_state_size).unwrap_abort();
@@ -2571,7 +2679,9 @@ where
     }
 
     #[inline(always)]
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> {
+        &mut self.state_builder
+    }
 
     #[inline(always)]
     fn state_and_builder(&mut self) -> (&mut S, &mut StateBuilder<Self::StateApiType>) {
@@ -2611,7 +2721,9 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn exchange_rates(&self) -> ExchangeRates { query_exchange_rates_worker() }
+    fn exchange_rates(&self) -> ExchangeRates {
+        query_exchange_rates_worker()
+    }
 
     fn upgrade(&mut self, module: ModuleReference) -> UpgradeResult {
         let response = unsafe { prims::upgrade(module.as_ref().as_ptr()) };
@@ -2647,10 +2759,14 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state(&self) -> &ExternStateApi { &self.state_api }
+    fn state(&self) -> &ExternStateApi {
+        &self.state_api
+    }
 
     #[inline(always)]
-    fn state_mut(&mut self) -> &mut ExternStateApi { &mut self.state_api }
+    fn state_mut(&mut self) -> &mut ExternStateApi {
+        &mut self.state_api
+    }
 
     #[inline(always)]
     fn commit_state(&mut self) {
@@ -2663,7 +2779,9 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
     }
 
     #[inline(always)]
-    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> { &mut self.state_builder }
+    fn state_builder(&mut self) -> &mut StateBuilder<Self::StateApiType> {
+        &mut self.state_builder
+    }
 
     #[inline(always)]
     fn state_and_builder(
@@ -2728,7 +2846,11 @@ impl HasCryptoPrimitives for ExternCryptoPrimitives {
     fn hash_sha2_256(&self, data: &[u8]) -> HashSha2256 {
         let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
         unsafe {
-            prims::hash_sha2_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
+            prims::hash_sha2_256(
+                data.as_ptr(),
+                data.len() as u32,
+                output.as_mut_ptr() as *mut u8,
+            );
             HashSha2256(output.assume_init())
         }
     }
@@ -2736,7 +2858,11 @@ impl HasCryptoPrimitives for ExternCryptoPrimitives {
     fn hash_sha3_256(&self, data: &[u8]) -> HashSha3256 {
         let mut output: MaybeUninit<[u8; 32]> = MaybeUninit::uninit();
         unsafe {
-            prims::hash_sha3_256(data.as_ptr(), data.len() as u32, output.as_mut_ptr() as *mut u8);
+            prims::hash_sha3_256(
+                data.as_ptr(),
+                data.len() as u32,
+                output.as_mut_ptr() as *mut u8,
+            );
             HashSha3256(output.assume_init())
         }
     }
@@ -2759,7 +2885,9 @@ impl HasInitContext for ExternContext<crate::types::ExternInitContext> {
     type InitData = ();
 
     /// Create a new init context by using an external call.
-    fn open(_: Self::InitData) -> Self { ExternContext::default() }
+    fn open(_: Self::InitData) -> Self {
+        ExternContext::default()
+    }
 
     #[inline(always)]
     fn init_origin(&self) -> AccountAddress {
@@ -2778,7 +2906,9 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
     type ReceiveData = ();
 
     /// Create a new receive context
-    fn open(_: Self::ReceiveData) -> Self { ExternContext::default() }
+    fn open(_: Self::ReceiveData) -> Self {
+        ExternContext::default()
+    }
 
     #[inline(always)]
     fn invoker(&self) -> AccountAddress {
@@ -2814,8 +2944,10 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
             let tag = *ptr;
             match tag {
                 0u8 => {
-                    match from_bytes(core::slice::from_raw_parts(ptr.add(1), ACCOUNT_ADDRESS_SIZE))
-                    {
+                    match from_bytes(core::slice::from_raw_parts(
+                        ptr.add(1),
+                        ACCOUNT_ADDRESS_SIZE,
+                    )) {
                         Ok(v) => Address::Account(v),
                         Err(_) => crate::trap(),
                     }
@@ -2851,9 +2983,7 @@ impl HasReceiveContext for ExternContext<crate::types::ExternReceiveContext> {
 impl HasLogger for Logger {
     #[inline(always)]
     fn init() -> Self {
-        Self {
-            _private: (),
-        }
+        Self { _private: () }
     }
 
     fn log_raw(&mut self, event: &[u8]) -> Result<(), LogError> {
@@ -2923,7 +3053,9 @@ impl<A> UnwrapAbort for Option<A> {
     #[allow(clippy::redundant_closure)]
     // The redundant_closure here is needed since there is an implicit coercion from
     // ! to A. This does not happen if we just use unwrap_or_else(crate::trap).
-    fn unwrap_abort(self) -> Self::Unwrap { self.unwrap_or_else(|| crate::trap()) }
+    fn unwrap_abort(self) -> Self::Unwrap {
+        self.unwrap_or_else(|| crate::trap())
+    }
 }
 
 impl<A> ExpectReport for Option<A> {
@@ -2973,7 +3105,9 @@ where
     S: HasStateApi,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        source.read_array().map(|map_prefix| StateMap::open(state.clone(), map_prefix))
+        source
+            .read_array()
+            .map(|map_prefix| StateMap::open(state.clone(), map_prefix))
     }
 }
 
@@ -2983,7 +3117,9 @@ where
     T: Serial + DeserialWithState<S>,
 {
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self> {
-        source.read_array().map(|set_prefix| StateSet::open(state.clone(), set_prefix))
+        source
+            .read_array()
+            .map(|set_prefix| StateSet::open(state.clone(), set_prefix))
     }
 }
 
@@ -2996,9 +3132,7 @@ where
         let prefix = source.read_array()?;
         Ok(StateBox {
             state_api: state.clone(),
-            inner:     UnsafeCell::new(StateBoxInner::Reference {
-                prefix,
-            }),
+            inner: UnsafeCell::new(StateBoxInner::Reference { prefix }),
         })
     }
 }
@@ -3017,19 +3151,11 @@ where
         // replace the value with a dummy one for which drop is a no-op.
         let inner = mem::replace(
             &mut self.inner,
-            UnsafeCell::new(StateBoxInner::Reference {
-                prefix: [0u8; 8],
-            }),
+            UnsafeCell::new(StateBoxInner::Reference { prefix: [0u8; 8] }),
         );
         let (entry, value) = match inner.into_inner() {
-            StateBoxInner::Loaded {
-                entry,
-                value,
-                ..
-            } => (entry, value),
-            StateBoxInner::Reference {
-                prefix,
-            } => {
+            StateBoxInner::Loaded { entry, value, .. } => (entry, value),
+            StateBoxInner::Reference { prefix } => {
                 // we load the value first because it might be necessary to delete
                 // the nested value.
                 // TODO: This is pretty bad for performance, but we cannot specialize the
@@ -3065,11 +3191,15 @@ where
     K: Serialize,
     V: Serial + DeserialWithState<S> + Deletable,
 {
-    fn delete(mut self) { self.clear(); }
+    fn delete(mut self) {
+        self.clear();
+    }
 }
 
 impl Serial for HashSha2256 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.0.serial(out)
+    }
 }
 
 impl Deserial for HashSha2256 {
@@ -3079,11 +3209,15 @@ impl Deserial for HashSha2256 {
 }
 
 impl schema::SchemaType for HashSha2256 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
+    fn get_type() -> concordium_contracts_common::schema::Type {
+        schema::Type::ByteArray(32)
+    }
 }
 
 impl Serial for HashSha3256 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.0.serial(out)
+    }
 }
 
 impl Deserial for HashSha3256 {
@@ -3093,11 +3227,15 @@ impl Deserial for HashSha3256 {
 }
 
 impl schema::SchemaType for HashSha3256 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
+    fn get_type() -> concordium_contracts_common::schema::Type {
+        schema::Type::ByteArray(32)
+    }
 }
 
 impl Serial for HashKeccak256 {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { self.0.serial(out) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        self.0.serial(out)
+    }
 }
 
 impl Deserial for HashKeccak256 {
@@ -3107,13 +3245,18 @@ impl Deserial for HashKeccak256 {
 }
 
 impl schema::SchemaType for HashKeccak256 {
-    fn get_type() -> concordium_contracts_common::schema::Type { schema::Type::ByteArray(32) }
+    fn get_type() -> concordium_contracts_common::schema::Type {
+        schema::Type::ByteArray(32)
+    }
 }
 
 impl schema::SchemaType for MetadataUrl {
     fn get_type() -> schema::Type {
         schema::Type::Struct(schema::Fields::Named(crate::vec![
-            (String::from("url"), schema::Type::String(schema::SizeLength::U16)),
+            (
+                String::from("url"),
+                schema::Type::String(schema::SizeLength::U16)
+            ),
             // Use the `HashSha2256` schema to represent `hash` as a hex string.
             (String::from("hash"), Option::<HashSha2256>::get_type()),
         ]))
@@ -3137,7 +3280,7 @@ impl Deserial for MetadataUrl {
         let len: u16 = source.get()?;
         let bytes = deserial_vector_no_length(source, len as usize)?;
         Ok(MetadataUrl {
-            url:  String::from_utf8(bytes).map_err(|_| ParseError::default())?,
+            url: String::from_utf8(bytes).map_err(|_| ParseError::default())?,
             hash: Deserial::deserial(source)?,
         })
     }
@@ -3224,8 +3367,13 @@ mod wasm_test {
     fn high_level_insert_get() {
         let expected_value: u64 = 123123123;
         let mut state_builder = StateBuilder::open(StateApi::open());
-        state_builder.insert(0, expected_value).expect("Insert failed");
-        let actual_value: u64 = state_builder.get(0).expect("Not found").expect("Not a valid u64");
+        state_builder
+            .insert(0, expected_value)
+            .expect("Insert failed");
+        let actual_value: u64 = state_builder
+            .get(0)
+            .expect("Not found")
+            .expect("Not a valid u64");
         claim_eq!(expected_value, actual_value);
     }
 
@@ -3253,7 +3401,9 @@ mod wasm_test {
         let mut state_builder = StateBuilder::open(StateApi::open());
 
         let map_to_insert = state_builder.new_map::<String, String>();
-        state_builder.insert(my_map_key, map_to_insert).expect("Insert failed");
+        state_builder
+            .insert(my_map_key, map_to_insert)
+            .expect("Insert failed");
 
         let mut my_map: StateMap<String, String, _> = state_builder
             .get(my_map_key)
@@ -3262,7 +3412,10 @@ mod wasm_test {
         let _ = my_map.insert("abc".to_string(), "hello, world".to_string());
         let _ = my_map.insert("def".to_string(), "hallo, Weld".to_string());
         let _ = my_map.insert("ghi".to_string(), "hej, verden".to_string());
-        claim_eq!(*my_map.get(&"abc".to_string()).unwrap(), "hello, world".to_string());
+        claim_eq!(
+            *my_map.get(&"abc".to_string()).unwrap(),
+            "hello, world".to_string()
+        );
 
         let mut iter = my_map.iter();
         let (k1, v1) = iter.next().unwrap();
@@ -3311,7 +3464,14 @@ mod wasm_test {
         let _ = inner_map.insert(key_to_value, value);
         let _ = outer_map.insert(inner_map_key, inner_map);
 
-        claim_eq!(*outer_map.get(&inner_map_key).unwrap().get(&key_to_value).unwrap(), value);
+        claim_eq!(
+            *outer_map
+                .get(&inner_map_key)
+                .unwrap()
+                .get(&key_to_value)
+                .unwrap(),
+            value
+        );
     }
 
     #[concordium_test]
@@ -3398,12 +3558,25 @@ mod wasm_test {
         claim!(!set.insert(1));
         claim!(set.insert(2));
         claim!(set.remove(&2));
-        state_builder.insert(my_set_key, set).expect("Insert failed");
+        state_builder
+            .insert(my_set_key, set)
+            .expect("Insert failed");
 
-        claim!(state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&0),);
-        claim!(!state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap().contains(&2),);
+        claim!(state_builder
+            .get::<_, StateSet<u8, _>>(my_set_key)
+            .unwrap()
+            .unwrap()
+            .contains(&0),);
+        claim!(!state_builder
+            .get::<_, StateSet<u8, _>>(my_set_key)
+            .unwrap()
+            .unwrap()
+            .contains(&2),);
 
-        let set = state_builder.get::<_, StateSet<u8, _>>(my_set_key).unwrap().unwrap();
+        let set = state_builder
+            .get::<_, StateSet<u8, _>>(my_set_key)
+            .unwrap()
+            .unwrap();
         let mut iter = set.iter();
         claim_eq!(*iter.next().unwrap(), 0);
         claim_eq!(*iter.next().unwrap(), 1);
@@ -3482,7 +3655,10 @@ mod wasm_test {
             .expect("No iterators, so insertion should work.");
         claim!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.create_entry(&sub_key);
-        claim!(entry.is_err(), "Should not be able to create an entry under a locked subtree");
+        claim!(
+            entry.is_err(),
+            "Should not be able to create an entry under a locked subtree"
+        );
     }
 
     #[concordium_test]
@@ -3497,7 +3673,10 @@ mod wasm_test {
             .expect("No iterators, so insertion should work.");
         claim!(state.iterator(&key).is_ok(), "Iterator should be present");
         let entry = state.create_entry(&key2);
-        claim!(entry.is_ok(), "Failed to create a new entry under a different subtree");
+        claim!(
+            entry.is_ok(),
+            "Failed to create a new entry under a different subtree"
+        );
     }
 
     #[concordium_test]
@@ -3549,7 +3728,10 @@ mod wasm_test {
         let middle_box = state_builder.new_box(inner_box);
         let outer_box = state_builder.new_box(middle_box);
         outer_box.delete();
-        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder
+            .state_api
+            .iterator(&[])
+            .expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
         claim!(iter.nth(1).is_none());
     }
@@ -3565,7 +3747,10 @@ mod wasm_test {
         let _ = map.insert(2u8, box2);
         let _ = map.insert(3u8, box3);
         map.clear();
-        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder
+            .state_api
+            .iterator(&[])
+            .expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
         claim!(iter.nth(1).is_none());
     }
@@ -3585,7 +3770,10 @@ mod wasm_test {
         let _ = outer_map.insert(0u8, inner_map_1);
         let _ = outer_map.insert(1u8, inner_map_2);
         outer_map.clear();
-        let mut iter = state_builder.state_api.iterator(&[]).expect("Could not get iterator");
+        let mut iter = state_builder
+            .state_api
+            .iterator(&[])
+            .expect("Could not get iterator");
         // The only remaining node should be the state_builder's next_item_prefix node.
         claim!(iter.nth(1).is_none());
     }
@@ -3622,8 +3810,11 @@ mod wasm_test {
             EntryRaw::Vacant(_) => panic!("Entry is vacant"),
             EntryRaw::Occupied(mut occ) => occ.insert_raw(&to_bytes(&a_short_string)),
         }
-        let actual_size =
-            state.lookup_entry(&[]).expect("Lookup failed").size().expect("Getting size failed");
+        let actual_size = state
+            .lookup_entry(&[])
+            .expect("Lookup failed")
+            .size()
+            .expect("Getting size failed");
         claim_eq!(expected_size as u32, actual_size);
     }
 }

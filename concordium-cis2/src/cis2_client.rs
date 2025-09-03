@@ -68,37 +68,41 @@ impl<T: Read, R: Deserial> TryFrom<CallContractError<T>> for Cis2ClientError<R> 
 
     fn try_from(err: CallContractError<T>) -> Result<Cis2ClientError<R>, Cis2ClientError<R>> {
         match err {
-            CallContractError::AmountTooLarge => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::AmountTooLarge))
-            }
-            CallContractError::MissingAccount => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::MissingAccount))
-            }
-            CallContractError::MissingContract => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::MissingContract))
-            }
-            CallContractError::MissingEntrypoint => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::MissingEntrypoint))
-            }
-            CallContractError::MessageFailed => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::MessageFailed))
-            }
+            CallContractError::AmountTooLarge => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::AmountTooLarge,
+            )),
+            CallContractError::MissingAccount => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::MissingAccount,
+            )),
+            CallContractError::MissingContract => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::MissingContract,
+            )),
+            CallContractError::MissingEntrypoint => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::MissingEntrypoint,
+            )),
+            CallContractError::MessageFailed => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::MessageFailed,
+            )),
             CallContractError::LogicReject {
                 reason,
                 mut return_value,
-            } => Ok(Cis2ClientError::InvokeContractError(InvokeContractError::LogicReject {
-                reason,
-                return_value: Cis2Error::<R>::deserial(&mut return_value)?,
-            })),
-            CallContractError::Trap => {
-                Ok(Cis2ClientError::InvokeContractError(InvokeContractError::Trap))
-            }
+            } => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::LogicReject {
+                    reason,
+                    return_value: Cis2Error::<R>::deserial(&mut return_value)?,
+                },
+            )),
+            CallContractError::Trap => Ok(Cis2ClientError::InvokeContractError(
+                InvokeContractError::Trap,
+            )),
         }
     }
 }
 
 impl<T> From<ParseError> for Cis2ClientError<T> {
-    fn from(_: ParseError) -> Self { Cis2ClientError::ParseResult }
+    fn from(_: ParseError) -> Self {
+        Cis2ClientError::ParseResult
+    }
 }
 
 /// Client for interacting with CIS2 compliant contracts.
@@ -116,9 +120,7 @@ pub struct Cis2Client {
 
 impl Cis2Client {
     pub fn new(contract: ContractAddress) -> Self {
-        Self {
-            contract,
-        }
+        Self { contract }
     }
 
     /// Calls the `supports` entrypoint of the CIS2 contract to check if the
@@ -206,10 +208,7 @@ impl Cis2Client {
         address: Address,
     ) -> Result<bool, Cis2ClientError<E>> {
         let params = &OperatorOfQueryParams {
-            queries: vec![OperatorOfQuery {
-                owner,
-                address,
-            }],
+            queries: vec![OperatorOfQuery { owner, address }],
         };
         let mut res: OperatorOfQueryResponse =
             self.invoke_contract_read_only(host, OPERATOR_OF_ENTRYPOINT_NAME, params)?;
@@ -247,10 +246,7 @@ impl Cis2Client {
         address: Address,
     ) -> Result<A, Cis2ClientError<E>> {
         let params = BalanceOfQueryParams {
-            queries: vec![BalanceOfQuery {
-                token_id,
-                address,
-            }],
+            queries: vec![BalanceOfQuery { token_id, address }],
         };
 
         let mut res: BalanceOfQueryResponse<A> =
@@ -331,10 +327,7 @@ impl Cis2Client {
         operator: Address,
         update: OperatorUpdate,
     ) -> Result<bool, Cis2ClientError<E>> {
-        let params = UpdateOperator {
-            operator,
-            update,
-        };
+        let params = UpdateOperator { operator, update };
         let (state_modified, _): (bool, Option<()>) =
             self.invoke_contract(host, UPDATE_OPERATOR_ENTRYPOINT_NAME, &params)?;
 
@@ -422,9 +415,12 @@ mod test {
             );
 
             // Return a response with support.
-            Ok((false, SupportsQueryResponse {
-                results: vec![SupportResult::Support],
-            }))
+            Ok((
+                false,
+                SupportsQueryResponse {
+                    results: vec![SupportResult::Support],
+                },
+            ))
         }
 
         let cis_contract_address = ContractAddress::new(INDEX, SUBINDEX);
@@ -455,9 +451,12 @@ mod test {
             _s: &mut (),
         ) -> Result<(bool, SupportsQueryResponse), CallContractError<SupportsQueryResponse>>
         {
-            Ok((false, SupportsQueryResponse {
-                results: vec![SupportResult::NoSupport],
-            }))
+            Ok((
+                false,
+                SupportsQueryResponse {
+                    results: vec![SupportResult::NoSupport],
+                },
+            ))
         }
 
         host.setup_mock_entrypoint(
@@ -487,12 +486,15 @@ mod test {
             _s: &mut (),
         ) -> Result<(bool, SupportsQueryResponse), CallContractError<SupportsQueryResponse>>
         {
-            Ok((false, SupportsQueryResponse {
-                results: vec![SupportResult::SupportBy(vec![ContractAddress::new(
-                    INDEX,
-                    SUBINDEX + 1,
-                )])],
-            }))
+            Ok((
+                false,
+                SupportsQueryResponse {
+                    results: vec![SupportResult::SupportBy(vec![ContractAddress::new(
+                        INDEX,
+                        SUBINDEX + 1,
+                    )])],
+                },
+            ))
         }
 
         host.setup_mock_entrypoint(
@@ -507,7 +509,10 @@ mod test {
             SupportResult::NoSupport => fail!(),
             SupportResult::Support => fail!(),
             SupportResult::SupportBy(addresses) => {
-                assert_eq!(addresses.first(), Some(&ContractAddress::new(INDEX, SUBINDEX + 1)))
+                assert_eq!(
+                    addresses.first(),
+                    Some(&ContractAddress::new(INDEX, SUBINDEX + 1))
+                )
             }
         }
     }
@@ -535,7 +540,10 @@ mod test {
                         params.queries[0].address,
                         Address::Contract(ContractAddress::new(INDEX + 1, SUBINDEX))
                     );
-                    assert_eq!(params.queries[0].owner, Address::Account(AccountAddress([1; 32])));
+                    assert_eq!(
+                        params.queries[0].owner,
+                        Address::Account(AccountAddress([1; 32]))
+                    );
                 }
                 Err(_) => fail!(),
             };
@@ -578,7 +586,10 @@ mod test {
             assert!(params.is_ok());
             let params = params.unwrap();
             assert_eq!(params.queries[0].token_id, TokenIdU8(1));
-            assert_eq!(params.queries[0].address, Address::Account(AccountAddress([1; 32])));
+            assert_eq!(
+                params.queries[0].address,
+                Address::Account(AccountAddress([1; 32]))
+            );
 
             // Return a balance of 1.
             Ok((false, BalanceOfQueryResponse(vec![1.into()])))
@@ -620,7 +631,10 @@ mod test {
             assert!(params.is_ok());
             let params = params.unwrap();
             assert_eq!(params.0[0].token_id, TokenIdU8(1));
-            assert_eq!(params.0[0].to.address(), Address::Account(AccountAddress([2; 32])));
+            assert_eq!(
+                params.0[0].to.address(),
+                Address::Account(AccountAddress([2; 32]))
+            );
             assert_eq!(params.0[0].amount, 1.into());
 
             // Return a successful transfer.
@@ -634,13 +648,16 @@ mod test {
         );
 
         let client = Cis2Client::new(cis_contract_address);
-        let res: Result<bool, Cis2ClientError<()>> = client.transfer(&mut host, Transfer {
-            amount,
-            from,
-            to: Receiver::Account(to_account),
-            token_id: TokenIdU8(1),
-            data: AdditionalData::empty(),
-        });
+        let res: Result<bool, Cis2ClientError<()>> = client.transfer(
+            &mut host,
+            Transfer {
+                amount,
+                from,
+                to: Receiver::Account(to_account),
+                token_id: TokenIdU8(1),
+                data: AdditionalData::empty(),
+            },
+        );
 
         assert!(res.is_ok());
     }

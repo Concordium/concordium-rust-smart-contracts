@@ -11,8 +11,8 @@ type State = ();
 #[derive(SchemaType, Serialize)]
 pub struct VerificationParameter {
     pub public_key: PublicKeyEd25519,
-    pub signature:  SignatureEd25519,
-    pub message:    Vec<u8>,
+    pub signature: SignatureEd25519,
+    pub message: Vec<u8>,
 }
 
 #[init(contract = "signature-verifier")]

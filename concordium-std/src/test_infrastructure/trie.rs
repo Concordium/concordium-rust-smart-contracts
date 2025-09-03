@@ -13,15 +13,17 @@ pub(crate) type Index = usize;
 
 #[derive(Debug)]
 pub(crate) struct StateTrie {
-    nodes:           Node,
-    next_entry_id:   Cell<StateEntryId>,
-    entry_map:       RefCell<Map<StateEntryId, Vec<Index>>>,
+    nodes: Node,
+    next_entry_id: Cell<StateEntryId>,
+    entry_map: RefCell<Map<StateEntryId, Vec<Index>>>,
     iterator_counts: RefCell<BTreeMap<Vec<Index>, u32>>,
 }
 
 impl Default for StateTrie {
     /// Creates an empty state trie.
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn to_indexes(key: &[u8]) -> Vec<Index> {
@@ -46,9 +48,9 @@ fn from_indexes(indexes: &[Index]) -> Vec<u8> {
 impl StateTrie {
     pub(crate) fn new() -> Self {
         Self {
-            nodes:           Node::new(),
-            next_entry_id:   Cell::new(0),
-            entry_map:       RefCell::new(Map::default()),
+            nodes: Node::new(),
+            next_entry_id: Cell::new(0),
+            entry_map: RefCell::new(Map::default()),
             iterator_counts: Default::default(),
         }
     }
@@ -145,11 +147,17 @@ impl StateTrie {
         let index_prefix = to_indexes(prefix);
 
         // Try to find the root_node for the prefix.
-        let node =
-            self.nodes.lookup_node(&index_prefix).ok_or(StateError::SubtreeWithPrefixNotFound)?;
+        let node = self
+            .nodes
+            .lookup_node(&index_prefix)
+            .ok_or(StateError::SubtreeWithPrefixNotFound)?;
 
         // Keep track of the number of iterators given out.
-        match self.iterator_counts.borrow_mut().entry(index_prefix.clone()) {
+        match self
+            .iterator_counts
+            .borrow_mut()
+            .entry(index_prefix.clone())
+        {
             btree_map::Entry::Vacant(vac) => {
                 let _ = vac.insert(1);
             }
@@ -182,9 +190,9 @@ impl StateTrie {
     /// Makes a deep clone of the trie. Used for rollbacks.
     pub(crate) fn clone_deep(&self) -> Self {
         Self {
-            nodes:           self.nodes.clone_deep(),
-            next_entry_id:   self.next_entry_id.clone(),
-            entry_map:       self.entry_map.clone(),
+            nodes: self.nodes.clone_deep(),
+            next_entry_id: self.next_entry_id.clone(),
+            entry_map: self.entry_map.clone(),
             iterator_counts: self.iterator_counts.clone(),
         }
     }
@@ -194,7 +202,7 @@ impl StateTrie {
 pub struct TestStateIter {
     // Only used when deleting the iterator.
     prefix: Vec<Index>,
-    queue:  VecDeque<TestStateEntry>,
+    queue: VecDeque<TestStateEntry>,
 }
 
 impl TestStateIter {
@@ -230,29 +238,28 @@ impl TestStateIter {
         }
 
         build_queue(trie, &mut queue, &mut root_index, root_of_iter);
-        Self {
-            prefix,
-            queue,
-        }
+        Self { prefix, queue }
     }
 }
 
 impl Iterator for TestStateIter {
     type Item = TestStateEntry;
 
-    fn next(&mut self) -> Option<Self::Item> { self.queue.pop_front() }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.queue.pop_front()
+    }
 }
 
 #[derive(Debug)]
 struct Node {
-    data:     Option<Rc<RefCell<TestStateEntryData>>>,
+    data: Option<Rc<RefCell<TestStateEntryData>>>,
     children: [Option<Box<Node>>; BRANCHING_FACTOR],
 }
 
 impl Node {
     fn new() -> Self {
         Self {
-            data:     None,
+            data: None,
             children: Default::default(),
         }
     }
@@ -262,16 +269,17 @@ impl Node {
     /// Note: If `Some` is returned, it will _always_ be a
     /// `TestStateEntryData::EntryExists(..)`.
     fn lookup(&self, indexes: &[Index]) -> Option<Rc<RefCell<TestStateEntryData>>> {
-        self.lookup_node(indexes).and_then(|node| node.data.as_ref().map(Rc::clone))
+        self.lookup_node(indexes)
+            .and_then(|node| node.data.as_ref().map(Rc::clone))
     }
 
     /// Tries to find the node with the given index.
     /// Returns `None` if the node doesn't exist.
     fn lookup_node(&self, indexes: &[Index]) -> Option<&Self> {
         match indexes.first() {
-            Some(idx) => {
-                self.children[*idx].as_ref().and_then(|node| node.lookup_node(&indexes[1..]))
-            }
+            Some(idx) => self.children[*idx]
+                .as_ref()
+                .and_then(|node| node.lookup_node(&indexes[1..])),
             None => Some(self),
         }
     }
@@ -280,9 +288,9 @@ impl Node {
     /// It will always return `TestStateEntryData::EntryExists(..)`.
     fn create(&mut self, indexes: &[Index]) -> Rc<RefCell<TestStateEntryData>> {
         match indexes.first() {
-            Some(idx) => {
-                self.children[*idx].get_or_insert(Box::new(Self::new())).create(&indexes[1..])
-            }
+            Some(idx) => self.children[*idx]
+                .get_or_insert(Box::new(Self::new()))
+                .create(&indexes[1..]),
             None => {
                 let new_data = Rc::new(RefCell::new(TestStateEntryData::new()));
                 let new_data_clone = Rc::clone(&new_data);
@@ -338,12 +346,17 @@ impl Node {
 
     /// Check whether a node is empty.
     /// A node is considered empty when it has no data and no children.
-    fn is_empty(&self) -> bool { self.data.is_none() && self.children.iter().all(|x| x.is_none()) }
+    fn is_empty(&self) -> bool {
+        self.data.is_none() && self.children.iter().all(|x| x.is_none())
+    }
 
     /// Make a deep clone of the node. Used for rollbacks.
     fn clone_deep(&self) -> Self {
         Self {
-            data:     self.data.as_ref().map(|d| Rc::new(RefCell::new(d.borrow().clone()))),
+            data: self
+                .data
+                .as_ref()
+                .map(|d| Rc::new(RefCell::new(d.borrow().clone()))),
             children: self
                 .children
                 .iter()

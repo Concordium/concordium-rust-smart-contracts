@@ -68,12 +68,17 @@ pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =
     StandardIdentifier::new_unchecked("CIS-3");
 
 /// List of supported standards by this contract address.
-const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] =
-    [CIS0_STANDARD_IDENTIFIER, CIS2_STANDARD_IDENTIFIER, CIS3_STANDARD_IDENTIFIER];
+const SUPPORTS_STANDARDS: [StandardIdentifier<'static>; 3] = [
+    CIS0_STANDARD_IDENTIFIER,
+    CIS2_STANDARD_IDENTIFIER,
+    CIS3_STANDARD_IDENTIFIER,
+];
 
 /// List of supported entrypoints by the `permit` function (CIS3 standard).
-const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] =
-    [EntrypointName::new_unchecked("updateOperator"), EntrypointName::new_unchecked("transfer")];
+const SUPPORTS_PERMIT_ENTRYPOINTS: [EntrypointName; 2] = [
+    EntrypointName::new_unchecked("updateOperator"),
+    EntrypointName::new_unchecked("transfer"),
+];
 
 /// Tag for the CIS3 Nonce event.
 pub const NONCE_EVENT_TAG: u8 = u8::MAX - 5;
@@ -95,7 +100,7 @@ pub enum Event {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct NonceEvent {
     /// The nonce that was used in the `PermitMessage`.
-    pub nonce:   u64,
+    pub nonce: u64,
     /// Account that signed the `PermitMessage`.
     pub account: AccountAddress,
 }
@@ -200,14 +205,14 @@ struct AddressState<S = StateApi> {
     /// The tokens owned by this address.
     owned_tokens: StateSet<ContractTokenId, S>,
     /// The address which are currently enabled as operators for this address.
-    operators:    StateSet<Address, S>,
+    operators: StateSet<Address, S>,
 }
 
 impl AddressState {
     fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
             owned_tokens: state_builder.new_set(),
-            operators:    state_builder.new_set(),
+            operators: state_builder.new_set(),
         }
     }
 }
@@ -221,19 +226,19 @@ struct State<S = StateApi> {
     /// Counter to increase the `token_id` at every mint function invoke.
     token_id_counter: u32,
     /// The state for each address.
-    state:            StateMap<Address, AddressState<S>, S>,
+    state: StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    all_tokens:       StateSet<ContractTokenId, S>,
+    all_tokens: StateSet<ContractTokenId, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors:     StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// A registry to link an account to its next nonce. The nonce is used to
     /// prevent replay attacks of the signed message. The nonce is increased
     /// sequentially every time a signed message (corresponding to the
     /// account) is successfully executed in the `permit` function. This
     /// mapping keeps track of the next nonce that needs to be used by the
     /// account to generate a signature.
-    nonces_registry:  StateMap<AccountAddress, u64, S>,
+    nonces_registry: StateMap<AccountAddress, u64, S>,
 }
 
 /// The parameter type for the contract function `supportsPermit`.
@@ -250,7 +255,7 @@ pub struct SupportsPermitQueryParams {
 #[derive(Debug, Serialize, SchemaType)]
 struct SetImplementorsParams {
     /// The identifier for the standard.
-    id:           StandardIdentifierOwned,
+    id: StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     implementors: Vec<ContractAddress>,
 }
@@ -262,15 +267,15 @@ pub struct PermitMessage {
     /// The contract_address that the signature is intended for.
     pub contract_address: ContractAddress,
     /// A nonce to prevent replay attacks.
-    pub nonce:            u64,
+    pub nonce: u64,
     /// A timestamp to make signatures expire.
-    pub timestamp:        Timestamp,
+    pub timestamp: Timestamp,
     /// The entry_point that the signature is intended for.
-    pub entry_point:      OwnedEntrypointName,
+    pub entry_point: OwnedEntrypointName,
     /// The serialized payload that should be forwarded to either the `transfer`
     /// or the `updateOperator` function.
     #[concordium(size_length = 2)]
-    pub payload:          Vec<u8>,
+    pub payload: Vec<u8>,
 }
 
 /// The parameter type for the contract function `permit`.
@@ -280,9 +285,9 @@ pub struct PermitParam {
     /// Signature/s. The CIS3 standard supports multi-sig accounts.
     pub signature: AccountSignatures,
     /// Account that created the above signature.
-    pub signer:    AccountAddress,
+    pub signer: AccountAddress,
     /// Message that was signed.
-    pub message:   PermitMessage,
+    pub message: PermitMessage,
 }
 
 #[derive(Serialize)]
@@ -290,7 +295,7 @@ pub struct PermitParamPartial {
     /// Signature/s. The CIS3 standard supports multi-sig accounts.
     signature: AccountSignatures,
     /// Account that created the above signature.
-    signer:    AccountAddress,
+    signer: AccountAddress,
 }
 
 /// The custom errors the contract can produce.
@@ -359,12 +364,16 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self {
+        Cis2Error::Custom(c)
+    }
 }
 
 // Functions for creating, updating and querying the contract state.
@@ -373,10 +382,10 @@ impl State {
     fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
             token_id_counter: 0,
-            state:            state_builder.new_map(),
-            all_tokens:       state_builder.new_set(),
-            implementors:     state_builder.new_map(),
-            nonces_registry:  state_builder.new_map(),
+            state: state_builder.new_map(),
+            all_tokens: state_builder.new_set(),
+            implementors: state_builder.new_map(),
+            nonces_registry: state_builder.new_map(),
         }
     }
 
@@ -387,10 +396,15 @@ impl State {
         owner: &Address,
         state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
-        ensure!(self.all_tokens.insert(token), CustomContractError::TokenIdAlreadyExists.into());
+        ensure!(
+            self.all_tokens.insert(token),
+            CustomContractError::TokenIdAlreadyExists.into()
+        );
 
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         owner_state.owned_tokens.insert(token);
         Ok(())
     }
@@ -449,8 +463,10 @@ impl State {
         ensure_eq!(amount, 1.into(), ContractError::InsufficientFunds);
 
         {
-            let mut from_address_state =
-                self.state.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
+            let mut from_address_state = self
+                .state
+                .get_mut(from)
+                .ok_or(ContractError::InsufficientFunds)?;
             // Find and remove the token from the owner, if nothing is removed, we know the
             // address did not own the token..
             let from_had_the_token = from_address_state.owned_tokens.remove(token_id);
@@ -458,8 +474,10 @@ impl State {
         }
 
         // Add the token to the new owner.
-        let mut to_address_state =
-            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
+        let mut to_address_state = self
+            .state
+            .entry(*to)
+            .or_insert_with(|| AddressState::empty(state_builder));
         to_address_state.owned_tokens.insert(*token_id);
         Ok(())
     }
@@ -473,8 +491,10 @@ impl State {
         operator: &Address,
         state_builder: &mut StateBuilder,
     ) {
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         owner_state.operators.insert(*operator);
     }
 
@@ -518,13 +538,13 @@ fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRe
 #[derive(Serialize, SchemaType, Debug, PartialEq)]
 pub struct ViewAddressState {
     pub owned_tokens: Vec<ContractTokenId>,
-    pub operators:    Vec<Address>,
+    pub operators: Vec<Address>,
 }
 
 /// Return paramter of the `view` function.
 #[derive(Serialize, SchemaType, Debug)]
 pub struct ViewState {
-    pub state:      Vec<(Address, ViewAddressState)>,
+    pub state: Vec<(Address, ViewAddressState)>,
     pub all_tokens: Vec<ContractTokenId>,
     pub all_nonces: Vec<(AccountAddress, u64)>,
 }
@@ -539,10 +559,13 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
     for (k, a_state) in state.state.iter() {
         let owned_tokens = a_state.owned_tokens.iter().map(|x| *x).collect();
         let operators = a_state.operators.iter().map(|x| *x).collect();
-        inner_state.push((*k, ViewAddressState {
-            owned_tokens,
-            operators,
-        }));
+        inner_state.push((
+            *k,
+            ViewAddressState {
+                owned_tokens,
+                operators,
+            },
+        ));
     }
 
     let all_tokens = state.all_tokens.iter().map(|x| *x).collect();
@@ -610,13 +633,15 @@ fn contract_mint(
     }))?;
 
     // Metadata URL for the NFT.
-    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-        token_id,
-        metadata_url: MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
-            hash: None,
+    logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+        TokenMetadataEvent {
+            token_id,
+            metadata_url: MetadataUrl {
+                url: String::from(TOKEN_METADATA_URL),
+                hash: None,
+            },
         },
-    }))?;
+    ))?;
 
     Ok(())
 }
@@ -635,25 +660,36 @@ fn transfer(
 
     let to_address = transfer.to.address();
     // Update the contract state
-    state.transfer(&transfer.token_id, transfer.amount, &transfer.from, &to_address, builder)?;
+    state.transfer(
+        &transfer.token_id,
+        transfer.amount,
+        &transfer.from,
+        &to_address,
+        builder,
+    )?;
 
     // Log transfer event
     logger.log(&Cis2Event::Transfer(TransferEvent {
         token_id: transfer.token_id,
-        amount:   transfer.amount,
-        from:     transfer.from,
-        to:       to_address,
+        amount: transfer.amount,
+        from: transfer.from,
+        to: to_address,
     }))?;
 
     // If the receiver is a contract: invoke the receive hook function.
     if let Receiver::Contract(address, function) = transfer.to {
         let parameter = OnReceivingCis2Params {
             token_id: transfer.token_id,
-            amount:   transfer.amount,
-            from:     transfer.from,
-            data:     transfer.data,
+            amount: transfer.amount,
+            from: transfer.from,
+            data: transfer.data,
         };
-        host.invoke_contract(&address, &parameter, function.as_entrypoint_name(), Amount::zero())?;
+        host.invoke_contract(
+            &address,
+            &parameter,
+            function.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
     }
 
     Ok(())
@@ -706,7 +742,11 @@ fn contract_transfer(
 
 /// Helper function that can be invoked at the front-end to serialize the
 /// `PermitMessage` before signing it in the wallet.
-#[receive(contract = "cis3_nft", name = "serializationHelper", parameter = "PermitMessage")]
+#[receive(
+    contract = "cis3_nft",
+    name = "serializationHelper",
+    parameter = "PermitMessage"
+)]
 fn contract_serialization_helper(_ctx: &ReceiveContext, _host: &Host<State>) -> ContractResult<()> {
     Ok(())
 }
@@ -754,8 +794,9 @@ fn contract_view_message_hash(
     // Prepend 8 zero bytes.
     msg_prepend[32..40].copy_from_slice(&[0u8; 8]);
     // Calculate the message hash.
-    let message_hash =
-        crypto_primitives.hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat()).0;
+    let message_hash = crypto_primitives
+        .hash_sha2_256(&[&msg_prepend[0..40], &message_bytes].concat())
+        .0;
 
     Ok(message_hash)
 }
@@ -802,7 +843,11 @@ fn contract_permit(
     let param: PermitParam = ctx.parameter_cursor().get()?;
 
     // Update the nonce.
-    let mut entry = host.state_mut().nonces_registry.entry(param.signer).or_insert_with(|| 0);
+    let mut entry = host
+        .state_mut()
+        .nonces_registry
+        .entry(param.signer)
+        .or_insert_with(|| 0);
 
     // Get the current nonce.
     let nonce = *entry;
@@ -813,7 +858,11 @@ fn contract_permit(
     let message = param.message;
 
     // Check the nonce to prevent replay attacks.
-    ensure_eq!(message.nonce, nonce, CustomContractError::NonceMismatch.into());
+    ensure_eq!(
+        message.nonce,
+        nonce,
+        CustomContractError::NonceMismatch.into()
+    );
 
     // Check that the signature was intended for this contract.
     ensure_eq!(
@@ -823,7 +872,10 @@ fn contract_permit(
     );
 
     // Check signature is not expired.
-    ensure!(message.timestamp > ctx.metadata().slot_time(), CustomContractError::Expired.into());
+    ensure!(
+        message.timestamp > ctx.metadata().slot_time(),
+        CustomContractError::Expired.into()
+    );
 
     let message_hash = contract_view_message_hash(ctx, host, crypto_primitives)?;
 
@@ -841,7 +893,9 @@ fn contract_permit(
             // Authenticate the signer for this transfer
             ensure!(
                 transfer_entry.from.matches_account(&param.signer)
-                    || host.state().is_operator(&Address::from(param.signer), &transfer_entry.from),
+                    || host
+                        .state()
+                        .is_operator(&Address::from(param.signer), &transfer_entry.from),
                 ContractError::Unauthorized
             );
 
@@ -897,13 +951,13 @@ fn update_operator(
     }
 
     // Log the appropriate event
-    logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-        UpdateOperatorEvent {
+    logger.log(
+        &Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(UpdateOperatorEvent {
             owner: sender,
             operator,
             update,
-        },
-    ))?;
+        }),
+    )?;
 
     Ok(())
 }
@@ -1061,7 +1115,9 @@ fn contract_public_key_of(
 pub struct NonceOfQueryResponse(#[concordium(size_length = 2)] pub Vec<u64>);
 
 impl From<Vec<u64>> for NonceOfQueryResponse {
-    fn from(results: concordium_std::Vec<u64>) -> Self { NonceOfQueryResponse(results) }
+    fn from(results: concordium_std::Vec<u64>) -> Self {
+        NonceOfQueryResponse(results)
+    }
 }
 
 /// Get the nonces of accounts.
@@ -1085,7 +1141,12 @@ fn contract_nonce_of(
     let mut response: Vec<u64> = Vec::with_capacity(params.queries.len());
     for account in params.queries {
         // Query the next nonce.
-        let nonce = host.state().nonces_registry.get(&account).map(|nonce| *nonce).unwrap_or(0);
+        let nonce = host
+            .state()
+            .nonces_registry
+            .get(&account)
+            .map(|nonce| *nonce)
+            .unwrap_or(0);
 
         response.push(nonce);
     }
@@ -1118,10 +1179,13 @@ fn contract_token_metadata(
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {
         // Check the token exists.
-        ensure!(host.state().contains_token(&token_id), ContractError::InvalidTokenId);
+        ensure!(
+            host.state().contains_token(&token_id),
+            ContractError::InvalidTokenId
+        );
 
         let metadata_url = MetadataUrl {
-            url:  String::from(TOKEN_METADATA_URL),
+            url: String::from(TOKEN_METADATA_URL),
             hash: None,
         };
         response.push(metadata_url);
@@ -1209,10 +1273,14 @@ fn contract_supports_permit(
 )]
 fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_account(&ctx.owner()),
+        ContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
-    host.state_mut().set_implementors(params.id, params.implementors);
+    host.state_mut()
+        .set_implementors(params.id, params.implementors);
     Ok(())
 }

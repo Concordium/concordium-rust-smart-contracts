@@ -30,10 +30,10 @@ fn basics() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                amount:    Amount::zero(),
-                mod_ref:   deployment.module_reference,
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_fib".into()),
-                param:     OwnedParameter::empty(),
+                param: OwnedParameter::empty(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -45,10 +45,10 @@ fn basics() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      init.contract_address,
+                amount: Amount::zero(),
+                address: init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.receive".into()),
-                message:      OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
+                message: OwnedParameter::from_serial(&6u64).expect("Parameter has valid size"),
             },
         )
         .expect("Updating valid contract should work");
@@ -59,10 +59,10 @@ fn basics() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
-                address:      init.contract_address,
+                amount: Amount::zero(),
+                address: init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("fib.view".into()),
-                message:      OwnedParameter::empty(),
+                message: OwnedParameter::empty(),
             },
         )
         .expect("Invoking get should work");
@@ -94,7 +94,10 @@ fn basics() {
     assert_eq!(view.energy_used, 301.into());
 
     // Check that the amounts charged matches the node.
-    assert_eq!(deployment.transaction_fee, Amount::from_micro_ccd(2_685_078));
+    assert_eq!(
+        deployment.transaction_fee,
+        Amount::from_micro_ccd(2_685_078)
+    );
     assert_eq!(init.transaction_fee, Amount::from_micro_ccd(1_902_454));
     assert_eq!(update.transaction_fee, Amount::from_micro_ccd(19_595_780));
 }

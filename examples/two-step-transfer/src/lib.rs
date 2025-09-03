@@ -55,9 +55,9 @@ type TimeoutSlotTimeMilliseconds = Timestamp;
 #[derive(Clone, Serialize, SchemaType)]
 struct TransferRequest {
     transfer_amount: Amount,
-    target_account:  AccountAddress,
-    times_out_at:    TimeoutSlotTimeMilliseconds,
-    supporters:      BTreeSet<AccountAddress>,
+    target_account: AccountAddress,
+    times_out_at: TimeoutSlotTimeMilliseconds,
+    supporters: BTreeSet<AccountAddress>,
 }
 
 #[derive(Serialize, SchemaType, Clone)]
@@ -121,12 +121,18 @@ fn contract_init<S: HasStateApi>(
     _amount: Amount,
 ) -> Result<State<S>, InitError> {
     let init_params: InitParams = ctx.parameter_cursor().get()?;
-    ensure!(init_params.account_holders.len() >= 2, InitError::InsufficientAccountHolders);
+    ensure!(
+        init_params.account_holders.len() >= 2,
+        InitError::InsufficientAccountHolders
+    );
     ensure!(
         init_params.transfer_agreement_threshold <= init_params.account_holders.len() as u8,
         InitError::ThresholdAboveAccountHolders
     );
-    ensure!(init_params.transfer_agreement_threshold >= 2, InitError::ThresholdBelowTwo);
+    ensure!(
+        init_params.transfer_agreement_threshold >= 2,
+        InitError::ThresholdBelowTwo
+    );
 
     let state = State {
         init_params,
@@ -277,7 +283,10 @@ fn contract_receive_message<S: HasStateApi>(
                     .entry(transfer_request_id)
                     .occupied_or(ReceiveError::UnknownTransfer)?;
 
-                ensure!(matching_request.times_out_at > now, ReceiveError::RequestTimeout);
+                ensure!(
+                    matching_request.times_out_at > now,
+                    ReceiveError::RequestTimeout
+                );
                 ensure!(
                     matching_request.transfer_amount == transfer_amount,
                     ReceiveError::MismatchingRequestInformation
@@ -366,7 +375,11 @@ mod tests {
             "Should not contain more account holders"
         );
         // and make sure the correct logs were produced.
-        claim_eq!(state.requests.iter().count(), 0, "No transfer request at initialisation");
+        claim_eq!(
+            state.requests.iter().count(),
+            0,
+            "No transfer request at initialisation"
+        );
     }
 
     #[concordium_test]
@@ -390,7 +403,8 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account1));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(0));
 
         // Setup state
         let mut account_holders = BTreeSet::new();
@@ -413,7 +427,10 @@ mod tests {
         let receive_amount = Amount::from_micro_ccd(100);
         // Execution
         let res = contract_receive_message(&ctx, &mut host, receive_amount);
-        claim!(res.is_ok(), "Contract receive failed, but it should not have.");
+        claim!(
+            res.is_ok(),
+            "Contract receive failed, but it should not have."
+        );
 
         claim_eq!(
             sum_reserved_balance(host.state(), Timestamp::from_timestamp_millis(0)),
@@ -421,8 +438,15 @@ mod tests {
             "Contract receive did not reserve requested amount"
         );
         let request = host.state().requests.get(&request_id).unwrap();
-        claim_eq!(request.supporters.len(), 1, "Only one is supporting the request from start");
-        claim!(request.supporters.contains(&account1), "The request sender supports the request");
+        claim_eq!(
+            request.supporters.len(),
+            1,
+            "Only one is supporting the request from start"
+        );
+        claim!(
+            request.supporters.contains(&account1),
+            "The request sender supports the request"
+        );
     }
 
     #[concordium_test]
@@ -443,7 +467,8 @@ mod tests {
 
         let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account2));
 
         // Setup state
@@ -479,15 +504,25 @@ mod tests {
         // Execution
         let res: ContractResult<()> = contract_receive_message(&ctx, &mut host, receive_amount);
 
-        claim!(res.is_ok(), "Contract receive support failed, but it should not have.:");
+        claim!(
+            res.is_ok(),
+            "Contract receive support failed, but it should not have.:"
+        );
         claim_eq!(
             sum_reserved_balance(host.state(), Timestamp::from_timestamp_millis(0)),
             Amount::from_micro_ccd(50),
             "Contract receive did not reserve the requested amount"
         );
         let request = host.state().requests.get(&request_id).unwrap();
-        claim_eq!(request.supporters.len(), 2, "Two should support the transfer request");
-        claim!(request.supporters.contains(&account2), "The support sender supports the request");
+        claim_eq!(
+            request.supporters.len(),
+            2,
+            "Two should support the transfer request"
+        );
+        claim!(
+            request.supporters.contains(&account2),
+            "The support sender supports the request"
+        );
     }
 
     #[concordium_test]
@@ -511,7 +546,8 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account2));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(0));
 
         // Setup state
         let mut account_holders = BTreeSet::new();
@@ -547,7 +583,10 @@ mod tests {
         let res: ContractResult<()> =
             contract_receive_message(&ctx, &mut host, Amount::from_ccd(0));
 
-        claim!(res.is_ok(), "Contract receive support failed, but it should not have.");
+        claim!(
+            res.is_ok(),
+            "Contract receive support failed, but it should not have."
+        );
         claim_eq!(
             sum_reserved_balance(host.state(), Timestamp::from_timestamp_millis(0)),
             Amount::from_micro_ccd(0),
@@ -582,7 +621,8 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(account1));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(1000));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(1000));
 
         // Setup state
         let mut account_holders = BTreeSet::new();
@@ -601,28 +641,34 @@ mod tests {
         supporters.insert(account1);
 
         // Outdated request
-        let _ = requests.insert(request_id_outdated, TransferRequest {
-            transfer_amount,
-            target_account,
-            times_out_at: ctx
-                .metadata()
-                .slot_time()
-                .checked_sub(init_params.transfer_request_ttl) // In the past.
-                .expect_report("Checked sub for times_out_at failed."),
-            supporters: supporters.clone(),
-        });
+        let _ = requests.insert(
+            request_id_outdated,
+            TransferRequest {
+                transfer_amount,
+                target_account,
+                times_out_at: ctx
+                    .metadata()
+                    .slot_time()
+                    .checked_sub(init_params.transfer_request_ttl) // In the past.
+                    .expect_report("Checked sub for times_out_at failed."),
+                supporters: supporters.clone(),
+            },
+        );
 
         // Active request
-        let _ = requests.insert(request_id_active, TransferRequest {
-            transfer_amount,
-            target_account,
-            times_out_at: ctx
-                .metadata()
-                .slot_time()
-                .checked_add(init_params.transfer_request_ttl) // In the future.
-                .expect_report("Checked sub for times_out_at failed."),
-            supporters,
-        });
+        let _ = requests.insert(
+            request_id_active,
+            TransferRequest {
+                transfer_amount,
+                target_account,
+                times_out_at: ctx
+                    .metadata()
+                    .slot_time()
+                    .checked_add(init_params.transfer_request_ttl) // In the future.
+                    .expect_report("Checked sub for times_out_at failed."),
+                supporters,
+            },
+        );
 
         let state = State {
             init_params,
@@ -671,7 +717,8 @@ mod tests {
         let mut ctx = TestReceiveContext::empty();
         ctx.set_parameter(&parameter_bytes);
         ctx.set_sender(Address::Account(sender));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(0));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(0));
 
         // Setup state
         let mut account_holders = BTreeSet::new();

@@ -31,7 +31,9 @@ struct PageCount(usize);
 
 impl PageCount {
     /// The size in bytes, i.e. `PageCount * PAGE_SIZE`.
-    fn size_in_bytes(&self) -> usize { self.0 * PAGE_SIZE }
+    fn size_in_bytes(&self) -> usize {
+        self.0 * PAGE_SIZE
+    }
 }
 
 /// The number of pages returned from `memory_grow` to indicate out of memory.
@@ -45,7 +47,7 @@ extern "C" {
     /// To get the actual memory location as a `usize`, do the following:
     ///
     /// ```
-    /// let heap_base = unsafe { &__heap_base as *const _ as usize }; 
+    /// let heap_base = unsafe { &__heap_base as *const _ as usize };
     /// ```
     static __heap_base: u8;
 }
@@ -61,17 +63,17 @@ unsafe impl Sync for BumpAllocator {}
 /// See the module documentation for more details.
 pub struct BumpAllocator {
     /// The pointer to the next memory to hand out.
-    next:        UnsafeCell<usize>,
+    next: UnsafeCell<usize>,
     /// The start of the heap.
     /// This value is used for resetting `next` if all memory chunks are
     /// deallocated and `allocations` thus becomes 0.
     /// The actual location of the heap cannot be known at compile time and
     /// the initial value is thus 0. It is set to `__heap_base` value on the
     /// first allocation.
-    heap_start:  UnsafeCell<usize>,
+    heap_start: UnsafeCell<usize>,
     /// The end of the heap. Cannot be known at compile time and thus the
     /// initial value is 0. It is updated on the first allocation.
-    heap_end:    UnsafeCell<usize>,
+    heap_end: UnsafeCell<usize>,
     /// The number of active allocations. Used for resetting `next` to
     /// `heap_start` if there are no more active allocations.
     allocations: UnsafeCell<usize>,
@@ -79,7 +81,7 @@ pub struct BumpAllocator {
     /// over the always-increasing bump allocator. Namely that if an item
     /// `a` is allocated and deallocated without any allocations in between,
     /// then the memory of `a` is reused for the next allocation.
-    last_alloc:  UnsafeCell<usize>,
+    last_alloc: UnsafeCell<usize>,
 }
 
 impl BumpAllocator {
@@ -97,16 +99,16 @@ impl BumpAllocator {
     pub const unsafe fn new() -> Self {
         Self {
             // Initialized to the dummy value `0`.
-            next:        UnsafeCell::new(0),
+            next: UnsafeCell::new(0),
             // Initialized to the dummy value `0`.
-            heap_start:  UnsafeCell::new(0),
+            heap_start: UnsafeCell::new(0),
             // Initialized to the dummy value `0`, which is checked during first initialization.
-            heap_end:    UnsafeCell::new(0),
+            heap_end: UnsafeCell::new(0),
             // Keeps track of the number of active allocations.
             allocations: UnsafeCell::new(0),
             // Initialized to the dummy value `0`.
             // Must be set to the same initial address as `next`.
-            last_alloc:  UnsafeCell::new(0),
+            last_alloc: UnsafeCell::new(0),
         }
     }
 
@@ -221,7 +223,9 @@ unsafe impl GlobalAlloc for BumpAllocator {
 ///
 /// Uses a bitmask to align the addresses for efficiency.
 /// For details, see: https://os.phil-opp.com/allocator-designs/#address-alignment
-fn align_up(addr: usize, align: usize) -> usize { (addr + align - 1) & !(align - 1) }
+fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
+}
 
 /// Calculates the number of memory pages needed to allocate an additional
 /// `space_needed` bytes.

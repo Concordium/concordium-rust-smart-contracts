@@ -67,7 +67,7 @@ pub struct AddressAmount {
     /// The sender or receiver
     address: AccountAddress,
     /// The sent/received amount
-    amount:  Amount,
+    amount: Amount,
 }
 
 /// A transfer consisting of possibly multiple inputs with different amounts and
@@ -76,21 +76,21 @@ pub struct AddressAmount {
 #[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Transfer {
     /// The list of senders
-    pub send_transfers:    Vec<AddressAmount>,
+    pub send_transfers: Vec<AddressAmount>,
     /// The list of receivers
     pub receive_transfers: Vec<AddressAmount>,
     /// The meta-data is not used by the smart contract
     /// it could contain information relevant to the judge
-    pub meta_data:         Vec<u8>,
+    pub meta_data: Vec<u8>,
 }
 
 /// A settlement defines a (potential) update to the balance sheet
 #[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Settlement {
     /// Unique ID
-    id:            SettlementID,
+    id: SettlementID,
     /// The update described as a transfer
-    transfer:      Transfer,
+    transfer: Transfer,
     /// Point in time when the settlement becomes final
     finality_time: Timestamp,
 }
@@ -233,8 +233,11 @@ pub fn contract_receive_deposit<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance =
-        host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero()); //if the sender does not exist
+    let mut balance = host
+        .state_mut()
+        .balance_sheet
+        .entry(sender_address)
+        .or_insert(Amount::zero()); //if the sender does not exist
     *balance += amount;
 
     Ok(())
@@ -272,7 +275,12 @@ fn get_liabilities(settlements: &[Settlement], sender_address: AccountAddress) -
 /// This defensive payout mechanism ensures that user balance sheet
 /// stays positive for any possible finalization of (a subset) outstanding
 /// settlements.   
-#[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
+#[receive(
+    contract = "offchain-transfers",
+    name = "withdraw",
+    mutable,
+    parameter = "Amount"
+)]
 #[inline(always)]
 pub fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -300,7 +308,10 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
             .entry(sender_address)
             .occupied_or(ReceiveError::InsufficientFunds)?;
 
-        ensure!(*balance >= liabilities + payout, ReceiveError::InsufficientFunds);
+        ensure!(
+            *balance >= liabilities + payout,
+            ReceiveError::InsufficientFunds
+        );
 
         // deduct payout
         *balance -= payout;
@@ -362,7 +373,10 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     // Only the validator may call this function
-    ensure!(sender.matches_account(&host.state().config.validator), ReceiveError::NotAValidator);
+    ensure!(
+        sender.matches_account(&host.state().config.validator),
+        ReceiveError::NotAValidator
+    );
 
     // Ensure there is space for the incoming settlement
     ensure!(
@@ -412,13 +426,18 @@ pub fn contract_receive_veto<S: HasStateApi>(
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     // Only the validator may call this function
-    ensure!(sender.matches_account(&host.state().config.judge), ReceiveError::NotAJudge);
+    ensure!(
+        sender.matches_account(&host.state().config.judge),
+        ReceiveError::NotAJudge
+    );
     // Get the ID
     let s_id: SettlementID = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time(); //and time
 
     // Delete all settlements with the given ID from the list that are not final
-    host.state_mut().settlements.retain(|s| s.id != s_id || s.finality_time <= now);
+    host.state_mut()
+        .settlements
+        .retain(|s| s.id != s_id || s.finality_time <= now);
 
     Ok(())
 }
@@ -505,15 +524,19 @@ pub fn contract_receive_execute_settlements<S: HasStateApi>(
             }
 
             for send_transfer in settlement.transfer.send_transfers.iter() {
-                let mut sender_balance =
-                    state_mut.balance_sheet.entry(send_transfer.address).or_insert(Amount::zero());
+                let mut sender_balance = state_mut
+                    .balance_sheet
+                    .entry(send_transfer.address)
+                    .or_insert(Amount::zero());
                 *sender_balance -= send_transfer.amount;
             }
         }
     }
 
     // remove all settlements for which finality time has passed from list
-    state_mut.settlements.retain(|s| current_time < s.finality_time);
+    state_mut
+        .settlements
+        .retain(|s| current_time < s.finality_time);
 
     Ok(())
 }
@@ -627,14 +650,22 @@ mod tests {
             Err(_) => fail!("Contract initialization failed."),
         };
 
-        claim_eq!(state.config.validator, account1, "Account 1 should be validator");
+        claim_eq!(
+            state.config.validator,
+            account1,
+            "Account 1 should be validator"
+        );
         claim_eq!(state.config.judge, account2, "Account 1 should be judge");
         claim_eq!(
             state.config.time_to_finality,
             time_to_finality,
             "time to finality should be time_to_finality"
         );
-        claim_eq!(state.balance_sheet.iter().count(), 0, "No balances should exist");
+        claim_eq!(
+            state.balance_sheet.iter().count(),
+            0,
+            "No balances should exist"
+        );
         claim_eq!(state.settlements.len(), 0, "No settlements should exist");
     }
 
@@ -650,8 +681,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_seconds(600),
                 settlement_limit: 1000,
             },
@@ -660,7 +691,8 @@ mod tests {
 
         //Test 1: Try to deposit money for new account holder
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account3));
 
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
@@ -673,7 +705,10 @@ mod tests {
         //Test 2: Try to deposit money for existing account holder
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
 
-        claim!(res.is_ok(), "Should allow existing account holder to deposit CCDs");
+        claim!(
+            res.is_ok(),
+            "Should allow existing account holder to deposit CCDs"
+        );
 
         let balance = *host.state().balance_sheet.get(&account3).unwrap();
         claim_eq!(balance, 2 * deposit, "Balance should match 2*deposit");
@@ -693,8 +728,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_seconds(600),
                 settlement_limit: 1000,
             },
@@ -705,7 +740,8 @@ mod tests {
 
         //Test 1: Try to withdraw too much money from Account 3
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account3));
         let parameter_bytes = to_bytes(&toobig_payout);
         ctx.set_parameter(&parameter_bytes);
@@ -734,10 +770,17 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
 
-        claim!(res.is_ok(), "Should allow account holder withdraw CCDs from balance.");
+        claim!(
+            res.is_ok(),
+            "Should allow account holder withdraw CCDs from balance."
+        );
 
         let new_balance = *host.state().balance_sheet.get(&account3).unwrap();
-        claim_eq!(new_balance, balance - payout, "New balance should match balance - payout");
+        claim_eq!(
+            new_balance,
+            balance - payout,
+            "New balance should match balance - payout"
+        );
 
         let transfers = host.get_transfers();
         claim_eq!(transfers.len(), 1, "There should be one transfers");
@@ -773,8 +816,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_seconds(600),
                 settlement_limit: 1000,
             },
@@ -784,78 +827,82 @@ mod tests {
         //Set balance sheet
         let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
         let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
-        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host
+            .state_mut()
+            .balance_sheet
+            .insert(charlie, charlie_balance);
 
         //Define settlements
         let settlement1 = Settlement {
-            id:            1,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(50),
+                        amount: Amount::from_ccd(50),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(25),
+                        amount: Amount::from_ccd(25),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(75),
+                    amount: Amount::from_ccd(75),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
         host.state_mut().settlements.push(settlement1.clone());
         let settlement2 = Settlement {
-            id:            2,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 2,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: charlie,
-                        amount:  Amount::from_ccd(20),
+                        amount: Amount::from_ccd(20),
                     },
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(10),
+                        amount: Amount::from_ccd(10),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: bob,
-                    amount:  Amount::from_ccd(30),
+                    amount: Amount::from_ccd(30),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
         host.state_mut().settlements.push(settlement2);
         let settlement3 = Settlement {
-            id:            3,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 3,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(5),
+                        amount: Amount::from_ccd(5),
                     },
                     AddressAmount {
                         address: charlie,
-                        amount:  Amount::from_ccd(10),
+                        amount: Amount::from_ccd(10),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: alice,
-                    amount:  Amount::from_ccd(15),
+                    amount: Amount::from_ccd(15),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
         host.state_mut().settlements.push(settlement3);
 
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(alice));
 
         //Test 1: Viewing settlement1
@@ -888,10 +935,17 @@ mod tests {
         ctx.set_parameter(&parameter_bytes);
 
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
-        claim!(res.is_ok(), "Should allow account holder withdraw CCDs from balance.");
+        claim!(
+            res.is_ok(),
+            "Should allow account holder withdraw CCDs from balance."
+        );
 
         let new_balance = *host.state().balance_sheet.get(&bob).unwrap();
-        claim_eq!(new_balance, bob_balance - payout, "New balance should match balance - payout");
+        claim_eq!(
+            new_balance,
+            bob_balance - payout,
+            "New balance should match balance - payout"
+        );
 
         let transfers = host.get_transfers();
         claim_eq!(transfers.len(), 1, "There should be one transfers");
@@ -919,8 +973,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_seconds(600),
                 settlement_limit: 2,
             },
@@ -929,24 +983,25 @@ mod tests {
 
         //Test 1: Random caller tries to add valid settlement
         let good_transfer = Transfer {
-            send_transfers:    vec![AddressAmount {
+            send_transfers: vec![AddressAmount {
                 address: account3,
-                amount:  Amount::from_ccd(100),
+                amount: Amount::from_ccd(100),
             }],
             receive_transfers: vec![
                 AddressAmount {
                     address: account2,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
                 AddressAmount {
                     address: account1,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
             ],
-            meta_data:         Vec::new(),
+            meta_data: Vec::new(),
         };
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(account2));
         let parameter_bytes = to_bytes(&good_transfer);
         ctx.set_parameter(&parameter_bytes);
@@ -966,7 +1021,11 @@ mod tests {
 
         claim!(res.is_ok(), "Should allow validator to add settlement.");
 
-        claim_eq!(host.state().settlements.len(), 1, "There should be one settlement");
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should be one settlement"
+        );
         claim_eq!(
             host.state().balance_sheet.iter().count(),
             0,
@@ -976,21 +1035,21 @@ mod tests {
 
         //Test 3: Validator tries to add invalid settlement
         let bad_transfer = Transfer {
-            send_transfers:    vec![AddressAmount {
+            send_transfers: vec![AddressAmount {
                 address: account3,
-                amount:  Amount::from_ccd(50),
+                amount: Amount::from_ccd(50),
             }],
             receive_transfers: vec![
                 AddressAmount {
                     address: account1,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
                 AddressAmount {
                     address: account1,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
             ],
-            meta_data:         Vec::new(),
+            meta_data: Vec::new(),
         };
         let parameter_bytes = to_bytes(&bad_transfer);
         ctx.set_parameter(&parameter_bytes);
@@ -1005,27 +1064,27 @@ mod tests {
 
         //Test 4: Validator tries to add strange but valid settlement
         let strange_but_ok_transfer = Transfer {
-            send_transfers:    vec![
+            send_transfers: vec![
                 AddressAmount {
                     address: account3,
-                    amount:  Amount::from_ccd(100),
+                    amount: Amount::from_ccd(100),
                 },
                 AddressAmount {
                     address: account3,
-                    amount:  Amount::zero(),
+                    amount: Amount::zero(),
                 },
             ],
             receive_transfers: vec![
                 AddressAmount {
                     address: account3,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
                 AddressAmount {
                     address: account3,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
             ],
-            meta_data:         vec![1u8, 2u8, 3u8],
+            meta_data: vec![1u8, 2u8, 3u8],
         };
         let parameter_bytes = to_bytes(&strange_but_ok_transfer);
         ctx.set_parameter(&parameter_bytes);
@@ -1034,7 +1093,11 @@ mod tests {
 
         claim!(res.is_ok(), "Should allow validator to add settlement.");
 
-        claim_eq!(host.state().settlements.len(), 2, "There should be two settlements");
+        claim_eq!(
+            host.state().settlements.len(),
+            2,
+            "There should be two settlements"
+        );
         claim_eq!(
             host.state().balance_sheet.iter().count(),
             0,
@@ -1074,8 +1137,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_seconds(600),
                 settlement_limit: 1000,
             },
@@ -1086,27 +1149,30 @@ mod tests {
         //Set balance sheet
         let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
         let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
-        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host
+            .state_mut()
+            .balance_sheet
+            .insert(charlie, charlie_balance);
 
         // First settlement is fine and with past finality
         let settlement1 = Settlement {
-            id:            1,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(50),
+                        amount: Amount::from_ccd(50),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(25),
+                        amount: Amount::from_ccd(25),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(75),
+                    amount: Amount::from_ccd(75),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
@@ -1115,23 +1181,23 @@ mod tests {
         // Second settlement tries to withdraw more from Alice than available after
         // first settlement and should be skipped
         let settlement2 = Settlement {
-            id:            2,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 2,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(60),
+                        amount: Amount::from_ccd(60),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(5),
+                        amount: Amount::from_ccd(5),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(65),
+                    amount: Amount::from_ccd(65),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
@@ -1140,23 +1206,23 @@ mod tests {
         // Third settlement is fine but with future finality and should thus also be
         // skipped
         let settlement3 = Settlement {
-            id:            3,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 3,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(1),
+                        amount: Amount::from_ccd(1),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(1),
+                        amount: Amount::from_ccd(1),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(1),
+                    amount: Amount::from_ccd(1),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 800),
         };
@@ -1164,23 +1230,23 @@ mod tests {
 
         // Fourth settlement is fine and with past finality and should thus be executed
         let settlement4 = Settlement {
-            id:            4,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 4,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(50),
+                        amount: Amount::from_ccd(50),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(5),
+                        amount: Amount::from_ccd(5),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(55),
+                    amount: Amount::from_ccd(55),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 600),
         };
@@ -1188,17 +1254,17 @@ mod tests {
 
         // Fifth settlement is fine and with past finality and should thus be executed
         let settlement5 = Settlement {
-            id:            5,
-            transfer:      Transfer {
-                send_transfers:    vec![AddressAmount {
+            id: 5,
+            transfer: Transfer {
+                send_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 }],
                 receive_transfers: vec![AddressAmount {
                     address: doris,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(1000 * 601),
         };
@@ -1206,7 +1272,8 @@ mod tests {
 
         // Test execution
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(1000 * 700));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(1000 * 700));
         ctx.set_sender(Address::Account(account1));
 
         let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
@@ -1237,7 +1304,11 @@ mod tests {
             "Doris has incorrect amount."
         );
 
-        claim_eq!(host.state().settlements.len(), 1, "There should be one settlement left.");
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should be one settlement left."
+        );
     }
 
     #[concordium_test]
@@ -1257,8 +1328,8 @@ mod tests {
         //Initial State
         let mut host = get_test_state(
             ContractConfig {
-                validator:        account1,
-                judge:            account2,
+                validator: account1,
+                judge: account2,
                 time_to_finality: Duration::from_millis(100),
                 settlement_limit: 1000,
             },
@@ -1268,49 +1339,52 @@ mod tests {
         //Set balance sheet
         let _ = host.state_mut().balance_sheet.insert(alice, alice_balance);
         let _ = host.state_mut().balance_sheet.insert(bob, bob_balance);
-        let _ = host.state_mut().balance_sheet.insert(charlie, charlie_balance);
+        let _ = host
+            .state_mut()
+            .balance_sheet
+            .insert(charlie, charlie_balance);
 
         //Define settlements
         let settlement1 = Settlement {
-            id:            1,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 1,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(50),
+                        amount: Amount::from_ccd(50),
                     },
                     AddressAmount {
                         address: bob,
-                        amount:  Amount::from_ccd(25),
+                        amount: Amount::from_ccd(25),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: charlie,
-                    amount:  Amount::from_ccd(75),
+                    amount: Amount::from_ccd(75),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(100),
         };
         host.state_mut().settlements.push(settlement1);
         let settlement2 = Settlement {
-            id:            2,
-            transfer:      Transfer {
-                send_transfers:    vec![
+            id: 2,
+            transfer: Transfer {
+                send_transfers: vec![
                     AddressAmount {
                         address: charlie,
-                        amount:  Amount::from_ccd(20),
+                        amount: Amount::from_ccd(20),
                     },
                     AddressAmount {
                         address: alice,
-                        amount:  Amount::from_ccd(10),
+                        amount: Amount::from_ccd(10),
                     },
                 ],
                 receive_transfers: vec![AddressAmount {
                     address: bob,
-                    amount:  Amount::from_ccd(30),
+                    amount: Amount::from_ccd(30),
                 }],
-                meta_data:         Vec::new(),
+                meta_data: Vec::new(),
             },
             finality_time: Timestamp::from_timestamp_millis(110),
         };
@@ -1318,14 +1392,19 @@ mod tests {
 
         //Test 1 NonJudge trying to veto settlement
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(90));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(90));
         ctx.set_sender(Address::Account(account1)); //Use a validator instead
         let id_bytes = to_bytes(&1u64);
         ctx.set_parameter(&id_bytes);
 
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
 
-        claim_eq!(res, ContractResult::Err(ReceiveError::NotAJudge), "Should fail with NotAJudge");
+        claim_eq!(
+            res,
+            ContractResult::Err(ReceiveError::NotAJudge),
+            "Should fail with NotAJudge"
+        );
 
         //Test 2 judge trying to veto non-existing settlement (THIS IS FINE)
         ctx.set_sender(Address::Account(account2)); //Use a validator instead
@@ -1333,9 +1412,16 @@ mod tests {
         ctx.set_parameter(&id_bytes);
 
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
-        claim!(res.is_ok(), "Should allow judge to veto non-existing settlement.");
+        claim!(
+            res.is_ok(),
+            "Should allow judge to veto non-existing settlement."
+        );
 
-        claim_eq!(host.state().settlements.len(), 2, "There should still be two settlements.");
+        claim_eq!(
+            host.state().settlements.len(),
+            2,
+            "There should still be two settlements."
+        );
 
         //Test 3 judge vetoes existing settlement
         ctx.set_sender(Address::Account(account2));
@@ -1343,20 +1429,32 @@ mod tests {
         ctx.set_parameter(&id_bytes);
 
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
-        claim!(res.is_ok(), "Should allow judge to veto existing settlement.");
+        claim!(
+            res.is_ok(),
+            "Should allow judge to veto existing settlement."
+        );
 
-        claim_eq!(host.state().settlements.len(), 1, "There should one settlement.");
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should one settlement."
+        );
 
         //Test 4 judge tries to veto existing settlement after finality
         ctx.set_sender(Address::Account(account2));
         let id_bytes = to_bytes(&2u64);
         ctx.set_parameter(&id_bytes);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(120));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(120));
 
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
 
         claim!(res.is_ok(), "Should succeed (but without effect)");
-        claim_eq!(host.state().settlements.len(), 1, "There should still be one settlement.");
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should still be one settlement."
+        );
     }
 
     // test using all functions
@@ -1373,8 +1471,8 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
 
         let parameter = ContractConfig {
-            validator:        validator_address,
-            judge:            judge_address,
+            validator: validator_address,
+            judge: judge_address,
             time_to_finality: Duration::from_millis(100),
             settlement_limit: 1000,
         };
@@ -1393,30 +1491,38 @@ mod tests {
         let deposit = Amount::from_ccd(100);
         host.set_self_balance(deposit); //The host balance is not updated automatically
         let mut ctx = TestReceiveContext::empty();
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(100));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(100));
         ctx.set_sender(Address::Account(alice_address));
         let res: ContractResult<()> = contract_receive_deposit(&ctx, &mut host, deposit);
         claim!(res.is_ok(), "Should allow Alice to deposit CCDs");
 
         host.set_self_balance(host.self_balance() + deposit);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(120));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(120));
         ctx.set_sender(Address::Account(bob_address));
         let res: ContractResult<()> =
             contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
         claim!(res.is_ok(), "Should allow Bob holder to deposit CCDs");
 
         host.set_self_balance(host.self_balance() + deposit);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(130));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(130));
         ctx.set_sender(Address::Account(charlie_address));
         let res: ContractResult<()> =
             contract_receive_deposit(&ctx, &mut host, Amount::from_ccd(100));
         claim!(res.is_ok(), "Should allow Charlie holder to deposit CCDs");
 
-        claim_eq!(host.self_balance(), 3 * deposit, "Test should be written consistently.");
+        claim_eq!(
+            host.self_balance(),
+            3 * deposit,
+            "Test should be written consistently."
+        );
 
         // try to withdraw too much from Bob
         let parameter_bytes = to_bytes(&Amount::from_ccd(120));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(180));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(180));
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -1429,7 +1535,8 @@ mod tests {
         // withdraw valid amount from Bob
         let payout = Amount::from_ccd(40);
         let parameter_bytes = to_bytes(&payout);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(190));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(190));
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -1438,32 +1545,34 @@ mod tests {
 
         //Add settlements
         let transfer1 = Transfer {
-            send_transfers:    vec![
+            send_transfers: vec![
                 AddressAmount {
                     address: alice_address,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
                 AddressAmount {
                     address: charlie_address,
-                    amount:  Amount::from_ccd(20),
+                    amount: Amount::from_ccd(20),
                 },
             ],
             receive_transfers: vec![AddressAmount {
                 address: charlie_address,
-                amount:  Amount::from_ccd(70),
+                amount: Amount::from_ccd(70),
             }],
-            meta_data:         Vec::new(),
+            meta_data: Vec::new(),
         };
         let parameter_bytes = to_bytes(&transfer1);
         ctx.set_parameter(&parameter_bytes);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(200));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(200));
         ctx.set_sender(Address::Account(validator_address));
         let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
         claim!(res.is_ok(), "Should allow the validator to add settlement.");
 
         // withdraw too much from Alice (reserved balance)
         let parameter_bytes = to_bytes(&Amount::from_ccd(60));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(210));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(210));
         ctx.set_sender(Address::Account(alice_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -1475,25 +1584,26 @@ mod tests {
 
         //Add another settlement
         let transfer2 = Transfer {
-            send_transfers:    vec![AddressAmount {
+            send_transfers: vec![AddressAmount {
                 address: charlie_address,
-                amount:  Amount::from_ccd(90),
+                amount: Amount::from_ccd(90),
             }],
             receive_transfers: vec![
                 AddressAmount {
                     address: alice_address,
-                    amount:  Amount::from_ccd(50),
+                    amount: Amount::from_ccd(50),
                 },
                 AddressAmount {
                     address: bob_address,
-                    amount:  Amount::from_ccd(40),
+                    amount: Amount::from_ccd(40),
                 },
             ],
-            meta_data:         Vec::new(),
+            meta_data: Vec::new(),
         };
         let parameter_bytes = to_bytes(&transfer2);
         ctx.set_parameter(&parameter_bytes);
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(220));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(220));
         ctx.set_sender(Address::Account(validator_address));
         let res: ContractResult<()> = contract_receive_add_settlement(&ctx, &mut host);
         claim!(res.is_ok(), "Should allow the validator to add settlement.");
@@ -1503,34 +1613,56 @@ mod tests {
         let id_bytes = to_bytes(&0u64);
         ctx.set_parameter(&id_bytes);
         let res: ContractResult<()> = contract_receive_veto(&ctx, &mut host);
-        claim!(res.is_ok(), "Should allow judge to veto existing settlement.");
-        claim_eq!(host.state().settlements.len(), 1, "There should one settlement.");
+        claim!(
+            res.is_ok(),
+            "Should allow judge to veto existing settlement."
+        );
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should one settlement."
+        );
 
         // Withdraw now
         let parameter_bytes = to_bytes(&Amount::from_ccd(60));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(230));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(230));
         ctx.set_sender(Address::Account(alice_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
         claim!(res.is_ok(), "Should allow Alice to withdraw funds.");
 
         // Execute settlement too early
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(310));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(310));
         ctx.set_sender(Address::Account(bob_address));
         let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
-        claim!(res.is_ok(), "Should allow Bob to execute all final settlement.");
-        claim_eq!(host.state().settlements.len(), 1, "There should one settlement.");
+        claim!(
+            res.is_ok(),
+            "Should allow Bob to execute all final settlement."
+        );
+        claim_eq!(
+            host.state().settlements.len(),
+            1,
+            "There should one settlement."
+        );
 
         // Execute settlement
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(320));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(320));
         ctx.set_sender(Address::Account(bob_address));
         let res: ContractResult<()> = contract_receive_execute_settlements(&ctx, &mut host);
         claim!(res.is_ok(), "Should allow Bob to execute settlement.");
-        claim_eq!(host.state().settlements.len(), 0, "There should no settlement.");
+        claim_eq!(
+            host.state().settlements.len(),
+            0,
+            "There should no settlement."
+        );
 
         // Withdraw final
         let parameter_bytes = to_bytes(&Amount::from_ccd(90));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(330));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(330));
         ctx.set_sender(Address::Account(alice_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -1539,7 +1671,8 @@ mod tests {
         claim_eq!(balance, Amount::zero(), "Alice should have no money left.");
 
         let parameter_bytes = to_bytes(&Amount::from_ccd(100));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(340));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(340));
         ctx.set_sender(Address::Account(bob_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
@@ -1548,15 +1681,24 @@ mod tests {
         claim_eq!(balance, Amount::zero(), "Bob should have no money left.");
 
         let parameter_bytes = to_bytes(&Amount::from_ccd(10));
-        ctx.metadata_mut().set_slot_time(Timestamp::from_timestamp_millis(330));
+        ctx.metadata_mut()
+            .set_slot_time(Timestamp::from_timestamp_millis(330));
         ctx.set_sender(Address::Account(charlie_address));
         ctx.set_parameter(&parameter_bytes);
         let res: ContractResult<()> = contract_receive_withdraw(&ctx, &mut host);
         claim!(res.is_ok(), "Should allow Charlie to withdraw funds.");
         let balance = *host.state().balance_sheet.get(&charlie_address).unwrap();
-        claim_eq!(balance, Amount::zero(), "Charlie should have no money left.");
+        claim_eq!(
+            balance,
+            Amount::zero(),
+            "Charlie should have no money left."
+        );
 
         //There should be no money left in the contract
-        claim_eq!(host.self_balance(), Amount::zero(), "Contract should contain no money.");
+        claim_eq!(
+            host.self_balance(),
+            Amount::zero(),
+            "Contract should contain no money."
+        );
     }
 }

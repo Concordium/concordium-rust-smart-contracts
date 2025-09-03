@@ -48,25 +48,25 @@ pub enum AuctionState {
 #[derive(Debug, Serialize, SchemaType, Clone)]
 pub struct State {
     /// State of the auction
-    auction_state:  AuctionState,
+    auction_state: AuctionState,
     /// The highest bidder so far; The variant `None` represents
     /// that no bidder has taken part in the auction yet.
     highest_bidder: Option<AccountAddress>,
     /// The minimum accepted raise to over bid the current bidder in Euro cent.
-    minimum_raise:  u64,
+    minimum_raise: u64,
     /// The item to be sold (to be displayed by the front-end)
-    item:           String,
+    item: String,
     /// Time when auction ends (to be displayed by the front-end)
-    end:            Timestamp,
+    end: Timestamp,
 }
 
 /// Type of the parameter to the `init` function
 #[derive(Serialize, SchemaType)]
 pub struct InitParameter {
     /// The item to be sold
-    pub item:          String,
+    pub item: String,
     /// Time when auction ends using the RFC 3339 format (https://tools.ietf.org/html/rfc3339)
-    pub end:           Timestamp,
+    pub end: Timestamp,
     /// The minimum accepted raise to over bid the current bidder in Euro cent.
     pub minimum_raise: u64,
 }
@@ -104,17 +104,23 @@ fn auction_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitRes
     let parameter: InitParameter = ctx.parameter_cursor().get()?;
     // Creating `State`
     let state = State {
-        auction_state:  AuctionState::NotSoldYet,
+        auction_state: AuctionState::NotSoldYet,
         highest_bidder: None,
-        minimum_raise:  parameter.minimum_raise,
-        item:           parameter.item,
-        end:            parameter.end,
+        minimum_raise: parameter.minimum_raise,
+        item: parameter.item,
+        end: parameter.end,
     };
     Ok(state)
 }
 
 /// Receive function for accounts to place a bid in the auction
-#[receive(contract = "auction", name = "bid", payable, mutable, error = "BidError")]
+#[receive(
+    contract = "auction",
+    name = "bid",
+    payable,
+    mutable,
+    error = "BidError"
+)]
 fn auction_bid(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
@@ -122,7 +128,11 @@ fn auction_bid(
 ) -> Result<(), BidError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet
-    ensure_eq!(state.auction_state, AuctionState::NotSoldYet, BidError::AuctionAlreadyFinalized);
+    ensure_eq!(
+        state.auction_state,
+        AuctionState::NotSoldYet,
+        BidError::AuctionAlreadyFinalized
+    );
 
     let slot_time = ctx.metadata().slot_time();
     // Ensure the auction has not ended yet
@@ -151,7 +161,10 @@ fn auction_bid(
     let euro_cent_difference = exchange_rates.convert_amount_to_euro_cent(amount_difference);
     // Ensure that the bid is at least the `minimum_raise` more than the previous
     // bid
-    ensure!(euro_cent_difference >= state.minimum_raise, BidError::BidBelowMinimumRaise);
+    ensure!(
+        euro_cent_difference >= state.minimum_raise,
+        BidError::BidBelowMinimumRaise
+    );
 
     if let Some(account_address) = host.state_mut().highest_bidder.replace(sender_address) {
         // Refunding old highest bidder;
@@ -162,7 +175,8 @@ fn auction_bid(
         // Please consider using a pull-over-push pattern when expanding this smart
         // contract to allow smart contract instances to participate in the auction as
         // well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        host.invoke_transfer(&account_address, previous_balance).unwrap_abort();
+        host.invoke_transfer(&account_address, previous_balance)
+            .unwrap_abort();
     }
     Ok(())
 }
@@ -183,7 +197,12 @@ fn view_highest_bid(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<
 /// Receive function used to finalize the auction. It sends the highest bid (the
 /// current balance of this smart contract) to the owner of the smart contract
 /// instance.
-#[receive(contract = "auction", name = "finalize", mutable, error = "FinalizeError")]
+#[receive(
+    contract = "auction",
+    name = "finalize",
+    mutable,
+    error = "FinalizeError"
+)]
 fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> Result<(), FinalizeError> {
     let state = host.state();
     // Ensure the auction has not been finalized yet

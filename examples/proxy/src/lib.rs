@@ -81,7 +81,12 @@ fn receive_fallback(
 /// Change the proxied address. Only the owner is allowed to do so.
 /// The underscores in the name are to avoid naming conflicts with entrypoints
 /// in the proxied contract.
-#[receive(contract = "proxy", name = "________reconfigure", mutable, parameter = "ContractAddress")]
+#[receive(
+    contract = "proxy",
+    name = "________reconfigure",
+    mutable,
+    parameter = "ContractAddress"
+)]
 fn receive_reconfigure(ctx: &ReceiveContext, host: &mut Host<State>) -> ReceiveResult<()> {
     ensure!(ctx.sender().matches_account(&ctx.owner()));
     *host.state_mut() = ctx.parameter_cursor().get()?;

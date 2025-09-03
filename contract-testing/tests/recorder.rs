@@ -24,10 +24,10 @@ fn test_recorder() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_recorder".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -39,11 +39,10 @@ fn test_recorder() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.record_u64".into()),
-                message:      OwnedParameter::from_serial(&20u64)
-                    .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                message: OwnedParameter::from_serial(&20u64).expect("Parameter has valid size"),
+                amount: Amount::zero(),
             },
         )
         .expect("Update failed");
@@ -54,11 +53,10 @@ fn test_recorder() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("recorder.record_u64".into()),
-                message:      OwnedParameter::from_serial(&40u64)
-                    .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                message: OwnedParameter::from_serial(&40u64).expect("Parameter has valid size"),
+                amount: Amount::zero(),
             },
         )
         .expect("Update failed");

@@ -68,7 +68,11 @@ fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> Receive
 }
 
 /// View the state and balance of the piggy bank.
-#[receive(contract = "PiggyBank", name = "view", return_value = "(PiggyBankState, Amount)")]
+#[receive(
+    contract = "PiggyBank",
+    name = "view",
+    return_value = "(PiggyBankState, Amount)"
+)]
 fn piggy_view(
     _ctx: &ReceiveContext,
     host: &Host<PiggyBankState>,

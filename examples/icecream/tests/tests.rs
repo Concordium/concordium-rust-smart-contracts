@@ -34,24 +34,25 @@ fn test_sunny_day() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       ICECREAM_PRICE,
-                address:      icecream_address,
+                amount: ICECREAM_PRICE,
+                address: icecream_address,
                 receive_name: OwnedReceiveName::new_unchecked("icecream.buy_icecream".to_string()),
-                message:      OwnedParameter::from_serial(&ACC_1)
-                    .expect("Serialize account address."),
+                message: OwnedParameter::from_serial(&ACC_1).expect("Serialize account address."),
             },
         )
         .print_emitted_events() // log all `concordium_dbg` emitted events.
         .expect("Call icecream contract");
 
     // Check that the icecream vendor received the correct amount of money.
-    assert_eq!(chain.account_balance_available(ACC_1), Some(ACC_INITIAL_BALANCE + ICECREAM_PRICE));
+    assert_eq!(
+        chain.account_balance_available(ACC_1),
+        Some(ACC_INITIAL_BALANCE + ICECREAM_PRICE)
+    );
     // Assert that the transfer to ACC_1 occured via the method on `update`.
-    assert_eq!(update.account_transfers().collect::<Vec<_>>()[..], [(
-        icecream_address,
-        ICECREAM_PRICE,
-        ACC_1
-    )]);
+    assert_eq!(
+        update.account_transfers().collect::<Vec<_>>()[..],
+        [(icecream_address, ICECREAM_PRICE, ACC_1)]
+    );
 }
 
 /// Test that the icecream contract transfers the correct amount of money back
@@ -75,23 +76,25 @@ fn test_rainy_days() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       ICECREAM_PRICE,
-                address:      icecream_address,
+                amount: ICECREAM_PRICE,
+                address: icecream_address,
                 receive_name: OwnedReceiveName::new_unchecked("icecream.buy_icecream".to_string()),
-                message:      OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
+                message: OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
             },
         )
         .print_debug(DebugOutputKind::HostCalls) // print all host calls that occurred during execution.
         .expect("Call icecream contract");
 
     // Check that the icecream vendor still has the original balance.
-    assert_eq!(chain.account_balance_available(ACC_1), Some(ACC_INITIAL_BALANCE));
+    assert_eq!(
+        chain.account_balance_available(ACC_1),
+        Some(ACC_INITIAL_BALANCE)
+    );
     // Check that the money were returned to the sender, ACC_0.
-    assert_eq!(update.account_transfers().collect::<Vec<_>>()[..], [(
-        icecream_address,
-        ICECREAM_PRICE,
-        ACC_0
-    )]);
+    assert_eq!(
+        update.account_transfers().collect::<Vec<_>>()[..],
+        [(icecream_address, ICECREAM_PRICE, ACC_0)]
+    );
 }
 
 /// Test that `buy_icecream` returns the error `ContractInvokeError` if the
@@ -114,10 +117,10 @@ fn test_missing_weather() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       ICECREAM_PRICE,
-                address:      icecream_address,
+                amount: ICECREAM_PRICE,
+                address: icecream_address,
                 receive_name: OwnedReceiveName::new_unchecked("icecream.buy_icecream".to_string()),
-                message:      OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
+                message: OwnedParameter::from_serial(&ACC_1).expect("Serialize address"),
             },
         )
         .print_debug(DebugOutputKind::Full)
@@ -125,7 +128,9 @@ fn test_missing_weather() {
 
     // Deserialize the return value from `update` and check that it is the expected
     // error.
-    let rv: ContractError = update.parse_return_value().expect("Deserialize return value");
+    let rv: ContractError = update
+        .parse_return_value()
+        .expect("Deserialize return value");
     assert_eq!(rv, ContractError::ContractInvokeError);
 }
 
@@ -152,10 +157,10 @@ fn test_missing_icecream_vendor() {
             Address::Account(ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       ICECREAM_PRICE,
-                address:      icecream_address,
+                amount: ICECREAM_PRICE,
+                address: icecream_address,
                 receive_name: OwnedReceiveName::new_unchecked("icecream.buy_icecream".to_string()),
-                message:      OwnedParameter::from_serial(&non_existing_account)
+                message: OwnedParameter::from_serial(&non_existing_account)
                     .expect("Serialize address"),
             },
         )
@@ -164,7 +169,9 @@ fn test_missing_icecream_vendor() {
 
     // Deserialize the return value from `update` and check that it is the expected
     // error.
-    let rv: ContractError = update.parse_return_value().expect("Deserialize return value");
+    let rv: ContractError = update
+        .parse_return_value()
+        .expect("Deserialize return value");
     assert_eq!(rv, ContractError::TransferError);
 }
 
@@ -177,12 +184,17 @@ fn initialize_weather(
     weather: &Weather,
 ) -> ContractAddress {
     chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   module_reference,
-            init_name: OwnedContractName::new_unchecked("init_weather".to_string()),
-            param:     OwnedParameter::from_serial(weather).expect("Serialize weather"),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: module_reference,
+                init_name: OwnedContractName::new_unchecked("init_weather".to_string()),
+                param: OwnedParameter::from_serial(weather).expect("Serialize weather"),
+            },
+        )
         .expect("Initialize weather")
         .contract_address
 }
@@ -194,13 +206,18 @@ fn initialize_icecream(
     weather_address: ContractAddress,
 ) -> ContractAddress {
     chain
-        .contract_init(SIGNER, ACC_0, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   module_reference,
-            init_name: OwnedContractName::new_unchecked("init_icecream".to_string()),
-            param:     OwnedParameter::from_serial(&weather_address)
-                .expect("Serialize weather address"),
-        })
+        .contract_init(
+            SIGNER,
+            ACC_0,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: module_reference,
+                init_name: OwnedContractName::new_unchecked("init_icecream".to_string()),
+                param: OwnedParameter::from_serial(&weather_address)
+                    .expect("Serialize weather address"),
+            },
+        )
         .expect("Initialize icecream")
         .contract_address
 }

@@ -8,7 +8,6 @@ on:
 name: Release Templates
 
 env:
-  RUST_FMT: nightly-2023-04-01
   RUST_VERSION: "1.73"
   RUST_VERSION_TESTING_LIBRARY: "1.73"
   CARGO_CONCORDIUM_VERSION: "3.2.0"

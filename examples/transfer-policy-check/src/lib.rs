@@ -43,7 +43,12 @@ fn init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<Stat
 
 /// Forward the `amount` to the account defined in the state iff all sender
 /// policies have the country of residence in `LOCAL_COUNTRY`.
-#[receive(contract = "transfer-policy-check", name = "receive", payable, error = "ContractError")]
+#[receive(
+    contract = "transfer-policy-check",
+    name = "receive",
+    payable,
+    error = "ContractError"
+)]
 fn receive(ctx: &ReceiveContext, host: &Host<State>, amount: Amount) -> Result<(), ContractError> {
     for policy in ctx.policies() {
         for (tag, value) in policy.attributes() {

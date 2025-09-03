@@ -73,24 +73,24 @@ pub enum AuctionState {
 #[derive(Debug, Serialize, SchemaType, Clone, PartialEq, Eq)]
 pub struct ItemState {
     /// State of the auction.
-    pub auction_state:  AuctionState,
+    pub auction_state: AuctionState,
     /// The highest bidder so far. The variant `None` represents
     /// that no bidder has taken part in the auction yet.
     pub highest_bidder: Option<AccountAddress>,
     /// The item name to be sold.
-    pub name:           String,
+    pub name: String,
     /// The time when the auction ends.
-    pub end:            Timestamp,
+    pub end: Timestamp,
     /// The time when the auction starts.
-    pub start:          Timestamp,
+    pub start: Timestamp,
     /// In case `highest_bidder==None`, the minimum bid as set by the creator.
     /// In case `highest_bidder==Some(AccountAddress)`, the highest bid that a
     /// bidder has bid so far.
-    pub highest_bid:    TokenAmountU64,
+    pub highest_bid: TokenAmountU64,
     /// The `token_id` from the cis2 token contract used as payment token.
-    pub token_id:       TokenIdU8,
+    pub token_id: TokenIdU8,
     /// The account address that created the auction for this item.
-    pub creator:        AccountAddress,
+    pub creator: AccountAddress,
 }
 
 /// The state of the smart contract.
@@ -101,13 +101,13 @@ pub struct ItemState {
 #[concordium(state_parameter = "S")]
 pub struct State<S = StateApi> {
     /// A mapping including all items that have been added to this contract.
-    items:         StateMap<u16, ItemState, S>,
+    items: StateMap<u16, ItemState, S>,
     /// The cis2 token contract. Its tokens can be used to bid for items in this
     /// contract.
     cis2_contract: ContractAddress,
     /// A counter that is sequentially increased whenever a new item is added to
     /// the contract.
-    counter:       u16,
+    counter: u16,
 }
 
 /// The return_value for the entry point `view` which returns the contract
@@ -115,13 +115,13 @@ pub struct State<S = StateApi> {
 #[derive(Serialize, SchemaType, Debug, Eq, PartialEq)]
 pub struct ReturnParamView {
     /// A vector including all items that have been added to this contract.
-    pub item_states:   Vec<(u16, ItemState)>,
+    pub item_states: Vec<(u16, ItemState)>,
     /// The cis2 token contract. Its tokens can be used to bid for items in this
     /// contract.
     pub cis2_contract: ContractAddress,
     /// A counter that is sequentially increased whenever a new item is added to
     /// the contract.
-    pub counter:       u16,
+    pub counter: u16,
 }
 
 /// The parameter for the entry point `addItem` that adds a new item to this
@@ -129,15 +129,15 @@ pub struct ReturnParamView {
 #[derive(Serialize, SchemaType)]
 pub struct AddItemParameter {
     /// The item name to be sold.
-    pub name:        String,
+    pub name: String,
     /// The time when the auction ends.
-    pub end:         Timestamp,
+    pub end: Timestamp,
     /// The time when the auction starts.
-    pub start:       Timestamp,
+    pub start: Timestamp,
     // The minimum bid that the first bidder has to overbid.
     pub minimum_bid: TokenAmountU64,
     // The `token_id` from the cis2 token contract that the item should be sold for.
-    pub token_id:    TokenIdU8,
+    pub token_id: TokenIdU8,
 }
 
 /// The `additionData` that has to be passed to the `bid` entry point.
@@ -284,15 +284,19 @@ impl schema::SchemaType for Event {
 }
 
 /// Init entry point that creates a new auction contract.
-#[init(contract = "sponsored_tx_enabled_auction", parameter = "ContractAddress", event = "Event")]
+#[init(
+    contract = "sponsored_tx_enabled_auction",
+    parameter = "ContractAddress",
+    event = "Event"
+)]
 fn auction_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Getting input parameters.
     let contract: ContractAddress = ctx.parameter_cursor().get()?;
     // Creating `State`.
     let state = State {
-        items:         state_builder.new_map(),
+        items: state_builder.new_map(),
         cis2_contract: contract,
-        counter:       0,
+        counter: 0,
     };
     Ok(state)
 }
@@ -337,21 +341,22 @@ fn add_item(
     host.state_mut().counter = item_index;
 
     // Insert the item into the state.
-    let _ = host.state_mut().items.insert(item_index, ItemState {
-        auction_state:  AuctionState::NotSoldYet,
-        highest_bidder: None,
-        name:           item.name,
-        end:            item.end,
-        start:          item.start,
-        highest_bid:    item.minimum_bid,
-        creator:        sender_address,
-        token_id:       item.token_id,
-    });
+    let _ = host.state_mut().items.insert(
+        item_index,
+        ItemState {
+            auction_state: AuctionState::NotSoldYet,
+            highest_bidder: None,
+            name: item.name,
+            end: item.end,
+            start: item.start,
+            highest_bid: item.minimum_bid,
+            creator: sender_address,
+            token_id: item.token_id,
+        },
+    );
 
     // Event for added item.
-    logger.log(&Event::AddItem(AddItemEvent {
-        item_index,
-    }))?;
+    logger.log(&Event::AddItem(AddItemEvent { item_index }))?;
 
     Ok(())
 }
@@ -396,14 +401,21 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
         Address::Account(account_address) => account_address,
     };
 
-    let mut item =
-        host.state_mut().items.entry(params.data.item_index).occupied_or(Error::NoItem)?;
+    let mut item = host
+        .state_mut()
+        .items
+        .entry(params.data.item_index)
+        .occupied_or(Error::NoItem)?;
 
     // Ensure the token_id matches.
     ensure_eq!(item.token_id, params.token_id, Error::WrongTokenID);
 
     // Ensure the auction has not been finalized yet.
-    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
+    ensure_eq!(
+        item.auction_state,
+        AuctionState::NotSoldYet,
+        Error::AuctionAlreadyFinalized
+    );
 
     let block_time = ctx.metadata().block_time();
     // Ensure the auction has not ended yet.
@@ -411,7 +423,10 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
 
     // Ensure that the new bid exceeds the highest bid so far.
     let old_highest_bid = item.highest_bid;
-    ensure!(params.amount > old_highest_bid, Error::BidNotGreaterCurrentBid);
+    ensure!(
+        params.amount > old_highest_bid,
+        Error::BidNotGreaterCurrentBid
+    );
 
     // Set the new highest_bid.
     item.highest_bid = params.amount;
@@ -431,13 +446,16 @@ fn auction_bid(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<(
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(host, Transfer {
-            amount:   old_highest_bid,
-            from:     concordium_std::Address::Contract(ctx.self_address()),
-            to:       concordium_cis2::Receiver::Account(account_address),
-            token_id: read_item.token_id,
-            data:     AdditionalData::empty(),
-        })?;
+        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
+            host,
+            Transfer {
+                amount: old_highest_bid,
+                from: concordium_std::Address::Contract(ctx.self_address()),
+                to: concordium_cis2::Receiver::Account(account_address),
+                token_id: read_item.token_id,
+                data: AdditionalData::empty(),
+            },
+        )?;
     }
 
     Ok(())
@@ -460,10 +478,18 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractRes
     let contract = host.state().cis2_contract;
 
     // Get the item from state.
-    let mut item = host.state_mut().items.entry(item_index).occupied_or(Error::NoItem)?;
+    let mut item = host
+        .state_mut()
+        .items
+        .entry(item_index)
+        .occupied_or(Error::NoItem)?;
 
     // Ensure the auction has not been finalized yet.
-    ensure_eq!(item.auction_state, AuctionState::NotSoldYet, Error::AuctionAlreadyFinalized);
+    ensure_eq!(
+        item.auction_state,
+        AuctionState::NotSoldYet,
+        Error::AuctionAlreadyFinalized
+    );
 
     let block_time = ctx.metadata().block_time();
     // Ensure the auction has ended already.
@@ -488,13 +514,16 @@ fn auction_finalize(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractRes
         // Please consider using a pull-over-push pattern when expanding this
         // smart contract to allow smart contract instances to
         // participate in the auction as well. https://consensys.github.io/smart-contract-best-practices/attacks/denial-of-service/
-        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(host, Transfer {
-            amount:   read_item.highest_bid,
-            from:     concordium_std::Address::Contract(ctx.self_address()),
-            to:       concordium_cis2::Receiver::Account(read_item.creator),
-            token_id: read_item.token_id,
-            data:     AdditionalData::empty(),
-        })?;
+        client.transfer::<State, ContractTokenId, ContractTokenAmount, Error>(
+            host,
+            Transfer {
+                amount: read_item.highest_bid,
+                from: concordium_std::Address::Contract(ctx.self_address()),
+                to: concordium_cis2::Receiver::Account(read_item.creator),
+                token_id: read_item.token_id,
+                data: AdditionalData::empty(),
+            },
+        )?;
     }
 
     Ok(())
@@ -512,9 +541,9 @@ fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnParam
     let inner_state = state.items.iter().map(|x| (*x.0, x.1.clone())).collect();
 
     Ok(ReturnParamView {
-        item_states:   inner_state,
+        item_states: inner_state,
         cis2_contract: host.state().cis2_contract,
-        counter:       host.state().counter,
+        counter: host.state().counter,
     })
 }
 
@@ -529,7 +558,12 @@ fn view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnParam
 fn view_item_state(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ItemState> {
     // Getting input parameter.
     let item_index: u16 = ctx.parameter_cursor().get()?;
-    let item = host.state().items.get(&item_index).map(|x| x.to_owned()).ok_or(Error::NoItem)?;
+    let item = host
+        .state()
+        .items
+        .get(&item_index)
+        .map(|x| x.to_owned())
+        .ok_or(Error::NoItem)?;
     Ok(item)
 }
 

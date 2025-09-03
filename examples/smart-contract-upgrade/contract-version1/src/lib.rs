@@ -27,9 +27,9 @@ use concordium_std::*;
 /// The smart contract state.
 #[derive(Serialize, SchemaType, Clone)]
 pub struct State {
-    admin:                    AccountAddress,
+    admin: AccountAddress,
     not_to_be_migrated_state: String,
-    to_be_migrated_state:     String,
+    to_be_migrated_state: String,
 }
 
 /// The parameter type for the contract function `upgrade`.
@@ -40,7 +40,7 @@ pub struct State {
 #[derive(Serialize, SchemaType)]
 pub struct UpgradeParams {
     /// The new module reference.
-    pub module:  ModuleReference,
+    pub module: ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
     pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
@@ -79,7 +79,9 @@ impl From<UpgradeError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 type ContractResult<A> = Result<A, CustomContractError>;
@@ -88,18 +90,22 @@ type ContractResult<A> = Result<A, CustomContractError>;
 #[init(contract = "smart_contract_upgrade")]
 fn contract_init(ctx: &InitContext, _state_builder: &mut StateBuilder) -> InitResult<State> {
     Ok(State {
-        admin:                    ctx.init_origin(),
+        admin: ctx.init_origin(),
         not_to_be_migrated_state: "This state should NOT be migrated as part of the smart \
                                    contract upgrade."
             .to_string(),
-        to_be_migrated_state:     "This state should be migrated as part of the smart contract \
+        to_be_migrated_state: "This state should be migrated as part of the smart contract \
                                    upgrade."
             .to_string(),
     })
 }
 
 /// View function that returns the content of the state.
-#[receive(contract = "smart_contract_upgrade", name = "view", return_value = "State")]
+#[receive(
+    contract = "smart_contract_upgrade",
+    name = "view",
+    return_value = "State"
+)]
 fn contract_view<'b>(_ctx: &ReceiveContext, host: &'b Host<State>) -> ReceiveResult<&'b State> {
     Ok(host.state())
 }
@@ -131,7 +137,10 @@ fn contract_upgrade(ctx: &ReceiveContext, host: &mut LowLevelHost) -> ContractRe
     let state: State = host.state().read_root()?;
 
     // Check that only the admin is authorized to upgrade the smart contract.
-    ensure!(ctx.sender().matches_account(&state.admin), CustomContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_account(&state.admin),
+        CustomContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: UpgradeParams = ctx.parameter_cursor().get()?;
     // Trigger the upgrade.

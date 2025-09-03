@@ -74,7 +74,9 @@ pub trait HasChainMetadata {
     fn slot_time(&self) -> SlotTime;
     /// Get time in milliseconds at the beginning of this block.
     #[inline(always)]
-    fn block_time(&self) -> Timestamp { self.slot_time() }
+    fn block_time(&self) -> Timestamp {
+        self.slot_time()
+    }
 }
 
 /// A type which has access to a policy of a credential.
@@ -215,7 +217,8 @@ pub trait HasStateEntry
 where
     Self: Read,
     Self: Write<Err = Self::Error>,
-    Self: Seek<Err = Self::Error>, {
+    Self: Seek<Err = Self::Error>,
+{
     type StateEntryData;
     type StateEntryKey;
     type Error: Default;
@@ -333,7 +336,9 @@ pub trait HasStateApi: Clone {
     /// Serialize and write the state at the root of the state trie. Dual to
     /// [`read_root`](Self::read_root).
     fn write_root<A: Serial>(&mut self, new_state: &A) {
-        new_state.serial(&mut self.create_entry(&[]).unwrap_abort()).unwrap_abort()
+        new_state
+            .serial(&mut self.create_entry(&[]).unwrap_abort())
+            .unwrap_abort()
     }
 }
 
@@ -713,7 +718,8 @@ pub trait ExpectNoneReport {
 /// these types.
 pub trait DeserialWithState<S>: Sized
 where
-    S: HasStateApi, {
+    S: HasStateApi,
+{
     /// Attempt to read a structure from a given source and state, failing if
     /// an error occurs during deserialization or reading.
     fn deserial_with_state<R: Read>(state: &S, source: &mut R) -> ParseResult<Self>;
@@ -741,7 +747,8 @@ where
 /// ```
 pub trait DeserialCtxWithState<S>: Sized
 where
-    S: HasStateApi, {
+    S: HasStateApi,
+{
     /// Attempt to read a structure from a given source, context, and state,
     /// failing if an error occurs during deserialization or reading.
     fn deserial_ctx_with_state<R: Read>(

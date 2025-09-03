@@ -34,25 +34,35 @@ fn test_unauthorized_sender() {
     // Construct a transfer of `TOKEN_0` from Alice to Bob, which will be submitted
     // by Bob.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU64(1),
+        data: AdditionalData::empty(),
     }]);
 
     // Notice that Bob is the sender/invoker.
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_dynamic_nft.transfer".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect_err("Transfer tokens");
 
     // Check that the correct error is returned.
-    let rv: ContractError = update.parse_return_value().expect("ContractError return value");
+    let rv: ContractError = update
+        .parse_return_value()
+        .expect("ContractError return value");
     assert_eq!(rv, ContractError::Unauthorized);
 }
 
@@ -63,59 +73,87 @@ fn test_operator_can_transfer() {
 
     // Add Bob as an operator for Alice.
     let params = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_dynamic_nft.updateOperator".to_string(),
-            ),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_dynamic_nft.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&params).expect("UpdateOperator params"),
+            },
+        )
         .expect("Update operator");
 
     // Let Bob make a transfer to himself on behalf of Alice.
     let transfer_params = TransferParams::from(vec![concordium_cis2::Transfer {
-        from:     ALICE_ADDR,
-        to:       Receiver::Account(BOB),
+        from: ALICE_ADDR,
+        to: Receiver::Account(BOB),
         token_id: TOKEN_0,
-        amount:   TokenAmountU64(1),
-        data:     AdditionalData::empty(),
+        amount: TokenAmountU64(1),
+        data: AdditionalData::empty(),
     }]);
 
     chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_dynamic_nft.transfer".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&transfer_params).expect("Transfer params"),
+            },
+        )
         .expect("Transfer tokens");
 
     // Check that Bob now has 1 of `TOKEN_0` and Alice has 399. Also check that
     // Alice still has 400 `TOKEN_2`.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
-    assert_eq!(rv.state, vec![
-        (ALICE_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 399.into()), (TOKEN_2, 400.into())],
-            operators: vec![BOB_ADDR],
-        }),
-        (BOB_ADDR, ViewAddressState {
-            balances:  vec![(TOKEN_0, 1.into())],
-            operators: Vec::new(),
-        }),
-    ]);
+    assert_eq!(
+        rv.state,
+        vec![
+            (
+                ALICE_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 399.into()), (TOKEN_2, 400.into())],
+                    operators: vec![BOB_ADDR],
+                }
+            ),
+            (
+                BOB_ADDR,
+                ViewAddressState {
+                    balances: vec![(TOKEN_0, 1.into())],
+                    operators: Vec::new(),
+                }
+            ),
+        ]
+    );
 }
 
 /// Test minting succeeds and the tokens are owned by the given address and
@@ -128,42 +166,57 @@ fn test_minting() {
 
     // Invoke the view entrypoint and check that the tokens are owned by Alice.
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
 
     // Check that the tokens are owned by Alice.
     let rv: ViewState = invoke.parse_return_value().expect("ViewState return value");
     assert_eq!(rv.tokens[..], [TOKEN_0, TOKEN_2]);
-    assert_eq!(rv.state, vec![(ALICE_ADDR, ViewAddressState {
-        balances:  vec![(TOKEN_0, 400.into()), (TOKEN_2, 400.into())],
-        operators: Vec::new(),
-    })]);
+    assert_eq!(
+        rv.state,
+        vec![(
+            ALICE_ADDR,
+            ViewAddressState {
+                balances: vec![(TOKEN_0, 400.into()), (TOKEN_2, 400.into())],
+                operators: Vec::new(),
+            }
+        )]
+    );
 
     // Check that the events are logged.
     let events = update.events().flat_map(|(_addr, events)| events);
 
-    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
-        events.map(|e| e.parse().expect("Deserialize event")).collect();
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> = events
+        .map(|e| e.parse().expect("Deserialize event"))
+        .collect();
 
-    assert_eq!(events, [
-        Cis2Event::Mint(MintEvent {
-            token_id: TokenIdU8(5),
-            amount:   TokenAmountU64(400),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     TokenIdU8(5),
-            metadata_url: MetadataUrl {
-                url:  format!("https://some.example/token/3/{TOKEN_2}").to_string(),
-                hash: None,
-            },
-        }),
-    ]);
+    assert_eq!(
+        events,
+        [
+            Cis2Event::Mint(MintEvent {
+                token_id: TokenIdU8(5),
+                amount: TokenAmountU64(400),
+                owner: ALICE_ADDR,
+            }),
+            Cis2Event::TokenMetadata(TokenMetadataEvent {
+                token_id: TokenIdU8(5),
+                metadata_url: MetadataUrl {
+                    url: format!("https://some.example/token/3/{TOKEN_2}").to_string(),
+                    hash: None,
+                },
+            }),
+        ]
+    );
 }
 
 /// Test upgrading the Metadata token as the contract owner. Once a token is
@@ -174,46 +227,64 @@ fn test_minting() {
 fn test_upgrade() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_tokens();
     let _update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.upgrade".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&TOKEN_0).expect("TokenId"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_dynamic_nft.upgrade".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&TOKEN_0).expect("TokenId"),
+            },
+        )
         .expect("Upgrade tokens");
     // Check that the events are logged.
     let events = _update.events().flat_map(|(_addr, events)| events);
 
-    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> =
-        events.map(|e| e.parse().expect("Deserialize event")).collect();
+    let events: Vec<Cis2Event<ContractTokenId, ContractTokenAmount>> = events
+        .map(|e| e.parse().expect("Deserialize event"))
+        .collect();
 
-    assert_eq!(events, [Cis2Event::TokenMetadata(TokenMetadataEvent {
-        token_id:     TokenIdU8(3),
-        metadata_url: MetadataUrl {
-            url:  format!("https://some.example/token/2/{TOKEN_0}").to_string(),
-            hash: None,
-        },
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::TokenMetadata(TokenMetadataEvent {
+            token_id: TokenIdU8(3),
+            metadata_url: MetadataUrl {
+                url: format!("https://some.example/token/2/{TOKEN_0}").to_string(),
+                hash: None,
+            },
+        }),]
+    );
     let mut token_param = ContractTokenMetadataQueryParams {
         queries: vec![TOKEN_0],
     };
     token_param.queries.insert(0, TOKEN_0);
     // Invoke the tokenMetadata entrypoint and check what MetadataUrl returns
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked(
-                "cis2_dynamic_nft.tokenMetadata".to_string(),
-            ),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&token_param).expect("tokenMetada params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "cis2_dynamic_nft.tokenMetadata".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&token_param).expect("tokenMetada params"),
+            },
+        )
         .expect("Invoke tokenMetadata");
 
-    let rv: TokenMetadataQueryResponse =
-        invoke.parse_return_value().expect("tokenMetadata return value");
+    let rv: TokenMetadataQueryResponse = invoke
+        .parse_return_value()
+        .expect("tokenMetadata return value");
     let expected_metadata = MetadataUrl {
-        url:  format!("https://some.example/token/2/{TOKEN_0}"),
+        url: format!("https://some.example/token/2/{TOKEN_0}"),
         hash: None,
     };
     assert_eq!(rv.0.get(0), Some(&expected_metadata));
@@ -221,24 +292,27 @@ fn test_upgrade() {
 
 /// Helper function that sets up the contract with two types of tokens minted to
 /// Alice. She has 400 of `TOKEN_0` and 400 of `TOKEN_2`.
-fn initialize_contract_with_alice_tokens(
-) -> (concordium_smart_contract_testing::Chain, ContractAddress, ContractInvokeSuccess) {
+fn initialize_contract_with_alice_tokens() -> (
+    concordium_smart_contract_testing::Chain,
+    ContractAddress,
+    ContractInvokeSuccess,
+) {
     let (mut chain, contract_address) = initialize_chain_and_contract();
 
     let mut test_v1 = Vec::new();
     test_v1.push(MetadataUrl {
-        url:  format!("https://some.example/token/1/{TOKEN_0}"),
+        url: format!("https://some.example/token/1/{TOKEN_0}"),
         hash: None,
     });
     // we will need the following to test the upgrade function.
     test_v1.push(MetadataUrl {
-        url:  format!("https://some.example/token/2/{TOKEN_0}"),
+        url: format!("https://some.example/token/2/{TOKEN_0}"),
         hash: None,
     });
 
     let mut test_v2 = Vec::new();
     test_v2.push(MetadataUrl {
-        url:  format!("https://some.example/token/3/{TOKEN_2}"),
+        url: format!("https://some.example/token/3/{TOKEN_2}"),
         hash: None,
     });
     let mint_param_1 = MintParam {
@@ -249,17 +323,23 @@ fn initialize_contract_with_alice_tokens(
 
     tok.insert(TOKEN_0, mint_param_1);
     let mint_params = MintParams {
-        owner:  ALICE_ADDR,
+        owner: ALICE_ADDR,
         tokens: tok,
     };
 
     let _update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.mint".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.mint".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+            },
+        )
         .expect("Mint tokens");
 
     let mint_param_2 = MintParam {
@@ -270,17 +350,23 @@ fn initialize_contract_with_alice_tokens(
 
     tok2.insert(TOKEN_2, mint_param_2);
     let mint_params = MintParams {
-        owner:  ALICE_ADDR,
+        owner: ALICE_ADDR,
         tokens: tok2,
     };
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.mint".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&mint_params).expect("Mint params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("cis2_dynamic_nft.mint".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&mint_params).expect("Mint params"),
+            },
+        )
         .expect("Mint tokens");
 
     (chain, contract_address, update)
@@ -300,16 +386,23 @@ fn initialize_chain_and_contract() -> (concordium_smart_contract_testing::Chain,
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Deploy valid module");
 
     // Initialize the auction contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_cis2_dynamic_nft".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_cis2_dynamic_nft".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize contract");
 
     (chain, init.contract_address)
