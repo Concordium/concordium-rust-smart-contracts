@@ -282,19 +282,18 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install nightly toolchain with check available
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-          target: wasm32-unknown-unknown
+      - name: Install nightly toolchain
+        run: |
+          rustup install nightly
+          rustup +nightly target add wasm32-unknown-unknown
 
       - name: Run no-std build concordium-std
         working-directory: concordium-std
-        run: cargo build --target wasm32-unknown-unknown --no-default-features --features bump_alloc
+        run: cargo +nightly build --target wasm32-unknown-unknown --no-default-features --features bump_alloc
 
       - name: Run no-std build concordium-cis2
         working-directory: concordium-cis2
-        run: cargo build --target wasm32-unknown-unknown --no-default-features --features concordium-std/bump_alloc
+        run: cargo +nightly build --target wasm32-unknown-unknown --no-default-features --features concordium-std/bump_alloc
 
   check-no-std-examples:
     name: Build on nightly,
@@ -327,17 +326,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install nightly toolchain with check available
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-          target: ${{ matrix.target }}
+      - name: Install nightly toolchain
+        run: |
+          rustup install nightly
+          rustup +nightly target add wasm32-unknown-unknown
 
       - name: Run cargo check with no-std
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
+        run: |
+          cargo +nightly build --manifest-path ${{ matrix.crates }} --target=${{ matrix.target }} --no-default-features --features=${{ matrix.features }} --features bump_alloc
 
   check-crypto-examples:
     name: Check crypto examples

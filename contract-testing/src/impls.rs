@@ -237,7 +237,7 @@ impl ChainBuilder {
     /// [`micro_ccd_per_euro`][Self::micro_ccd_per_euro].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
@@ -259,7 +259,7 @@ impl ChainBuilder {
     /// [`euro_per_energy`][Self::euro_per_energy].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
@@ -300,7 +300,7 @@ impl ChainBuilder {
     /// [`block_time`][Self::block_time].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
