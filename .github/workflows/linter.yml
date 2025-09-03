@@ -62,7 +62,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install nightly toolchain with rustfmt available
+      - name: Install toolchain with rustfmt available
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
