@@ -16,7 +16,7 @@ crypto-primitives = ["concordium-std/crypto-primitives"]
 
 [dependencies]
 concordium-std = {path = "../../concordium-std", version = "10.0", default-features = false, features = ["concordium-quickcheck"]}
-concordium-cis2 = {path = "../../concordium-cis2", version = "6.2.1.alpha-1", default-features = false}
+concordium-cis2 = {path = "../../concordium-cis2", version = "6.2.1-alpha.1", default-features = false}
 quickcheck = {version = "1"}
 
 [dev-dependencies]
