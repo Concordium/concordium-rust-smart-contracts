@@ -1,5 +1,10 @@
 # Changelog
 
+## 
+
+- Added release-concordium-cis2.yaml to trigger github release action
+
+
 ## concordium-cis2 6.2.0 (2024-09-19)
 
 - Bump MSRV to 1.72
