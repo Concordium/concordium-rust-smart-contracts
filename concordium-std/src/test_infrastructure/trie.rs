@@ -39,7 +39,7 @@ fn to_indexes(key: &[u8]) -> Vec<Index> {
 fn from_indexes(indexes: &[Index]) -> Vec<u8> {
     let mut key = Vec::new();
     for chunk in indexes.chunks(2) {
-        let n = (chunk[0] << 4 | chunk[1]) as u8;
+        let n = ((chunk[0] << 4) | chunk[1]) as u8;
         key.push(n);
     }
     key
