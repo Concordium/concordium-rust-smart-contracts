@@ -1896,7 +1896,7 @@ mod tests {
         let status = state.view_credential_status(now, credential_id);
         if let Ok(fetched_data) = query_result {
             register_result.is_ok()
-                && status.map_or(false, |x| x != CredentialStatus::Revoked)
+                && status.is_ok_and(|x| x != CredentialStatus::Revoked)
                 && fetched_data.credential_info == data
                 && fetched_data.schema_ref == schema_ref
                 && fetched_data.revocation_nonce == 0
