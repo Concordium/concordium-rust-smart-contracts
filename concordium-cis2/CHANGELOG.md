@@ -4,7 +4,7 @@
 
 ## [6.2.1-alpha.1] - 2025-10-03
 
-- Added release-concordium-cis2.yaml to trigger github release action
+- RUST VERSION bumped up to 1.8.5
 
 
 ## concordium-cis2 6.2.0 (2024-09-19)
