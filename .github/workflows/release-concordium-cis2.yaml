@@ -29,16 +29,6 @@ jobs:
         with:
           submodules: recursive
 
-      # -----------------------------------------------------------------
-      # NEW STEP: Set up the modern Rust toolchain
-      # Use a specific version (e.g., '1.70.0') or 'stable'
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1 # OR use dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable # Use the latest stable version
-          override: true
-      # -----------------------------------------------------------------
-
       # Validate that the tag version matches the version in Cargo.toml
       - name: validate tag version has correct matching tag
         run: |
