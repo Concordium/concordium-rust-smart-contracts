@@ -49,5 +49,5 @@ jobs:
         env:
           CARGO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          echo "Publishing Concordium cis2 to crates.io for version: $TAG_VERSION"
+          echo "Publishing Concordium std-derive to crates.io for version: $TAG_VERSION"
           cargo publish --token $CARGO_TOKEN --locked
