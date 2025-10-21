@@ -26,7 +26,11 @@ pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
 #[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
 pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
 
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 use getrandom::register_custom_getrandom;
 #[cfg(all(
     feature = "wasm-test",
