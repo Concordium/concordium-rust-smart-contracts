@@ -49,43 +49,58 @@ fn test_register_fresh() {
     let view = invoke_view(&chain, contract_address);
 
     // Check that Alice owns the two names `NAME_0` and `NAME_1`.
-    assert_eq!(view, ViewState {
-        state:     vec![(ALICE, ViewAddressState {
-            owned_names: vec![NAME_0_TOKEN_ID, NAME_1_TOKEN_ID],
-            operators:   Vec::new(),
-        })],
-        all_names: vec![
-            (NAME_0_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        ALICE,
-                data:         Vec::new(),
-            }),
-            (NAME_1_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        ALICE,
-                data:         Vec::new(),
-            })
-        ],
-    });
+    assert_eq!(
+        view,
+        ViewState {
+            state: vec![(
+                ALICE,
+                ViewAddressState {
+                    owned_names: vec![NAME_0_TOKEN_ID, NAME_1_TOKEN_ID],
+                    operators: Vec::new(),
+                }
+            )],
+            all_names: vec![
+                (
+                    NAME_0_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: ALICE,
+                        data: Vec::new(),
+                    }
+                ),
+                (
+                    NAME_1_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: ALICE,
+                        data: Vec::new(),
+                    }
+                )
+            ],
+        }
+    );
 
     // Check that a mint and tokenmetadata event was emitted.
     // Since `initialize_contract_with_alice_names` only returns the update for the
     // second registration, that is what we check.
     let events = deserialize_update_events(&update);
-    assert_eq!(events, [
-        Cis2Event::Mint(MintEvent {
-            token_id: NAME_1_TOKEN_ID,
-            amount:   1.into(),
-            owner:    ALICE_ADDR,
-        }),
-        Cis2Event::TokenMetadata(TokenMetadataEvent {
-            token_id:     NAME_1_TOKEN_ID,
-            metadata_url: MetadataUrl {
-                url:  build_token_metadata_url(&NAME_1_TOKEN_ID),
-                hash: None,
-            },
-        }),
-    ]);
+    assert_eq!(
+        events,
+        [
+            Cis2Event::Mint(MintEvent {
+                token_id: NAME_1_TOKEN_ID,
+                amount: 1.into(),
+                owner: ALICE_ADDR,
+            }),
+            Cis2Event::TokenMetadata(TokenMetadataEvent {
+                token_id: NAME_1_TOKEN_ID,
+                metadata_url: MetadataUrl {
+                    url: build_token_metadata_url(&NAME_1_TOKEN_ID),
+                    hash: None,
+                },
+            }),
+        ]
+    );
 }
 
 /// Test registering an expired name.
@@ -98,47 +113,67 @@ fn test_register_expired() {
     update_data(&mut chain, contract_address, NAME_0, SAMPLE_DATA).expect("Update data");
 
     // Advance time by 366 days, i.e. beyond the expiration date of the name.
-    chain.tick_block_time(Duration::from_days(366)).expect("Time doesn't overflow.");
+    chain
+        .tick_block_time(Duration::from_days(366))
+        .expect("Time doesn't overflow.");
 
     // Register `NAME_0` with Bob as the owner.
     let parameter = RegisterNameParams {
-        name:  NAME_0.to_string(),
+        name: NAME_0.to_string(),
         owner: BOB,
     };
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       REGISTRATION_FEE,
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Register name params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: REGISTRATION_FEE,
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Register name params"),
+            },
+        )
         .expect("Register NAME_0");
 
     // Check that the name is now owned by Bob and has no data.
     // Also check that the `NAME_1` is now expired.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view.all_names, vec![
-        (NAME_0_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_TWO_PLUS_DAY, // <- New expiration date.
-            owner:        BOB,
-            data:         Vec::new(), // <- No data.
-        }),
-        (NAME_1_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE, // <- Expired.
-            owner:        ALICE,
-            data:         Vec::new(),
-        })
-    ]);
+    assert_eq!(
+        view.all_names,
+        vec![
+            (
+                NAME_0_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_TWO_PLUS_DAY, // <- New expiration date.
+                    owner: BOB,
+                    data: Vec::new(), // <- No data.
+                }
+            ),
+            (
+                NAME_1_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE, // <- Expired.
+                    owner: ALICE,
+                    data: Vec::new(),
+                }
+            )
+        ]
+    );
 
     // Check that a trasnfer event was produced, tranferring `NAME_0` from Alice to
     // Bob.
     let events = deserialize_update_events(&update);
-    assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
-        token_id: NAME_0_TOKEN_ID,
-        from:     ALICE_ADDR,
-        to:       BOB_ADDR,
-        amount:   1.into(),
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::Transfer(TransferEvent {
+            token_id: NAME_0_TOKEN_ID,
+            from: ALICE_ADDR,
+            to: BOB_ADDR,
+            amount: 1.into(),
+        }),]
+    );
 }
 
 /// Test that registering fails if the fee is incorrect.
@@ -148,21 +183,30 @@ fn test_register_fails_incorrect_fee() {
 
     // Register `NAME_0` with Bob as the owner.
     let parameter = RegisterNameParams {
-        name:  NAME_0.to_string(),
+        name: NAME_0.to_string(),
         owner: BOB,
     };
     let update = chain
-        .contract_update(SIGNER, BOB, BOB_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       REGISTRATION_FEE + Amount::from_micro_ccd(1), // Incorrect fee.
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Register name params"),
-        })
+        .contract_update(
+            SIGNER,
+            BOB,
+            BOB_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: REGISTRATION_FEE + Amount::from_micro_ccd(1), // Incorrect fee.
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Register name params"),
+            },
+        )
         .expect_err("Register NAME_0 with incorrect fee");
 
     // Check that it returns the correct error.
     let error: ContractError = update.parse_return_value().expect("Deserialize error");
-    assert_eq!(error, ContractError::Custom(CustomContractError::IncorrectFee));
+    assert_eq!(
+        error,
+        ContractError::Custom(CustomContractError::IncorrectFee)
+    );
 }
 
 /// Test transfer succeeds, when `from` is the sender.
@@ -173,45 +217,63 @@ fn test_transfer_account() {
     // Transfer `NAME_0` from Alice to Bob.
     let parameter: nametoken::TransferParameter = TransferParams(vec![concordium_cis2::Transfer {
         token_id: NAME_0_TOKEN_ID,
-        amount:   ContractTokenAmount::from(1),
-        from:     ALICE_ADDR,
-        to:       Receiver::from_account(BOB),
-        data:     AdditionalData::empty(),
+        amount: ContractTokenAmount::from(1),
+        from: ALICE_ADDR,
+        to: Receiver::from_account(BOB),
+        data: AdditionalData::empty(),
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Transfer name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Transfer name params"),
+            },
+        )
         .expect("Transfer NAME_0");
 
     // Check that name 0 is now owned by Bob, and that Alice still owns name 1.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view.all_names, vec![
-        (NAME_0_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE,
-            owner:        BOB,
-            data:         Vec::new(),
-        }),
-        (NAME_1_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE,
-            owner:        ALICE,
-            data:         Vec::new(),
-        })
-    ]);
+    assert_eq!(
+        view.all_names,
+        vec![
+            (
+                NAME_0_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE,
+                    owner: BOB,
+                    data: Vec::new(),
+                }
+            ),
+            (
+                NAME_1_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE,
+                    owner: ALICE,
+                    data: Vec::new(),
+                }
+            )
+        ]
+    );
 
     // Check that a trasnfer event was produced, tranferring `NAME_0` from Alice to
     // Bob.
     let events = deserialize_update_events(&update);
-    assert_eq!(events, [Cis2Event::Transfer(TransferEvent {
-        token_id: NAME_0_TOKEN_ID,
-        from:     ALICE_ADDR,
-        to:       BOB_ADDR,
-        amount:   1.into(),
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::Transfer(TransferEvent {
+            token_id: NAME_0_TOKEN_ID,
+            from: ALICE_ADDR,
+            to: BOB_ADDR,
+            amount: 1.into(),
+        }),]
+    );
 }
 
 /// Test that a transfer fails when the name is expired.
@@ -220,29 +282,40 @@ fn test_transfer_expired_name_fails() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_names();
 
     // Advance time by 366 days, i.e. beyond the expiration date of the name.
-    chain.tick_block_time(Duration::from_days(366)).expect("Time doesn't overflow.");
+    chain
+        .tick_block_time(Duration::from_days(366))
+        .expect("Time doesn't overflow.");
 
     // Transfer `NAME_0` from Alice to Bob.
     let parameter: nametoken::TransferParameter = TransferParams(vec![concordium_cis2::Transfer {
         token_id: NAME_0_TOKEN_ID,
-        amount:   ContractTokenAmount::from(1),
-        from:     ALICE_ADDR,
-        to:       Receiver::from_account(BOB),
-        data:     AdditionalData::empty(),
+        amount: ContractTokenAmount::from(1),
+        from: ALICE_ADDR,
+        to: Receiver::from_account(BOB),
+        data: AdditionalData::empty(),
     }]);
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.transfer".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Transfer name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.transfer".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Transfer name params"),
+            },
+        )
         .expect_err("Transfer NAME_0");
 
     // Check that it returns the correct error.
     let error: ContractError = update.parse_return_value().expect("Deserialize error");
-    assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
+    assert_eq!(
+        error,
+        ContractError::Custom(CustomContractError::NameExpired)
+    );
 }
 
 /// Test that adding an operator works and produces the correct events.
@@ -255,32 +328,47 @@ fn test_add_operator() {
 
     // Check that the operator was added.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view, ViewState {
-        state:     vec![(ALICE, ViewAddressState {
-            owned_names: vec![NAME_0_TOKEN_ID, NAME_1_TOKEN_ID],
-            operators:   vec![BOB_ADDR], // Bob is now an operator.
-        })],
-        all_names: vec![
-            (NAME_0_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        ALICE,
-                data:         Vec::new(),
-            }),
-            (NAME_1_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        ALICE,
-                data:         Vec::new(),
-            })
-        ],
-    });
+    assert_eq!(
+        view,
+        ViewState {
+            state: vec![(
+                ALICE,
+                ViewAddressState {
+                    owned_names: vec![NAME_0_TOKEN_ID, NAME_1_TOKEN_ID],
+                    operators: vec![BOB_ADDR], // Bob is now an operator.
+                }
+            )],
+            all_names: vec![
+                (
+                    NAME_0_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: ALICE,
+                        data: Vec::new(),
+                    }
+                ),
+                (
+                    NAME_1_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: ALICE,
+                        data: Vec::new(),
+                    }
+                )
+            ],
+        }
+    );
 
     // Check that an operator event was emitted.
     let events = deserialize_update_events(&update_operator);
-    assert_eq!(events, [Cis2Event::UpdateOperator(UpdateOperatorEvent {
-        owner:    ALICE_ADDR,
-        operator: BOB_ADDR,
-        update:   OperatorUpdate::Add,
-    }),]);
+    assert_eq!(
+        events,
+        [Cis2Event::UpdateOperator(UpdateOperatorEvent {
+            owner: ALICE_ADDR,
+            operator: BOB_ADDR,
+            update: OperatorUpdate::Add,
+        }),]
+    );
 }
 
 /// Test that an operator can make a transfer on behalf of the owner.
@@ -294,10 +382,10 @@ fn test_operator_transfer() {
     // Transfer `NAME_0` from Alice to Charlie, using Bob as the operator.
     let parameter: nametoken::TransferParameter = TransferParams(vec![concordium_cis2::Transfer {
         token_id: NAME_0_TOKEN_ID,
-        amount:   ContractTokenAmount::from(1),
-        from:     ALICE_ADDR,
-        to:       Receiver::from_account(CHARLIE),
-        data:     AdditionalData::empty(),
+        amount: ContractTokenAmount::from(1),
+        from: ALICE_ADDR,
+        to: Receiver::from_account(CHARLIE),
+        data: AdditionalData::empty(),
     }]);
     chain
         .contract_update(
@@ -306,41 +394,55 @@ fn test_operator_transfer() {
             BOB_ADDR, // Bob the operator sends it.
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked("NameToken.transfer".to_string()),
-                address:      contract_address,
-                message:      OwnedParameter::from_serial(&parameter)
-                    .expect("Transfer name params"),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Transfer name params"),
             },
         )
         .expect("Transfer NAME_0");
 
     // Check the new balances.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view, ViewState {
-        state:     vec![
-            (ALICE, ViewAddressState {
-                owned_names: vec![NAME_1_TOKEN_ID],
-                operators:   vec![BOB_ADDR],
-            }),
-            (CHARLIE, ViewAddressState {
-                owned_names: vec![NAME_0_TOKEN_ID], // Charlie now owns name 0.
-                operators:   Vec::new(),
-            })
-        ],
-        all_names: vec![
-            (NAME_0_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        CHARLIE,
-                data:         Vec::new(),
-            }),
-            (NAME_1_TOKEN_ID, ViewNameInfo {
-                name_expires: YEAR_ONE,
-                owner:        ALICE,
-                data:         Vec::new(),
-            })
-        ],
-    });
+    assert_eq!(
+        view,
+        ViewState {
+            state: vec![
+                (
+                    ALICE,
+                    ViewAddressState {
+                        owned_names: vec![NAME_1_TOKEN_ID],
+                        operators: vec![BOB_ADDR],
+                    }
+                ),
+                (
+                    CHARLIE,
+                    ViewAddressState {
+                        owned_names: vec![NAME_0_TOKEN_ID], // Charlie now owns name 0.
+                        operators: Vec::new(),
+                    }
+                )
+            ],
+            all_names: vec![
+                (
+                    NAME_0_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: CHARLIE,
+                        data: Vec::new(),
+                    }
+                ),
+                (
+                    NAME_1_TOKEN_ID,
+                    ViewNameInfo {
+                        name_expires: YEAR_ONE,
+                        owner: ALICE,
+                        data: Vec::new(),
+                    }
+                )
+            ],
+        }
+    );
 }
 
 /// Test renewing an existing name.
@@ -352,28 +454,43 @@ fn test_renew_name() {
     let parameter = NAME_0.to_string();
 
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       RENEWAL_FEE, // Send renewal fee.
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Renew name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: RENEWAL_FEE, // Send renewal fee.
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Renew name params"),
+            },
+        )
         .expect("Renew NAME_0");
 
     // Check that the new expiration date is 1 year from now.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view.all_names, vec![
-        (NAME_0_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_TWO, // Now expires in two year.
-            owner:        ALICE,
-            data:         Vec::new(),
-        }),
-        (NAME_1_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE,
-            owner:        ALICE,
-            data:         Vec::new(),
-        })
-    ]);
+    assert_eq!(
+        view.all_names,
+        vec![
+            (
+                NAME_0_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_TWO, // Now expires in two year.
+                    owner: ALICE,
+                    data: Vec::new(),
+                }
+            ),
+            (
+                NAME_1_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE,
+                    owner: ALICE,
+                    data: Vec::new(),
+                }
+            )
+        ]
+    );
 }
 
 /// Test that renewing a name fails if the name has expired.
@@ -382,23 +499,34 @@ fn test_renew_expired_name_fails() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_names();
 
     // Advance time by 366 days, i.e. beyond the expiration date of the name.
-    chain.tick_block_time(Duration::from_days(366)).expect("Time doesn't overflow.");
+    chain
+        .tick_block_time(Duration::from_days(366))
+        .expect("Time doesn't overflow.");
 
     // Renew `NAME_0`.
     let parameter = NAME_0.to_string();
 
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       RENEWAL_FEE, // Send renewal fee.
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Renew name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: RENEWAL_FEE, // Send renewal fee.
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Renew name params"),
+            },
+        )
         .expect_err("Renew NAME_0");
 
     // Check that it returns the correct error.
     let error: ContractError = update.parse_return_value().expect("Deserialize error");
-    assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
+    assert_eq!(
+        error,
+        ContractError::Custom(CustomContractError::NameExpired)
+    );
 }
 
 /// Test updating data for an existing name.
@@ -411,18 +539,27 @@ fn test_update_data() {
 
     // Check that the data was updated.
     let view = invoke_view(&chain, contract_address);
-    assert_eq!(view.all_names, vec![
-        (NAME_0_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE,
-            owner:        ALICE,
-            data:         SAMPLE_DATA.as_bytes().to_owned(), // The new data.
-        }),
-        (NAME_1_TOKEN_ID, ViewNameInfo {
-            name_expires: YEAR_ONE,
-            owner:        ALICE,
-            data:         Vec::new(),
-        })
-    ]);
+    assert_eq!(
+        view.all_names,
+        vec![
+            (
+                NAME_0_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE,
+                    owner: ALICE,
+                    data: SAMPLE_DATA.as_bytes().to_owned(), // The new data.
+                }
+            ),
+            (
+                NAME_1_TOKEN_ID,
+                ViewNameInfo {
+                    name_expires: YEAR_ONE,
+                    owner: ALICE,
+                    data: Vec::new(),
+                }
+            )
+        ]
+    );
 }
 
 /// Test that updating the data on an expired name fails.
@@ -431,7 +568,9 @@ fn test_update_data_on_expired_fails() {
     let (mut chain, contract_address, _update) = initialize_contract_with_alice_names();
 
     // Advance time by 366 days, i.e. beyond the expiration date of the name.
-    chain.tick_block_time(Duration::from_days(366)).expect("Time doesn't overflow.");
+    chain
+        .tick_block_time(Duration::from_days(366))
+        .expect("Time doesn't overflow.");
 
     // Update the data.
     let update = update_data(&mut chain, contract_address, NAME_0, SAMPLE_DATA)
@@ -439,7 +578,10 @@ fn test_update_data_on_expired_fails() {
 
     // Check that it returns the correct error.
     let error: ContractError = update.parse_return_value().expect("Deserialize error");
-    assert_eq!(error, ContractError::Custom(CustomContractError::NameExpired));
+    assert_eq!(
+        error,
+        ContractError::Custom(CustomContractError::NameExpired)
+    );
 }
 
 /// Test the nameinfo view.
@@ -450,21 +592,29 @@ fn test_name_info_view() {
     // Invoke the view entrypoint.
     let parameter = NAME_0.to_string();
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.viewNameInfo".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Name info params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.viewNameInfo".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Name info params"),
+            },
+        )
         .expect("Invoke view");
 
     // Check that the view returns the correct data.
     let view: ViewNameInfo = invoke.parse_return_value().expect("Deserialize view");
-    assert_eq!(view, ViewNameInfo {
-        name_expires: YEAR_ONE,
-        owner:        ALICE,
-        data:         Vec::new(),
-    });
+    assert_eq!(
+        view,
+        ViewNameInfo {
+            name_expires: YEAR_ONE,
+            owner: ALICE,
+            data: Vec::new(),
+        }
+    );
 }
 
 /// Test querying balances for expired and unexpired names.
@@ -475,38 +625,51 @@ fn test_balance_of_expired_not_expired() {
     // Renew `NAME_0`, so that it expires in year two.
     let parameter = NAME_0.to_string();
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       RENEWAL_FEE, // Send renewal fee.
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Renew name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: RENEWAL_FEE, // Send renewal fee.
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.renewName".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Renew name params"),
+            },
+        )
         .expect("Renew NAME_0");
 
     // Advance time by 366 days, i.e. beyond the expiration date of the name 1.
-    chain.tick_block_time(Duration::from_days(366)).expect("Time doesn't overflow.");
+    chain
+        .tick_block_time(Duration::from_days(366))
+        .expect("Time doesn't overflow.");
 
     // Construct the balance of parameter.
     let parameter: ContractBalanceOfQueryParams = BalanceOfQueryParams {
         queries: vec![
             BalanceOfQuery {
-                address:  ALICE_ADDR,
+                address: ALICE_ADDR,
                 token_id: NAME_0_TOKEN_ID,
             },
             BalanceOfQuery {
-                address:  ALICE_ADDR,
+                address: ALICE_ADDR,
                 token_id: NAME_1_TOKEN_ID,
             },
         ],
     };
 
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.balanceOf".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Balance of params"),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.balanceOf".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Balance of params"),
+            },
+        )
         .expect("Invoke view");
 
     // Check that Alice now has one name 0, which is still valid, and zero of name
@@ -515,7 +678,10 @@ fn test_balance_of_expired_not_expired() {
         invoke.parse_return_value().expect("Deserialize view");
     assert_eq!(
         response,
-        BalanceOfQueryResponse(vec![ContractTokenAmount::from(1), ContractTokenAmount::from(0)])
+        BalanceOfQueryResponse(vec![
+            ContractTokenAmount::from(1),
+            ContractTokenAmount::from(0)
+        ])
     );
 }
 
@@ -529,12 +695,18 @@ fn test_update_admin() {
 
     // Update the admin.
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.updateAdmin".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&new_admin).expect("Update admin params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.updateAdmin".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&new_admin).expect("Update admin params"),
+            },
+        )
         .expect("Update admin");
 }
 
@@ -554,10 +726,10 @@ fn test_update_admin_fails_unauthorized() {
             BOB_ADDR, // Bob is not the admin.
             Energy::from(10000),
             UpdateContractPayload {
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
                 receive_name: OwnedReceiveName::new_unchecked("NameToken.updateAdmin".to_string()),
-                address:      contract_address,
-                message:      OwnedParameter::from_serial(&new_admin).expect("Update admin params"),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&new_admin).expect("Update admin params"),
             },
         )
         .expect_err("Update admin");
@@ -582,12 +754,18 @@ fn update_data(
         data: data.as_bytes().to_owned(),
     };
 
-    chain.contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-        amount:       UPDATE_FEE,
-        receive_name: OwnedReceiveName::new_unchecked("NameToken.updateData".to_string()),
-        address:      contract_address,
-        message:      OwnedParameter::from_serial(&parameter).expect("Update name data params"),
-    })
+    chain.contract_update(
+        SIGNER,
+        ALICE,
+        ALICE_ADDR,
+        Energy::from(10000),
+        UpdateContractPayload {
+            amount: UPDATE_FEE,
+            receive_name: OwnedReceiveName::new_unchecked("NameToken.updateData".to_string()),
+            address: contract_address,
+            message: OwnedParameter::from_serial(&parameter).expect("Update name data params"),
+        },
+    )
 }
 
 /// Helper function that sets up the contract with two names owned by Alice,
@@ -598,33 +776,45 @@ fn initialize_contract_with_alice_names() -> (Chain, ContractAddress, ContractIn
     let (mut chain, contract_address) = initialize_chain_and_contract();
 
     let parameter_0 = RegisterNameParams {
-        name:  NAME_0.to_string(),
+        name: NAME_0.to_string(),
         owner: ALICE,
     };
 
     // Register `NAME_0`.
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       REGISTRATION_FEE,
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter_0).expect("Register name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: REGISTRATION_FEE,
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter_0).expect("Register name params"),
+            },
+        )
         .expect("Register NAME_0");
 
     let parameter_1 = RegisterNameParams {
-        name:  NAME_1.to_string(),
+        name: NAME_1.to_string(),
         owner: ALICE,
     };
 
     // Register `NAME_1`.
     let update = chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       REGISTRATION_FEE,
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter_1).expect("Register name params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: REGISTRATION_FEE,
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.register".to_string()),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter_1).expect("Register name params"),
+            },
+        )
         .expect("Register NAME_1");
 
     (chain, contract_address, update)
@@ -633,12 +823,17 @@ fn initialize_contract_with_alice_names() -> (Chain, ContractAddress, ContractIn
 /// Invoke the view entrypoint and return its results.
 fn invoke_view(chain: &Chain, contract_address: ContractAddress) -> ViewState {
     let invoke = chain
-        .contract_invoke(ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.view".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::empty(),
-        })
+        .contract_invoke(
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked("NameToken.view".to_string()),
+                address: contract_address,
+                message: OwnedParameter::empty(),
+            },
+        )
         .expect("Invoke view");
     invoke.parse_return_value().expect("Deserialize ViewState")
 }
@@ -668,16 +863,23 @@ fn initialize_chain_and_contract() -> (Chain, ContractAddress) {
 
     // Load and deploy the module.
     let module = module_load_v1("concordium-out/module.wasm.v1").expect("Module exists");
-    let deployment = chain.module_deploy_v1(SIGNER, ALICE, module).expect("Deploy valid module");
+    let deployment = chain
+        .module_deploy_v1(SIGNER, ALICE, module)
+        .expect("Deploy valid module");
 
     // Initialize the auction contract.
     let init = chain
-        .contract_init(SIGNER, ALICE, Energy::from(10000), InitContractPayload {
-            amount:    Amount::zero(),
-            mod_ref:   deployment.module_reference,
-            init_name: OwnedContractName::new_unchecked("init_NameToken".to_string()),
-            param:     OwnedParameter::empty(),
-        })
+        .contract_init(
+            SIGNER,
+            ALICE,
+            Energy::from(10000),
+            InitContractPayload {
+                amount: Amount::zero(),
+                mod_ref: deployment.module_reference,
+                init_name: OwnedContractName::new_unchecked("init_NameToken".to_string()),
+                param: OwnedParameter::empty(),
+            },
+        )
         .expect("Initialize contract");
 
     (chain, init.contract_address)
@@ -690,16 +892,24 @@ fn add_bob_the_operator(
     contract_address: ContractAddress,
 ) -> ContractInvokeSuccess {
     let parameter = UpdateOperatorParams(vec![UpdateOperator {
-        update:   OperatorUpdate::Add,
+        update: OperatorUpdate::Add,
         operator: BOB_ADDR,
     }]);
 
     chain
-        .contract_update(SIGNER, ALICE, ALICE_ADDR, Energy::from(10000), UpdateContractPayload {
-            amount:       Amount::zero(),
-            receive_name: OwnedReceiveName::new_unchecked("NameToken.updateOperator".to_string()),
-            address:      contract_address,
-            message:      OwnedParameter::from_serial(&parameter).expect("Update operator params"),
-        })
+        .contract_update(
+            SIGNER,
+            ALICE,
+            ALICE_ADDR,
+            Energy::from(10000),
+            UpdateContractPayload {
+                amount: Amount::zero(),
+                receive_name: OwnedReceiveName::new_unchecked(
+                    "NameToken.updateOperator".to_string(),
+                ),
+                address: contract_address,
+                message: OwnedParameter::from_serial(&parameter).expect("Update operator params"),
+            },
+        )
         .expect("Add Bob as operator")
 }

@@ -67,7 +67,7 @@ pub type ContractTokenAmount = TokenAmountU64;
 #[concordium(state_parameter = "S")]
 pub struct AddressState<S = StateApi> {
     /// The number of tokens owned by this address.
-    pub balance:   ContractTokenAmount,
+    pub balance: ContractTokenAmount,
     /// The address which are currently enabled as operators for this token and
     /// this address.
     pub operators: StateSet<Address, S>,
@@ -80,12 +80,12 @@ struct State<S: HasStateApi = StateApi> {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
-    admin:        Address,
+    admin: Address,
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
-    paused:       bool,
+    paused: bool,
     /// Map specifying the `AddressState` (balance and operators) for every
     /// address.
-    token:        StateMap<Address, AddressState<S>, S>,
+    token: StateMap<Address, AddressState<S>, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
     implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
@@ -101,15 +101,15 @@ struct State<S: HasStateApi = StateApi> {
 #[derive(Serialize, SchemaType)]
 pub struct UnwrapParams {
     /// The amount of tokens to unwrap.
-    pub amount:   ContractTokenAmount,
+    pub amount: ContractTokenAmount,
     /// The owner of the tokens.
-    pub owner:    Address,
+    pub owner: Address,
     /// The address to receive these unwrapped CCD.
     pub receiver: Receiver,
     /// If the `Receiver` is a contract the unwrapped CCD together with these
     /// additional data bytes are sent to the function entrypoint specified in
     /// the `Receiver`.
-    pub data:     AdditionalData,
+    pub data: AdditionalData,
 }
 
 /// The parameter type for the contract function `wrap`.
@@ -119,7 +119,7 @@ pub struct WrapParams {
     /// The address to receive these tokens.
     /// If the receiver is the sender of the message wrapping the tokens, it
     /// will not log a transfer event.
-    pub to:   Receiver,
+    pub to: Receiver,
     /// Some additional data bytes are used in the `OnReceivingCis2` hook. Only
     /// if the `Receiver` is a contract and the `Receiver` is not
     /// the invoker of the wrap function the receive hook function is
@@ -136,7 +136,7 @@ pub struct WrapParams {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct SetImplementorsParams {
     /// The identifier for the standard.
-    pub id:           StandardIdentifierOwned,
+    pub id: StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     pub implementors: Vec<ContractAddress>,
 }
@@ -149,7 +149,7 @@ pub struct SetImplementorsParams {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct UpgradeParams {
     /// The new module reference.
-    pub module:  ModuleReference,
+    pub module: ModuleReference,
     /// Optional entrypoint to call in the new module after upgrade.
     pub migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
@@ -160,9 +160,9 @@ pub struct ReturnBasicState {
     /// The admin address can upgrade the contract, pause and unpause the
     /// contract, transfer the admin address to a new address, set
     /// implementors, and update the metadata URL in the contract.
-    pub admin:        Address,
+    pub admin: Address,
     /// Contract is paused if `paused = true` and unpaused if `paused = false`.
-    pub paused:       bool,
+    pub paused: bool,
     /// The metadata URL of the token.
     pub metadata_url: MetadataUrl,
 }
@@ -171,7 +171,7 @@ pub struct ReturnBasicState {
 #[derive(Serialize, SchemaType, Clone, PartialEq, Eq, Debug)]
 pub struct SetMetadataUrlParams {
     /// The URL following the specification RFC1738.
-    pub url:  String,
+    pub url: String,
     /// The hash of the document stored at the above URL.
     pub hash: Option<Sha256>,
 }
@@ -246,12 +246,16 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl From<TransferError> for CustomContractError {
-    fn from(_te: TransferError) -> Self { Self::InvokeTransferError }
+    fn from(_te: TransferError) -> Self {
+        Self::InvokeTransferError
+    }
 }
 
 /// Mapping errors related to contract upgrades to CustomContractError.
@@ -268,7 +272,9 @@ impl From<UpgradeError> for CustomContractError {
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self {
+        Cis2Error::Custom(c)
+    }
 }
 
 impl State {
@@ -291,7 +297,11 @@ impl State {
         address: &Address,
     ) -> ContractResult<ContractTokenAmount> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
-        Ok(self.token.get(address).map(|s| s.balance).unwrap_or_else(|| 0u64.into()))
+        Ok(self
+            .token
+            .get(address)
+            .map(|s| s.balance)
+            .unwrap_or_else(|| 0u64.into()))
     }
 
     /// Check if an address is an operator of a specific owner address.
@@ -318,13 +328,18 @@ impl State {
             return Ok(());
         }
         {
-            let mut from_state =
-                self.token.get_mut(from).ok_or(ContractError::InsufficientFunds)?;
-            ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
+            let mut from_state = self
+                .token
+                .get_mut(from)
+                .ok_or(ContractError::InsufficientFunds)?;
+            ensure!(
+                from_state.balance >= amount,
+                ContractError::InsufficientFunds
+            );
             from_state.balance -= amount;
         }
         let mut to_state = self.token.entry(*to).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
+            balance: 0u64.into(),
             operators: state_builder.new_set(),
         });
         to_state.balance += amount;
@@ -342,7 +357,7 @@ impl State {
         state_builder: &mut StateBuilder,
     ) {
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
+            balance: 0u64.into(),
             operators: state_builder.new_set(),
         });
         owner_state.operators.insert(*operator);
@@ -368,7 +383,7 @@ impl State {
     ) -> ContractResult<()> {
         ensure_eq!(token_id, &TOKEN_ID_WCCD, ContractError::InvalidTokenId);
         let mut owner_state = self.token.entry(*owner).or_insert_with(|| AddressState {
-            balance:   0u64.into(),
+            balance: 0u64.into(),
             operators: state_builder.new_set(),
         });
 
@@ -390,8 +405,14 @@ impl State {
             return Ok(());
         }
 
-        let mut from_state = self.token.get_mut(owner).ok_or(ContractError::InsufficientFunds)?;
-        ensure!(from_state.balance >= amount, ContractError::InsufficientFunds);
+        let mut from_state = self
+            .token
+            .get_mut(owner)
+            .ok_or(ContractError::InsufficientFunds)?;
+        ensure!(
+            from_state.balance >= amount,
+            ContractError::InsufficientFunds
+        );
         from_state.balance -= amount;
 
         Ok(())
@@ -441,7 +462,7 @@ fn contract_init(
 
     // Create the metadata_url
     let metadata_url = MetadataUrl {
-        url:  params.url.clone(),
+        url: params.url.clone(),
         hash: params.hash,
     };
 
@@ -450,23 +471,22 @@ fn contract_init(
     // Log event for the newly minted token.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(0u64),
-        owner:    invoker,
+        amount: ContractTokenAmount::from(0u64),
+        owner: invoker,
     })))?;
 
     // Log event for where to find metadata for the token
-    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-        TokenMetadataEvent {
-            token_id: TOKEN_ID_WCCD,
-            metadata_url,
-        },
-    )))?;
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
+        _,
+        ContractTokenAmount,
+    >(TokenMetadataEvent {
+        token_id: TOKEN_ID_WCCD,
+        metadata_url,
+    })))?;
 
     // Log event for the new admin.
     logger.log(&WccdEvent::NewAdmin {
-        new_admin: NewAdminEvent {
-            new_admin: invoker,
-        },
+        new_admin: NewAdminEvent { new_admin: invoker },
     })?;
 
     Ok(state)
@@ -490,7 +510,10 @@ fn contract_wrap(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
-    ensure!(!host.state().paused, ContractError::Custom(CustomContractError::ContractPaused));
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CustomContractError::ContractPaused)
+    );
 
     // Parse the parameter.
     let params: WrapParams = ctx.parameter_cursor().get()?;
@@ -501,13 +524,18 @@ fn contract_wrap(
 
     let (state, state_builder) = host.state_and_builder();
     // Update the state.
-    state.mint(&TOKEN_ID_WCCD, amount.micro_ccd.into(), &receive_address, state_builder)?;
+    state.mint(
+        &TOKEN_ID_WCCD,
+        amount.micro_ccd.into(),
+        &receive_address,
+        state_builder,
+    )?;
 
     // Log the newly minted tokens.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::Mint(MintEvent {
         token_id: TOKEN_ID_WCCD,
-        amount:   ContractTokenAmount::from(amount.micro_ccd),
-        owner:    sender,
+        amount: ContractTokenAmount::from(amount.micro_ccd),
+        owner: sender,
     })))?;
 
     // Only logs a transfer event if the receiver is not the sender.
@@ -516,18 +544,18 @@ fn contract_wrap(
     if sender != receive_address {
         logger.log(&WccdEvent::Cis2Event(Cis2Event::Transfer(TransferEvent {
             token_id: TOKEN_ID_WCCD,
-            amount:   ContractTokenAmount::from(amount.micro_ccd),
-            from:     sender,
-            to:       receive_address,
+            amount: ContractTokenAmount::from(amount.micro_ccd),
+            from: sender,
+            to: receive_address,
         })))?;
 
         // If the receiver is a contract: invoke the receive hook function.
         if let Receiver::Contract(address, function) = params.to {
             let parameter = OnReceivingCis2Params {
                 token_id: TOKEN_ID_WCCD,
-                amount:   ContractTokenAmount::from(amount.micro_ccd),
-                from:     sender,
-                data:     params.data,
+                amount: ContractTokenAmount::from(amount.micro_ccd),
+                from: sender,
+                data: params.data,
             };
             host.invoke_contract(
                 &address,
@@ -555,7 +583,10 @@ fn contract_unwrap(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
-    ensure!(!host.state().paused, ContractError::Custom(CustomContractError::ContractPaused));
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CustomContractError::ContractPaused)
+    );
 
     // Parse the parameter.
     let params: UnwrapParams = ctx.parameter_cursor().get()?;
@@ -576,8 +607,8 @@ fn contract_unwrap(
     // Log the burning of tokens.
     logger.log(&WccdEvent::Cis2Event(Cis2Event::Burn(BurnEvent {
         token_id: TOKEN_ID_WCCD,
-        amount:   params.amount,
-        owner:    params.owner,
+        amount: params.amount,
+        owner: params.owner,
     })))?;
 
     let unwrapped_amount = Amount::from_micro_ccd(params.amount.into());
@@ -617,7 +648,11 @@ fn contract_update_admin(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the current admin is authorized to update the admin address.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    ensure_eq!(
+        ctx.sender(),
+        host.state().admin,
+        ContractError::Unauthorized
+    );
 
     // Parse the parameter.
     let new_admin = ctx.parameter_cursor().get()?;
@@ -627,9 +662,7 @@ fn contract_update_admin(
 
     // Log a new admin event.
     logger.log(&WccdEvent::NewAdmin {
-        new_admin: NewAdminEvent {
-            new_admin,
-        },
+        new_admin: NewAdminEvent { new_admin },
     })?;
 
     Ok(())
@@ -651,7 +684,11 @@ fn contract_update_admin(
 )]
 fn contract_set_paused(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Check that only the admin is authorized to pause/unpause the contract.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    ensure_eq!(
+        ctx.sender(),
+        host.state().admin,
+        ContractError::Unauthorized
+    );
 
     // Parse the parameter.
     let params: SetPausedParams = ctx.parameter_cursor().get()?;
@@ -681,14 +718,18 @@ fn contract_state_set_metadata_url(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that only the admin is authorized to update the URL.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    ensure_eq!(
+        ctx.sender(),
+        host.state().admin,
+        ContractError::Unauthorized
+    );
 
     // Parse the parameter.
     let params: SetMetadataUrlParams = ctx.parameter_cursor().get()?;
 
     // Create the metadata_url
     let metadata_url = MetadataUrl {
-        url:  params.url.clone(),
+        url: params.url.clone(),
         hash: params.hash,
     };
 
@@ -696,12 +737,13 @@ fn contract_state_set_metadata_url(
     *host.state_mut().metadata_url = metadata_url.clone();
 
     // Log an event including the new metadata for this token.
-    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
-        TokenMetadataEvent {
-            token_id: TOKEN_ID_WCCD,
-            metadata_url,
-        },
-    )))?;
+    logger.log(&WccdEvent::Cis2Event(Cis2Event::TokenMetadata::<
+        _,
+        ContractTokenAmount,
+    >(TokenMetadataEvent {
+        token_id: TOKEN_ID_WCCD,
+        metadata_url,
+    })))?;
 
     Ok(())
 }
@@ -738,7 +780,10 @@ fn contract_transfer(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
-    ensure!(!host.state().paused, ContractError::Custom(CustomContractError::ContractPaused));
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CustomContractError::ContractPaused)
+    );
 
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
@@ -755,7 +800,10 @@ fn contract_transfer(
     {
         let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        ensure!(
+            from == sender || state.is_operator(&sender, &from),
+            ContractError::Unauthorized
+        );
         let to_address = to.address();
         // Update the contract state
         state.transfer(&token_id, amount, &from, &to_address, builder)?;
@@ -807,7 +855,10 @@ fn contract_update_operator(
     logger: &mut impl HasLogger,
 ) -> ContractResult<()> {
     // Check that contract is not paused.
-    ensure!(!host.state().paused, ContractError::Custom(CustomContractError::ContractPaused));
+    ensure!(
+        !host.state().paused,
+        ContractError::Custom(CustomContractError::ContractPaused)
+    );
 
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
@@ -823,15 +874,16 @@ fn contract_update_operator(
         }
 
         // Log the appropriate event
-        logger.log(&WccdEvent::Cis2Event(
-            Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-                UpdateOperatorEvent {
-                    owner:    sender,
-                    operator: param.operator,
-                    update:   param.update,
-                },
-            ),
-        ))?;
+        logger.log(&WccdEvent::Cis2Event(Cis2Event::<
+            ContractTokenId,
+            ContractTokenAmount,
+        >::UpdateOperator(
+            UpdateOperatorEvent {
+                owner: sender,
+                operator: param.operator,
+                update: param.update,
+            },
+        )))?;
     }
 
     Ok(())
@@ -947,8 +999,8 @@ fn contract_token_metadata(
 )]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<ReturnBasicState> {
     let state = ReturnBasicState {
-        admin:        host.state().admin,
-        paused:       host.state().paused,
+        admin: host.state().admin,
+        paused: host.state().paused,
         metadata_url: host.state().metadata_url.clone(),
     };
     Ok(state)
@@ -1001,11 +1053,16 @@ fn contract_supports(
 )]
 fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Check that only the admin is authorized to set implementors.
-    ensure_eq!(ctx.sender(), host.state().admin, ContractError::Unauthorized);
+    ensure_eq!(
+        ctx.sender(),
+        host.state().admin,
+        ContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
-    host.state_mut().set_implementors(params.id, params.implementors);
+    host.state_mut()
+        .set_implementors(params.id, params.implementors);
     Ok(())
 }
 

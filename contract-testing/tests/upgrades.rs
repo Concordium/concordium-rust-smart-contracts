@@ -38,9 +38,9 @@ fn test() {
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_a".into()),
-                mod_ref:   res_deploy_0.module_reference,
+                mod_ref: res_deploy_0.module_reference,
 
-                param:  OwnedParameter::empty(),
+                param: OwnedParameter::empty(),
                 amount: Amount::zero(),
             },
         )
@@ -55,11 +55,11 @@ fn test() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.bump".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
@@ -72,24 +72,27 @@ fn test() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.newfun".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating the `newfun` from the `upgrading_1` module should work");
 
-    assert!(matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
+    assert!(
+        matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
                 ContractTraceElement::Interrupted { .. },
                 ContractTraceElement::Upgraded { from, to, .. },
                 ContractTraceElement::Resumed { .. },
                 ContractTraceElement::Updated { .. },
-            ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference));
-    assert!(matches!(res_update_new.effective_trace_elements_cloned()[..], [
-        ContractTraceElement::Updated { .. }
-    ]));
+            ] if from == res_deploy_0.module_reference && to == res_deploy_1.module_reference)
+    );
+    assert!(matches!(
+        res_update_new.effective_trace_elements_cloned()[..],
+        [ContractTraceElement::Updated { .. }]
+    ));
 }
 
 /// The contract in this test, triggers an upgrade and then in the same
@@ -125,9 +128,9 @@ fn test_self_invoke() {
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                mod_ref:   res_deploy_0.module_reference,
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                mod_ref: res_deploy_0.module_reference,
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -139,31 +142,34 @@ fn test_self_invoke() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
 
-    assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-        // Invoking `contract.name`
-        ContractTraceElement::Interrupted { .. },
-        ContractTraceElement::Updated { .. },
-        ContractTraceElement::Resumed { .. },
-        // Making the upgrade
-        ContractTraceElement::Interrupted { .. },
-        ContractTraceElement::Upgraded { .. },
-        ContractTraceElement::Resumed { .. },
-        // Invoking contract.name again
-        ContractTraceElement::Interrupted { .. },
-        ContractTraceElement::Updated { .. },
-        ContractTraceElement::Resumed { .. },
-        // The successful update
-        ContractTraceElement::Updated { .. },
-    ]));
+    assert!(matches!(
+        res_update.effective_trace_elements_cloned()[..],
+        [
+            // Invoking `contract.name`
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Updated { .. },
+            ContractTraceElement::Resumed { .. },
+            // Making the upgrade
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Upgraded { .. },
+            ContractTraceElement::Resumed { .. },
+            // Invoking contract.name again
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Updated { .. },
+            ContractTraceElement::Resumed { .. },
+            // The successful update
+            ContractTraceElement::Updated { .. },
+        ]
+    ));
 }
 
 /// Test upgrading to a module that doesn't exist (it uses module
@@ -190,10 +196,10 @@ fn test_missing_module() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -205,10 +211,10 @@ fn test_missing_module() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
@@ -255,8 +261,8 @@ fn test_missing_contract() {
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                mod_ref:   res_deploy_0.module_reference,
+                param: OwnedParameter::empty(),
+                mod_ref: res_deploy_0.module_reference,
 
                 amount: Amount::zero(),
             },
@@ -270,11 +276,11 @@ fn test_missing_contract() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
@@ -329,8 +335,8 @@ fn test_twice_in_one_transaction() {
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                mod_ref:   res_deploy_0.module_reference,
+                param: OwnedParameter::empty(),
+                mod_ref: res_deploy_0.module_reference,
 
                 amount: Amount::zero(),
             },
@@ -346,11 +352,11 @@ fn test_twice_in_one_transaction() {
             Address::Account(helpers::ACC_0),
             Energy::from(100000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&input_param)
+                message: OwnedParameter::from_serial(&input_param)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
@@ -408,10 +414,10 @@ fn test_chained_contract() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -428,11 +434,11 @@ fn test_chained_contract() {
             Address::Account(helpers::ACC_0),
             Energy::from(1_000_000_000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&input_param)
+                message: OwnedParameter::from_serial(&input_param)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating valid contract should work");
@@ -479,10 +485,10 @@ fn test_reject() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy_0.module_reference,
+                mod_ref: res_deploy_0.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -494,11 +500,11 @@ fn test_reject() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect_err("should fail");
@@ -510,24 +516,18 @@ fn test_reject() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect_err("should fail");
 
     // Check the return value manually returned by the contract.
     match res_update_upgrade.kind {
-        ContractInvokeErrorKind::ExecutionError {
-            failure_kind,
-            ..
-        } => match failure_kind {
-            InvokeFailure::ContractReject {
-                code: -1,
-                ..
-            } => (),
+        ContractInvokeErrorKind::ExecutionError { failure_kind, .. } => match failure_kind {
+            InvokeFailure::ContractReject { code: -1, .. } => (),
             _ => panic!("Expected ContractReject with code == -1"),
         },
         _ => panic!("Expected Err(ContractUpdateError::ExecutionError)"),
@@ -535,9 +535,12 @@ fn test_reject() {
 
     // Assert that the new_feature entrypoint doesn't exist since the upgrade
     // failed.
-    assert!(matches!(res_update_new_feature.kind, ContractInvokeErrorKind::ExecutionError {
-        failure_kind: InvokeFailure::NonExistentEntrypoint,
-    }));
+    assert!(matches!(
+        res_update_new_feature.kind,
+        ContractInvokeErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
+        }
+    ));
 }
 
 /// Tests calling an entrypoint introduced by an upgrade of the module
@@ -553,8 +556,10 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             helpers::ACC_0,
-            module_load_v1_raw(helpers::wasm_test_file("upgrading-changing-entrypoints0.wasm"))
-                .expect("module should exist"),
+            module_load_v1_raw(helpers::wasm_test_file(
+                "upgrading-changing-entrypoints0.wasm",
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -562,8 +567,10 @@ fn test_changing_entrypoint() {
         .module_deploy_v1(
             Signer::with_one_key(),
             helpers::ACC_0,
-            module_load_v1_raw(helpers::wasm_test_file("upgrading-changing-entrypoints1.wasm"))
-                .expect("module should exist"),
+            module_load_v1_raw(helpers::wasm_test_file(
+                "upgrading-changing-entrypoints1.wasm",
+            ))
+            .expect("module should exist"),
         )
         .expect("Deploying valid module should work");
 
@@ -574,8 +581,8 @@ fn test_changing_entrypoint() {
             Energy::from(10000),
             InitContractPayload {
                 init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                param:     OwnedParameter::empty(),
-                mod_ref:   res_deploy_0.module_reference,
+                param: OwnedParameter::empty(),
+                mod_ref: res_deploy_0.module_reference,
 
                 amount: Amount::zero(),
             },
@@ -589,10 +596,10 @@ fn test_changing_entrypoint() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.old_feature".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating old_feature on old module should work.");
@@ -604,10 +611,10 @@ fn test_changing_entrypoint() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect_err("Updating new_feature on old module should _not_ work");
@@ -619,11 +626,11 @@ fn test_changing_entrypoint() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.upgrade".into()),
-                message:      OwnedParameter::from_serial(&res_deploy_1.module_reference)
+                message: OwnedParameter::from_serial(&res_deploy_1.module_reference)
                     .expect("Parameter has valid size"),
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Upgrading contract should work.");
@@ -635,10 +642,10 @@ fn test_changing_entrypoint() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.old_feature".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect_err("Updating old_feature on _new_ module should _not_ work.");
@@ -650,30 +657,41 @@ fn test_changing_entrypoint() {
             Address::Account(helpers::ACC_0),
             Energy::from(1000000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("contract.new_feature".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating new_feature on _new_ module should work");
 
-    assert!(matches!(res_update_old_feature_0.effective_trace_elements_cloned()[..], [
-        ContractTraceElement::Updated { .. }
-    ]));
-    assert!(matches!(res_update_new_feature_0.kind, ContractInvokeErrorKind::ExecutionError {
-        failure_kind: InvokeFailure::NonExistentEntrypoint,
-    }));
-    assert!(matches!(res_update_upgrade.effective_trace_elements_cloned()[..], [
-        ContractTraceElement::Interrupted { .. },
-        ContractTraceElement::Upgraded { .. },
-        ContractTraceElement::Resumed { .. },
-        ContractTraceElement::Updated { .. },
-    ]));
-    assert!(matches!(res_update_old_feature_1.kind, ContractInvokeErrorKind::ExecutionError {
-        failure_kind: InvokeFailure::NonExistentEntrypoint,
-    }));
-    assert!(matches!(res_update_new_feature_1.effective_trace_elements_cloned()[..], [
-        ContractTraceElement::Updated { .. }
-    ]));
+    assert!(matches!(
+        res_update_old_feature_0.effective_trace_elements_cloned()[..],
+        [ContractTraceElement::Updated { .. }]
+    ));
+    assert!(matches!(
+        res_update_new_feature_0.kind,
+        ContractInvokeErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
+        }
+    ));
+    assert!(matches!(
+        res_update_upgrade.effective_trace_elements_cloned()[..],
+        [
+            ContractTraceElement::Interrupted { .. },
+            ContractTraceElement::Upgraded { .. },
+            ContractTraceElement::Resumed { .. },
+            ContractTraceElement::Updated { .. },
+        ]
+    ));
+    assert!(matches!(
+        res_update_old_feature_1.kind,
+        ContractInvokeErrorKind::ExecutionError {
+            failure_kind: InvokeFailure::NonExistentEntrypoint,
+        }
+    ));
+    assert!(matches!(
+        res_update_new_feature_1.effective_trace_elements_cloned()[..],
+        [ContractTraceElement::Updated { .. }]
+    ));
 }

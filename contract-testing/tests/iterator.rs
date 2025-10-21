@@ -28,10 +28,10 @@ fn test_iterator() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_iterator".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -43,10 +43,10 @@ fn test_iterator() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("iterator.iteratetest".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Should succeed");
@@ -57,10 +57,10 @@ fn test_iterator() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init.contract_address,
+                address: res_init.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("iterator.lockingtest".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Should succeed.");

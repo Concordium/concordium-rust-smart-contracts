@@ -1,8 +1,8 @@
 [package]
 name = "concordium-cis2"
-version = "6.2.0"
+version = "6.2.1-alpha.1"
 authors = ["Concordium <developers@concordium.com>"]
-rust-version = "1.73"
+rust-version = "1.85"
 edition = "2021"
 license = "MPL-2.0"
 description = "A collection of types for implementing CIS-2 Concordium Token Standard."

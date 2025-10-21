@@ -3,7 +3,10 @@
 fn tests() {
     std::env::set_var("MY_CUSTOM_FEATURE", "true");
     std::env::set_var("ACC", "3kBx2h5Y2veb4hZgAJWPrr8RyQESKm5TjzF3ti1QQ4VSYLwK1G");
-    std::env::set_var("REF", "0000000000000000000000000000000000000000000000000000000000000000");
+    std::env::set_var(
+        "REF",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    );
     std::env::set_var("CONTRACT", "<1234,0>");
     std::env::set_var(
         "PK_25519",

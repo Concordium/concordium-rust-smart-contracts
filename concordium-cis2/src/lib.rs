@@ -115,7 +115,9 @@ pub struct TokenIdVec(#[concordium(size_length = 1)] pub Vec<u8>);
 impl IsTokenId for TokenIdVec {}
 
 impl schema::SchemaType for TokenIdVec {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 /// Display the token ID as a uppercase hex string
@@ -130,14 +132,18 @@ impl fmt::Display for TokenIdVec {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdVec> for String {
-    fn from(id: TokenIdVec) -> Self { id.to_string() }
+    fn from(id: TokenIdVec) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TokenIdVec {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
@@ -182,11 +188,15 @@ pub struct TokenIdFixed<const N: usize>(pub [u8; N]);
 impl<const N: usize> IsTokenId for TokenIdFixed<N> {}
 
 impl<const N: usize> schema::SchemaType for TokenIdFixed<N> {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for TokenIdFixed<N> {
-    fn from(id: [u8; N]) -> Self { TokenIdFixed(id) }
+    fn from(id: [u8; N]) -> Self {
+        TokenIdFixed(id)
+    }
 }
 
 /// The `TokenIdFixed` is serialized as the value of the first byte represents
@@ -226,21 +236,27 @@ impl<const N: usize> fmt::Display for TokenIdFixed<N> {
 
 #[cfg(feature = "serde")]
 impl<const N: usize> From<TokenIdFixed<N>> for String {
-    fn from(id: TokenIdFixed<N>) -> Self { id.to_string() }
+    fn from(id: TokenIdFixed<N>) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl<const N: usize> TryFrom<String> for TokenIdFixed<N> {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
 impl<const N: usize> FromStr for TokenIdFixed<N> {
     type Err = ParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> { parse_bytes_exact(s).map(Self) }
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_bytes_exact(s).map(Self)
+    }
 }
 
 /// Token Identifier, which combined with the address of the contract instance,
@@ -264,11 +280,15 @@ pub struct TokenIdU64(pub u64);
 impl IsTokenId for TokenIdU64 {}
 
 impl schema::SchemaType for TokenIdU64 {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 impl From<u64> for TokenIdU64 {
-    fn from(id: u64) -> Self { TokenIdU64(id) }
+    fn from(id: u64) -> Self {
+        TokenIdU64(id)
+    }
 }
 
 /// The `TokenIdU64` is serialized with one byte with the value 8 followed by 8
@@ -306,14 +326,18 @@ impl fmt::Display for TokenIdU64 {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdU64> for String {
-    fn from(id: TokenIdU64) -> Self { id.to_string() }
+    fn from(id: TokenIdU64) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TokenIdU64 {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
@@ -347,11 +371,15 @@ pub struct TokenIdU32(pub u32);
 impl IsTokenId for TokenIdU32 {}
 
 impl schema::SchemaType for TokenIdU32 {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 impl From<u32> for TokenIdU32 {
-    fn from(id: u32) -> Self { TokenIdU32(id) }
+    fn from(id: u32) -> Self {
+        TokenIdU32(id)
+    }
 }
 
 /// The `TokenIdU32` is serialized with one byte with the value 4 followed by 4
@@ -389,14 +417,18 @@ impl fmt::Display for TokenIdU32 {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdU32> for String {
-    fn from(id: TokenIdU32) -> Self { id.to_string() }
+    fn from(id: TokenIdU32) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TokenIdU32 {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
@@ -430,11 +462,15 @@ pub struct TokenIdU16(pub u16);
 impl IsTokenId for TokenIdU16 {}
 
 impl schema::SchemaType for TokenIdU16 {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 impl From<u16> for TokenIdU16 {
-    fn from(id: u16) -> Self { TokenIdU16(id) }
+    fn from(id: u16) -> Self {
+        TokenIdU16(id)
+    }
 }
 
 /// The `TokenIdU16` is serialized with one byte with the value 2 followed by 2
@@ -472,14 +508,18 @@ impl fmt::Display for TokenIdU16 {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdU16> for String {
-    fn from(id: TokenIdU16) -> Self { id.to_string() }
+    fn from(id: TokenIdU16) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TokenIdU16 {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
@@ -513,11 +553,15 @@ pub struct TokenIdU8(pub u8);
 impl IsTokenId for TokenIdU8 {}
 
 impl schema::SchemaType for TokenIdU8 {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 impl From<u8> for TokenIdU8 {
-    fn from(id: u8) -> Self { TokenIdU8(id) }
+    fn from(id: u8) -> Self {
+        TokenIdU8(id)
+    }
 }
 
 /// The `TokenIdU8` is serialized with one byte with the value 1 followed by 1
@@ -555,14 +599,18 @@ impl fmt::Display for TokenIdU8 {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdU8> for String {
-    fn from(id: TokenIdU8) -> Self { id.to_string() }
+    fn from(id: TokenIdU8) -> Self {
+        id.to_string()
+    }
 }
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TokenIdU8 {
     type Error = ParseError;
 
-    fn try_from(s: String) -> Result<Self, Self::Error> { s.parse() }
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 /// Parse the token ID from a hex string
@@ -610,12 +658,16 @@ pub struct TokenIdUnit();
 impl IsTokenId for TokenIdUnit {}
 
 impl schema::SchemaType for TokenIdUnit {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U8) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U8)
+    }
 }
 
 /// The `TokenIdUnit` is serialized with one byte with the value 0.
 impl Serial for TokenIdUnit {
-    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> { out.write_u8(0) }
+    fn serial<W: Write>(&self, out: &mut W) -> Result<(), W::Err> {
+        out.write_u8(0)
+    }
 }
 
 /// The `TokenIdUnit` will deserialize one byte ensuring this contains the value
@@ -633,7 +685,9 @@ impl Deserial for TokenIdUnit {
 
 #[cfg(feature = "serde")]
 impl From<TokenIdUnit> for String {
-    fn from(_id: TokenIdUnit) -> Self { String::from("") }
+    fn from(_id: TokenIdUnit) -> Self {
+        String::from("")
+    }
 }
 
 #[cfg(feature = "serde")]
@@ -659,51 +713,71 @@ macro_rules! token_amount_wrapper {
         impl ops::Add<Self> for $name {
             type Output = Self;
 
-            fn add(self, rhs: Self) -> Self::Output { $name(self.0 + rhs.0) }
+            fn add(self, rhs: Self) -> Self::Output {
+                $name(self.0 + rhs.0)
+            }
         }
 
         impl ops::AddAssign for $name {
-            fn add_assign(&mut self, other: Self) { *self = *self + other; }
+            fn add_assign(&mut self, other: Self) {
+                *self = *self + other;
+            }
         }
 
         impl ops::Sub<Self> for $name {
             type Output = Self;
 
-            fn sub(self, rhs: Self) -> Self::Output { $name(self.0 - rhs.0) }
+            fn sub(self, rhs: Self) -> Self::Output {
+                $name(self.0 - rhs.0)
+            }
         }
 
         impl ops::SubAssign for $name {
-            fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+            fn sub_assign(&mut self, other: Self) {
+                *self = *self - other;
+            }
         }
 
         impl ops::Mul<$wrapped> for $name {
             type Output = Self;
 
-            fn mul(self, rhs: $wrapped) -> Self::Output { $name(self.0 * rhs) }
+            fn mul(self, rhs: $wrapped) -> Self::Output {
+                $name(self.0 * rhs)
+            }
         }
 
         impl ops::Mul<$name> for $wrapped {
             type Output = $name;
 
-            fn mul(self, rhs: $name) -> Self::Output { $name(self * rhs.0) }
+            fn mul(self, rhs: $name) -> Self::Output {
+                $name(self * rhs.0)
+            }
         }
 
         impl ops::MulAssign<$wrapped> for $name {
-            fn mul_assign(&mut self, other: $wrapped) { *self = *self * other; }
+            fn mul_assign(&mut self, other: $wrapped) {
+                *self = *self * other;
+            }
         }
 
         impl ops::Rem<$wrapped> for $name {
             type Output = Self;
 
-            fn rem(self, other: $wrapped) -> Self::Output { $name(self.0 % other) }
+            fn rem(self, other: $wrapped) -> Self::Output {
+                $name(self.0 % other)
+            }
         }
 
         impl ops::RemAssign<$wrapped> for $name {
-            fn rem_assign(&mut self, other: $wrapped) { *self = *self % other; }
+            fn rem_assign(&mut self, other: $wrapped) {
+                *self = *self % other;
+            }
         }
 
         impl iter::Sum for $name {
-            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self { iter.fold($name(0), ops::Add::add) }
+            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+                iter.fold($name(0), ops::Add::add)
+            }
         }
 
         impl IsTokenAmount for $name {}
@@ -711,7 +785,9 @@ macro_rules! token_amount_wrapper {
         /// Uses the ULeb128 encoding with up to 37 bytes for the encoding as
         /// according to CIS-2 specification.
         impl schema::SchemaType for $name {
-            fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
+            fn get_type() -> schema::Type {
+                schema::Type::ULeb128(37)
+            }
         }
 
         impl Serial for $name {
@@ -738,7 +814,9 @@ macro_rules! token_amount_wrapper {
                 for i in 0..37 {
                     let byte = source.read_u8()?;
                     let value_byte = (byte & 0b0111_1111) as $wrapped;
-                    result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
+                    result = result
+                        .checked_add(value_byte << (i * 7))
+                        .ok_or(ParseError {})?;
 
                     if byte & 0b1000_0000 == 0 {
                         return Ok($name(result));
@@ -749,11 +827,15 @@ macro_rules! token_amount_wrapper {
         }
 
         impl From<$wrapped> for $name {
-            fn from(v: $wrapped) -> $name { $name(v) }
+            fn from(v: $wrapped) -> $name {
+                $name(v)
+            }
         }
 
         impl From<$name> for $wrapped {
-            fn from(v: $name) -> $wrapped { v.0 }
+            fn from(v: $name) -> $wrapped {
+                v.0
+            }
         }
     };
 }
@@ -777,47 +859,65 @@ mod u256_token {
     impl ops::Add<Self> for TokenAmountU256 {
         type Output = Self;
 
-        fn add(self, rhs: Self) -> Self::Output { TokenAmountU256(self.0 + rhs.0) }
+        fn add(self, rhs: Self) -> Self::Output {
+            TokenAmountU256(self.0 + rhs.0)
+        }
     }
 
     impl ops::AddAssign for TokenAmountU256 {
-        fn add_assign(&mut self, other: Self) { *self = *self + other; }
+        fn add_assign(&mut self, other: Self) {
+            *self = *self + other;
+        }
     }
 
     impl ops::Sub<Self> for TokenAmountU256 {
         type Output = Self;
 
-        fn sub(self, rhs: Self) -> Self::Output { TokenAmountU256(self.0 - rhs.0) }
+        fn sub(self, rhs: Self) -> Self::Output {
+            TokenAmountU256(self.0 - rhs.0)
+        }
     }
 
     impl ops::SubAssign for TokenAmountU256 {
-        fn sub_assign(&mut self, other: Self) { *self = *self - other; }
+        fn sub_assign(&mut self, other: Self) {
+            *self = *self - other;
+        }
     }
 
     impl ops::Mul<U256> for TokenAmountU256 {
         type Output = Self;
 
-        fn mul(self, rhs: U256) -> Self::Output { TokenAmountU256(self.0 * rhs) }
+        fn mul(self, rhs: U256) -> Self::Output {
+            TokenAmountU256(self.0 * rhs)
+        }
     }
 
     impl ops::Mul<TokenAmountU256> for U256 {
         type Output = TokenAmountU256;
 
-        fn mul(self, rhs: TokenAmountU256) -> Self::Output { TokenAmountU256(self * rhs.0) }
+        fn mul(self, rhs: TokenAmountU256) -> Self::Output {
+            TokenAmountU256(self * rhs.0)
+        }
     }
 
     impl ops::MulAssign<U256> for TokenAmountU256 {
-        fn mul_assign(&mut self, other: U256) { *self = *self * other; }
+        fn mul_assign(&mut self, other: U256) {
+            *self = *self * other;
+        }
     }
 
     impl ops::Rem<U256> for TokenAmountU256 {
         type Output = Self;
 
-        fn rem(self, other: U256) -> Self::Output { TokenAmountU256(self.0 % other) }
+        fn rem(self, other: U256) -> Self::Output {
+            TokenAmountU256(self.0 % other)
+        }
     }
 
     impl ops::RemAssign<U256> for TokenAmountU256 {
-        fn rem_assign(&mut self, other: U256) { *self = *self % other; }
+        fn rem_assign(&mut self, other: U256) {
+            *self = *self % other;
+        }
     }
 
     impl iter::Sum for TokenAmountU256 {
@@ -831,7 +931,9 @@ mod u256_token {
     /// Uses the ULeb128 encoding with up to 37 bytes for the encoding as
     /// according to CIS-2 specification.
     impl schema::SchemaType for TokenAmountU256 {
-        fn get_type() -> schema::Type { schema::Type::ULeb128(37) }
+        fn get_type() -> schema::Type {
+            schema::Type::ULeb128(37)
+        }
     }
 
     impl Serial for TokenAmountU256 {
@@ -858,7 +960,9 @@ mod u256_token {
             for i in 0..36 {
                 let byte = source.read_u8()?;
                 let value_byte = <U256>::from(byte & 0b0111_1111);
-                result = result.checked_add(value_byte << (i * 7)).ok_or(ParseError {})?;
+                result = result
+                    .checked_add(value_byte << (i * 7))
+                    .ok_or(ParseError {})?;
                 if byte & 0b1000_0000 == 0 {
                     return Ok(TokenAmountU256(result));
                 }
@@ -869,7 +973,9 @@ mod u256_token {
                 Err(ParseError {})
             } else {
                 let value_byte = <U256>::from(value_byte);
-                result = result.checked_add(value_byte << (36 * 7)).ok_or(ParseError {})?;
+                result = result
+                    .checked_add(value_byte << (36 * 7))
+                    .ok_or(ParseError {})?;
                 if byte & 0b1000_0000 == 0 {
                     Ok(TokenAmountU256(result))
                 } else {
@@ -880,11 +986,15 @@ mod u256_token {
     }
 
     impl From<U256> for TokenAmountU256 {
-        fn from(v: U256) -> TokenAmountU256 { TokenAmountU256(v) }
+        fn from(v: U256) -> TokenAmountU256 {
+            TokenAmountU256(v)
+        }
     }
 
     impl From<TokenAmountU256> for U256 {
-        fn from(v: TokenAmountU256) -> U256 { v.0 }
+        fn from(v: TokenAmountU256) -> U256 {
+            v.0
+        }
     }
 
     #[cfg(test)]
@@ -931,11 +1041,11 @@ pub struct TransferEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   A,
+    pub amount: A,
     /// The address owning these tokens before the transfer.
-    pub from:     Address,
+    pub from: Address,
     /// The address to receive these tokens after the transfer.
-    pub to:       Address,
+    pub to: Address,
 }
 
 /// An untagged event of tokens being minted, could be a new token type or
@@ -948,9 +1058,9 @@ pub struct MintEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being minted, (possibly a new token ID).
     pub token_id: T,
     /// The number of tokens being minted, this is allowed to be 0 as well.
-    pub amount:   A,
+    pub amount: A,
     /// The initial owner of these newly minted amount of tokens.
-    pub owner:    Address,
+    pub owner: Address,
 }
 
 /// An untagged event of some amount of a token type being burned.
@@ -962,9 +1072,9 @@ pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token where an amount is being burned.
     pub token_id: T,
     /// The amount of tokens being burned.
-    pub amount:   A,
+    pub amount: A,
     /// The owner of the tokens being burned.
-    pub owner:    Address,
+    pub owner: Address,
 }
 
 /// An untagged event of an update to an operator address for an owner address.
@@ -974,9 +1084,9 @@ pub struct BurnEvent<T: IsTokenId, A: IsTokenAmount> {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct UpdateOperatorEvent {
     /// The update to the operator.
-    pub update:   OperatorUpdate,
+    pub update: OperatorUpdate,
     /// The address for whom, the operator is updated.
-    pub owner:    Address,
+    pub owner: Address,
     /// The address who is the operator being updated.
     pub operator: Address,
 }
@@ -988,7 +1098,7 @@ pub struct UpdateOperatorEvent {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct TokenMetadataEvent<T: IsTokenId> {
     /// The ID of the token.
-    pub token_id:     T,
+    pub token_id: T,
     /// The location of the metadata.
     pub metadata_url: MetadataUrl,
 }
@@ -1126,7 +1236,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: LogError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: LogError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<ParseError> for Cis2Error<X>
@@ -1135,7 +1247,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: ParseError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: ParseError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<T, X> From<CallContractError<T>> for Cis2Error<X>
@@ -1144,7 +1258,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: CallContractError<T>) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: CallContractError<T>) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<TransferError> for Cis2Error<X>
@@ -1153,7 +1269,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: TransferError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: TransferError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<UpgradeError> for Cis2Error<X>
@@ -1162,7 +1280,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: UpgradeError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: UpgradeError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<QueryAccountBalanceError> for Cis2Error<X>
@@ -1171,7 +1291,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: QueryAccountBalanceError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: QueryAccountBalanceError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<QueryContractBalanceError> for Cis2Error<X>
@@ -1180,7 +1302,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: QueryContractBalanceError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: QueryContractBalanceError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<NewReceiveNameError> for Cis2Error<X>
@@ -1189,7 +1313,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: NewReceiveNameError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: NewReceiveNameError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<CheckAccountSignatureError> for Cis2Error<X>
@@ -1198,7 +1324,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: CheckAccountSignatureError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: CheckAccountSignatureError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<QueryAccountPublicKeysError> for Cis2Error<X>
@@ -1207,7 +1335,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: QueryAccountPublicKeysError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: QueryAccountPublicKeysError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 impl<X> From<NewContractNameError> for Cis2Error<X>
@@ -1216,7 +1346,9 @@ where
 {
     #[inline]
     /// Converts the error by wrapping it in [Self::Custom].
-    fn from(err: NewContractNameError) -> Self { Cis2Error::Custom(X::from(err)) }
+    fn from(err: NewContractNameError) -> Self {
+        Cis2Error::Custom(X::from(err))
+    }
 }
 
 /// The receiving address for a transfer, similar to the Address type, but
@@ -1243,7 +1375,9 @@ pub enum Receiver {
 
 impl Receiver {
     /// Construct a receiver from an account address.
-    pub fn from_account(address: AccountAddress) -> Self { Receiver::Account(address) }
+    pub fn from_account(address: AccountAddress) -> Self {
+        Receiver::Account(address)
+    }
 
     /// Construct a receiver from a contract address.
     pub fn from_contract(address: ContractAddress, function: OwnedEntrypointName) -> Self {
@@ -1260,7 +1394,9 @@ impl Receiver {
 }
 
 impl From<AccountAddress> for Receiver {
-    fn from(address: AccountAddress) -> Self { Self::from_account(address) }
+    fn from(address: AccountAddress) -> Self {
+        Self::from_account(address)
+    }
 }
 
 /// Additional information to include with a transfer.
@@ -1271,20 +1407,28 @@ pub struct AdditionalData(#[concordium(size_length = 2)] Vec<u8>);
 
 // Implemented manually to display the AdditionalData as a hex string.
 impl schema::SchemaType for AdditionalData {
-    fn get_type() -> schema::Type { schema::Type::ByteList(schema::SizeLength::U16) }
+    fn get_type() -> schema::Type {
+        schema::Type::ByteList(schema::SizeLength::U16)
+    }
 }
 
 impl AdditionalData {
     /// Construct an AdditionalData containing no data.
-    pub fn empty() -> Self { AdditionalData(Vec::new()) }
+    pub fn empty() -> Self {
+        AdditionalData(Vec::new())
+    }
 }
 
 impl From<Vec<u8>> for AdditionalData {
-    fn from(data: Vec<u8>) -> Self { AdditionalData(data) }
+    fn from(data: Vec<u8>) -> Self {
+        AdditionalData(data)
+    }
 }
 
 impl AsRef<[u8]> for AdditionalData {
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 /// A single transfer of some amount of a token.
@@ -1296,14 +1440,14 @@ pub struct Transfer<T: IsTokenId, A: IsTokenAmount> {
     /// The ID of the token being transferred.
     pub token_id: T,
     /// The amount of tokens being transferred.
-    pub amount:   A,
+    pub amount: A,
     /// The address owning the tokens being transferred.
-    pub from:     Address,
+    pub from: Address,
     /// The address receiving the tokens being transferred.
-    pub to:       Receiver,
+    pub to: Receiver,
     /// Additional data to include in the transfer.
     /// Can be used for additional arguments.
-    pub data:     AdditionalData,
+    pub data: AdditionalData,
 }
 
 /// The parameter type for the contract function `transfer`.
@@ -1315,11 +1459,15 @@ pub struct TransferParams<T: IsTokenId, A: IsTokenAmount>(
 );
 
 impl<T: IsTokenId, A: IsTokenAmount> From<Vec<Transfer<T, A>>> for TransferParams<T, A> {
-    fn from(transfers: Vec<Transfer<T, A>>) -> Self { TransferParams(transfers) }
+    fn from(transfers: Vec<Transfer<T, A>>) -> Self {
+        TransferParams(transfers)
+    }
 }
 
 impl<T: IsTokenId, A: IsTokenAmount> AsRef<[Transfer<T, A>]> for TransferParams<T, A> {
-    fn as_ref(&self) -> &[Transfer<T, A>] { &self.0 }
+    fn as_ref(&self) -> &[Transfer<T, A>] {
+        &self.0
+    }
 }
 
 /// The update to an the operator.
@@ -1341,7 +1489,7 @@ pub enum OperatorUpdate {
 #[cfg_attr(feature = "serde", derive(SerdeSerialize, SerdeDeserialize))]
 pub struct UpdateOperator {
     /// The update for this operator.
-    pub update:   OperatorUpdate,
+    pub update: OperatorUpdate,
     /// The address which is either added or removed as an operator.
     /// Note: The address for whom this will become an operator is the sender of
     /// the contract transaction.
@@ -1362,7 +1510,7 @@ pub struct BalanceOfQuery<T: IsTokenId> {
     /// The ID of the token for which to query the balance of.
     pub token_id: T,
     /// The address for which to query the balance of.
-    pub address:  Address,
+    pub address: Address,
 }
 
 /// The parameter type for the contract function `balanceOf`.
@@ -1384,11 +1532,15 @@ pub struct BalanceOfQueryParams<T: IsTokenId> {
 pub struct BalanceOfQueryResponse<A: IsTokenAmount>(#[concordium(size_length = 2)] pub Vec<A>);
 
 impl<A: IsTokenAmount> From<Vec<A>> for BalanceOfQueryResponse<A> {
-    fn from(results: Vec<A>) -> Self { BalanceOfQueryResponse(results) }
+    fn from(results: Vec<A>) -> Self {
+        BalanceOfQueryResponse(results)
+    }
 }
 
 impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
-    fn as_ref(&self) -> &[A] { &self.0 }
+    fn as_ref(&self) -> &[A] {
+        &self.0
+    }
 }
 
 /// A query for the operator of a given address for a given token.
@@ -1397,7 +1549,7 @@ impl<A: IsTokenAmount> AsRef<[A]> for BalanceOfQueryResponse<A> {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct OperatorOfQuery {
     /// The owner address to inspect.
-    pub owner:   Address,
+    pub owner: Address,
     /// The address for which to check for being an operator of the owner.
     pub address: Address,
 }
@@ -1420,11 +1572,15 @@ pub struct OperatorOfQueryParams {
 pub struct OperatorOfQueryResponse(#[concordium(size_length = 2)] pub Vec<bool>);
 
 impl From<Vec<bool>> for OperatorOfQueryResponse {
-    fn from(results: Vec<bool>) -> Self { OperatorOfQueryResponse(results) }
+    fn from(results: Vec<bool>) -> Self {
+        OperatorOfQueryResponse(results)
+    }
 }
 
 impl AsRef<[bool]> for OperatorOfQueryResponse {
-    fn as_ref(&self) -> &[bool] { &self.0 }
+    fn as_ref(&self) -> &[bool] {
+        &self.0
+    }
 }
 
 /// The parameter type for the contract function `tokenMetadata`.
@@ -1446,11 +1602,15 @@ pub struct TokenMetadataQueryParams<T: IsTokenId> {
 pub struct TokenMetadataQueryResponse(#[concordium(size_length = 2)] pub Vec<MetadataUrl>);
 
 impl From<Vec<MetadataUrl>> for TokenMetadataQueryResponse {
-    fn from(results: Vec<MetadataUrl>) -> Self { TokenMetadataQueryResponse(results) }
+    fn from(results: Vec<MetadataUrl>) -> Self {
+        TokenMetadataQueryResponse(results)
+    }
 }
 
 impl AsRef<[MetadataUrl]> for TokenMetadataQueryResponse {
-    fn as_ref(&self) -> &[MetadataUrl] { &self.0 }
+    fn as_ref(&self) -> &[MetadataUrl] {
+        &self.0
+    }
 }
 
 /// Generic parameter type for a contract function which receives CIS2 tokens.
@@ -1462,11 +1622,11 @@ pub struct OnReceivingCis2Params<T, A> {
     /// The ID of the token received.
     pub token_id: T,
     /// The amount of tokens received.
-    pub amount:   A,
+    pub amount: A,
     /// The previous owner of the tokens.
-    pub from:     Address,
+    pub from: Address,
     /// Some extra information which was sent as part of the transfer.
-    pub data:     AdditionalData,
+    pub data: AdditionalData,
 }
 
 /// Specific parameter type for a contract function which receives CIS2 tokens
@@ -1479,11 +1639,11 @@ pub struct OnReceivingCis2DataParams<T, A, D> {
     /// The ID of the token received.
     pub token_id: T,
     /// The amount of tokens received.
-    pub amount:   A,
+    pub amount: A,
     /// The previous owner of the tokens.
-    pub from:     Address,
+    pub from: Address,
     /// Some extra information which was sent as part of the transfer.
-    pub data:     D,
+    pub data: D,
 }
 
 /// Deserial trait for OnReceivingCis2DataParams<T, A, D>.
@@ -1493,9 +1653,9 @@ impl<T: Deserial, A: Deserial, D: Deserial> Deserial for OnReceivingCis2DataPara
         let additional_data_type: D = from_bytes(params.data.as_ref())?;
         Ok(OnReceivingCis2DataParams {
             token_id: params.token_id,
-            amount:   params.amount,
-            from:     params.from,
-            data:     additional_data_type,
+            amount: params.amount,
+            from: params.from,
+            data: additional_data_type,
         })
     }
 }
@@ -1546,17 +1706,13 @@ impl<'a> StandardIdentifier<'a> {
         if id.len() > 255 || !id.is_ascii() {
             Err(InvalidStandardIdentifierError)
         } else {
-            Ok(Self {
-                id,
-            })
+            Ok(Self { id })
         }
     }
 
     /// Construct a standard identifier without validation.
     pub const fn new_unchecked(id: &'a str) -> Self {
-        Self {
-            id,
-        }
+        Self { id }
     }
 
     /// Convert to owned standard identifier.
@@ -1582,17 +1738,13 @@ impl StandardIdentifierOwned {
         if id.len() > 255 || !id.is_ascii() {
             Err(InvalidStandardIdentifierError)
         } else {
-            Ok(Self {
-                id,
-            })
+            Ok(Self { id })
         }
     }
 
     /// Construct a standard identifier without validation.
     pub fn new_unchecked(id: String) -> Self {
-        Self {
-            id,
-        }
+        Self { id }
     }
 
     /// Convert to standard identifier.
@@ -1636,14 +1788,14 @@ pub struct SupportsQueryResponse {
 
 impl From<Vec<SupportResult>> for SupportsQueryResponse {
     fn from(results: Vec<SupportResult>) -> Self {
-        SupportsQueryResponse {
-            results,
-        }
+        SupportsQueryResponse { results }
     }
 }
 
 impl AsRef<[SupportResult]> for SupportsQueryResponse {
-    fn as_ref(&self) -> &[SupportResult] { &self.results }
+    fn as_ref(&self) -> &[SupportResult] {
+        &self.results
+    }
 }
 
 #[cfg(test)]
@@ -1661,10 +1813,13 @@ mod test {
     fn serial_token_amount128_max_test() {
         let amount = TokenAmountU128::from(u128::MAX);
         let bytes = to_bytes(&amount);
-        assert_eq!(bytes, vec![
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 0b00000011
-        ])
+        assert_eq!(
+            bytes,
+            vec![
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 0b00000011
+            ]
+        )
     }
 
     #[test]
@@ -1694,7 +1849,10 @@ mod test {
     fn serial_token_amount64_max_test() {
         let amount = TokenAmountU64::from(u64::MAX);
         let bytes = to_bytes(&amount);
-        assert_eq!(bytes, vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001])
+        assert_eq!(
+            bytes,
+            vec![255, 255, 255, 255, 255, 255, 255, 255, 255, 0b00000001]
+        )
     }
 
     #[test]
@@ -1802,7 +1960,10 @@ mod test {
         // the hex string "deadBEEF" corresponds to `0xDEADBEEF_u32.to_be_bytes()`,
         // since the strings are written in little endian order, i.e. "de" is the first
         // byte, "ad" is the second, etc.
-        assert_eq!(parse_bytes_exact::<4>("deadBEEF"), Ok(0xDEADBEEF_u32.to_be_bytes()));
+        assert_eq!(
+            parse_bytes_exact::<4>("deadBEEF"),
+            Ok(0xDEADBEEF_u32.to_be_bytes())
+        );
         // odd number of characters fails
         assert!(parse_bytes_exact::<3>("deadBEE").is_err());
         // invalid character fails

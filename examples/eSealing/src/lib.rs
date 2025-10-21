@@ -51,7 +51,7 @@ pub struct FileState {
     /// The timestamp when this file hash was registered.
     pub timestamp: Timestamp,
     /// The witness (sender_account) that registered this file hash.
-    pub witness:   AccountAddress,
+    pub witness: AccountAddress,
 }
 
 /// The contract state.
@@ -84,10 +84,9 @@ impl State {
 
     /// Add a new file hash (replaces existing file if present).
     fn add_file(&mut self, file_hash: HashSha2256, timestamp: Timestamp, witness: AccountAddress) {
-        let _ = self.files.insert(file_hash, FileState {
-            timestamp,
-            witness,
-        });
+        let _ = self
+            .files
+            .insert(file_hash, FileState { timestamp, witness });
     }
 }
 
@@ -103,7 +102,7 @@ pub struct RegistrationEvent {
     /// Hash of the file to be registered by the witness (sender_account).
     pub file_hash: HashSha2256,
     /// Witness (sender_account) that registered the above file hash.
-    pub witness:   AccountAddress,
+    pub witness: AccountAddress,
     /// Timestamp when this file hash was registered in the smart contract.
     pub timestamp: Timestamp,
 }
@@ -142,12 +141,16 @@ fn register_file(
     let file_hash: HashSha2256 = ctx.parameter_cursor().get()?;
 
     // Ensure that the file hash hasn't been registered so far.
-    ensure!(!host.state().file_exists(&file_hash), ContractError::AlreadyRegistered);
+    ensure!(
+        !host.state().file_exists(&file_hash),
+        ContractError::AlreadyRegistered
+    );
 
     let timestamp = ctx.metadata().slot_time();
 
     // Register the file hash.
-    host.state_mut().add_file(file_hash, timestamp, sender_account);
+    host.state_mut()
+        .add_file(file_hash, timestamp, sender_account);
 
     // Log the event.
     logger.log(&Event::Registration(RegistrationEvent {

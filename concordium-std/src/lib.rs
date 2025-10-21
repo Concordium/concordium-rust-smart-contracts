@@ -393,7 +393,12 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
-#![cfg_attr(not(feature = "std"), no_std, allow(internal_features), feature(core_intrinsics))]
+#![cfg_attr(
+    not(feature = "std"),
+    no_std,
+    allow(internal_features),
+    feature(core_intrinsics)
+)]
 
 #[cfg(not(feature = "std"))]
 pub extern crate alloc;
@@ -406,10 +411,14 @@ pub extern crate alloc;
 pub use std::process::abort as trap;
 #[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
 #[inline(always)]
-pub fn trap() -> ! { core::arch::wasm32::unreachable() }
+pub fn trap() -> ! {
+    core::arch::wasm32::unreachable()
+}
 #[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
 #[inline(always)]
-pub fn trap() -> ! { core::intrinsics::abort() }
+pub fn trap() -> ! {
+    core::intrinsics::abort()
+}
 
 #[cfg(not(feature = "std"))]
 #[panic_handler]

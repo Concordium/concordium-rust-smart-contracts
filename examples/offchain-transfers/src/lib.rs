@@ -67,7 +67,7 @@ pub struct AddressAmount {
     /// The sender or receiver
     address: AccountAddress,
     /// The sent/received amount
-    amount:  Amount,
+    amount: Amount,
 }
 
 /// A transfer consisting of possibly multiple inputs with different amounts and
@@ -76,21 +76,21 @@ pub struct AddressAmount {
 #[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Transfer {
     /// The list of senders
-    pub send_transfers:    Vec<AddressAmount>,
+    pub send_transfers: Vec<AddressAmount>,
     /// The list of receivers
     pub receive_transfers: Vec<AddressAmount>,
     /// The meta-data is not used by the smart contract
     /// it could contain information relevant to the judge
-    pub meta_data:         Vec<u8>,
+    pub meta_data: Vec<u8>,
 }
 
 /// A settlement defines a (potential) update to the balance sheet
 #[derive(Clone, Serialize, SchemaType, PartialEq, Eq)]
 pub struct Settlement {
     /// Unique ID
-    id:            SettlementID,
+    id: SettlementID,
     /// The update described as a transfer
-    transfer:      Transfer,
+    transfer: Transfer,
     /// Point in time when the settlement becomes final
     finality_time: Timestamp,
 }
@@ -233,8 +233,11 @@ pub fn contract_receive_deposit<S: HasStateApi>(
         Address::Contract(_) => bail!(ReceiveError::ContractSender),
         Address::Account(account_address) => account_address,
     };
-    let mut balance =
-        host.state_mut().balance_sheet.entry(sender_address).or_insert(Amount::zero()); //if the sender does not exist
+    let mut balance = host
+        .state_mut()
+        .balance_sheet
+        .entry(sender_address)
+        .or_insert(Amount::zero()); //if the sender does not exist
     *balance += amount;
 
     Ok(())
@@ -272,7 +275,12 @@ fn get_liabilities(settlements: &[Settlement], sender_address: AccountAddress) -
 /// This defensive payout mechanism ensures that user balance sheet
 /// stays positive for any possible finalization of (a subset) outstanding
 /// settlements.   
-#[receive(contract = "offchain-transfers", name = "withdraw", mutable, parameter = "Amount")]
+#[receive(
+    contract = "offchain-transfers",
+    name = "withdraw",
+    mutable,
+    parameter = "Amount"
+)]
 #[inline(always)]
 pub fn contract_receive_withdraw<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -300,7 +308,10 @@ pub fn contract_receive_withdraw<S: HasStateApi>(
             .entry(sender_address)
             .occupied_or(ReceiveError::InsufficientFunds)?;
 
-        ensure!(*balance >= liabilities + payout, ReceiveError::InsufficientFunds);
+        ensure!(
+            *balance >= liabilities + payout,
+            ReceiveError::InsufficientFunds
+        );
 
         // deduct payout
         *balance -= payout;
@@ -362,7 +373,10 @@ pub fn contract_receive_add_settlement<S: HasStateApi>(
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     // Only the validator may call this function
-    ensure!(sender.matches_account(&host.state().config.validator), ReceiveError::NotAValidator);
+    ensure!(
+        sender.matches_account(&host.state().config.validator),
+        ReceiveError::NotAValidator
+    );
 
     // Ensure there is space for the incoming settlement
     ensure!(
@@ -412,13 +426,18 @@ pub fn contract_receive_veto<S: HasStateApi>(
 ) -> ContractResult<()> {
     let sender = ctx.sender();
     // Only the validator may call this function
-    ensure!(sender.matches_account(&host.state().config.judge), ReceiveError::NotAJudge);
+    ensure!(
+        sender.matches_account(&host.state().config.judge),
+        ReceiveError::NotAJudge
+    );
     // Get the ID
     let s_id: SettlementID = ctx.parameter_cursor().get()?;
     let now = ctx.metadata().slot_time(); //and time
 
     // Delete all settlements with the given ID from the list that are not final
-    host.state_mut().settlements.retain(|s| s.id != s_id || s.finality_time <= now);
+    host.state_mut()
+        .settlements
+        .retain(|s| s.id != s_id || s.finality_time <= now);
 
     Ok(())
 }
@@ -505,15 +524,19 @@ pub fn contract_receive_execute_settlements<S: HasStateApi>(
             }
 
             for send_transfer in settlement.transfer.send_transfers.iter() {
-                let mut sender_balance =
-                    state_mut.balance_sheet.entry(send_transfer.address).or_insert(Amount::zero());
+                let mut sender_balance = state_mut
+                    .balance_sheet
+                    .entry(send_transfer.address)
+                    .or_insert(Amount::zero());
                 *sender_balance -= send_transfer.amount;
             }
         }
     }
 
     // remove all settlements for which finality time has passed from list
-    state_mut.settlements.retain(|s| current_time < s.finality_time);
+    state_mut
+        .settlements
+        .retain(|s| current_time < s.finality_time);
 
     Ok(())
 }
@@ -578,5 +601,3 @@ pub fn contract_get_settlement<S: HasStateApi>(
         Some(settlement) => Ok(Some(settlement.clone())),
     }
 }
-
-// Tests //

@@ -38,10 +38,10 @@ fn test_case_1() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_a".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -52,10 +52,10 @@ fn test_case_1() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_b".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -82,13 +82,12 @@ fn test_case_1() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_a.contract_address,
+                address: res_init_a.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
-                message:      OwnedParameter::from_serial(&parameter)
-                    .expect("Parameter has valid size"),
+                message: OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
                 // We supply one microCCD as we expect a trap
                 // (see contract for details).
-                amount:       Amount::from_micro_ccd(1),
+                amount: Amount::from_micro_ccd(1),
             },
         )
         .expect("Updating contract should succeed");
@@ -156,10 +155,10 @@ fn test_case_2() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_a".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -170,10 +169,10 @@ fn test_case_2() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_b".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -200,16 +199,15 @@ fn test_case_2() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_a.contract_address,
+                address: res_init_a.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
-                message:      OwnedParameter::from_serial(&parameter)
-                    .expect("Parameter has valid size"),
+                message: OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
                 // We supply zero microCCD as we're instructing the contract to not expect
                 // state modifications. Also, the contract does not expect
                 // errors, i.e., a trap signal from underlying invocations.
                 // The 'inner' call to contract A does not modify the state.
                 // See the contract for details.
-                amount:       Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Updating contract should succeed");
@@ -263,10 +261,10 @@ fn test_case_3() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_a".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -277,10 +275,10 @@ fn test_case_3() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_b".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -292,14 +290,14 @@ fn test_case_3() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_a.contract_address,
+                address: res_init_a.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
-                message:      OwnedParameter::from_serial(&helpers::ACC_1)
+                message: OwnedParameter::from_serial(&helpers::ACC_1)
                     .expect("Parameter has valid size"),
                 // We supply three micro CCDs as we're instructing the contract to carry out a
                 // transfer instead of a call. See the contract for
                 // details.
-                amount:       Amount::from_micro_ccd(3),
+                amount: Amount::from_micro_ccd(3),
             },
         )
         .expect("Updating contract should succeed");
@@ -336,10 +334,10 @@ fn test_case_4() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_a".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -350,10 +348,10 @@ fn test_case_4() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_b".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -380,15 +378,14 @@ fn test_case_4() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_a.contract_address,
+                address: res_init_a.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("a.a_modify_proxy".into()),
-                message:      OwnedParameter::from_serial(&parameter)
-                    .expect("Parameter has valid size"),
+                message: OwnedParameter::from_serial(&parameter).expect("Parameter has valid size"),
                 // We supply four CCDs as we're instructing the contract to expect state
                 // modifications being made from the 'inner' contract A
                 // call to be in effect when returned to the caller (a.a_modify_proxy).
                 // See the contract for details.
-                amount:       Amount::from_micro_ccd(4),
+                amount: Amount::from_micro_ccd(4),
             },
         )
         .expect("Updating contract should succeed");

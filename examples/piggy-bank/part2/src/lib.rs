@@ -66,7 +66,10 @@ fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> Result<
     // Ensure only the owner can smash the piggy bank.
     ensure!(sender.matches_account(&owner), SmashError::NotOwner);
     // Ensure the piggy bank has not been smashed already.
-    ensure!(*host.state() == PiggyBankState::Intact, SmashError::AlreadySmashed);
+    ensure!(
+        *host.state() == PiggyBankState::Intact,
+        SmashError::AlreadySmashed
+    );
     // Set the state to be smashed.
     *host.state_mut() = PiggyBankState::Smashed;
 
@@ -83,7 +86,11 @@ fn piggy_smash(ctx: &ReceiveContext, host: &mut Host<PiggyBankState>) -> Result<
 }
 
 /// View the state and balance of the piggy bank.
-#[receive(contract = "PiggyBank", name = "view", return_value = "(PiggyBankState, Amount)")]
+#[receive(
+    contract = "PiggyBank",
+    name = "view",
+    return_value = "(PiggyBankState, Amount)"
+)]
 fn piggy_view(
     _ctx: &ReceiveContext,
     host: &Host<PiggyBankState>,

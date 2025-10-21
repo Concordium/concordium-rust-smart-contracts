@@ -24,10 +24,10 @@ fn test_fallback() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_two".into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -38,12 +38,12 @@ fn test_fallback() {
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked("init_one".into()),
-                param:     OwnedParameter::from_serial(&res_init_two.contract_address)
+                param: OwnedParameter::from_serial(&res_init_two.contract_address)
                     .expect("Parameter has valid size"), /* Pass in address of contract
                                                           * "two". */
-                amount:    Amount::zero(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
@@ -57,10 +57,10 @@ fn test_fallback() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_one.contract_address,
+                address: res_init_one.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("one.".into()),
-                message:      OwnedParameter::empty(),
-                amount:       Amount::zero(),
+                message: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect_err("should fail");
@@ -80,10 +80,10 @@ fn test_fallback() {
             Address::Account(helpers::ACC_0),
             Energy::from(10000),
             UpdateContractPayload {
-                address:      res_init_one.contract_address,
+                address: res_init_one.contract_address,
                 receive_name: OwnedReceiveName::new_unchecked("one.do".into()),
-                message:      parameter.clone(),
-                amount:       Amount::zero(),
+                message: parameter.clone(),
+                amount: Amount::zero(),
             },
         )
         .expect("Invoke should succeed.");

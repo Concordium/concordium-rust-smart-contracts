@@ -52,7 +52,9 @@ const EXTERNAL_NODE_QUERY_TIMEOUT: tokio::time::Duration = tokio::time::Duration
 const EXTERNAL_NODE_CONNECT_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(3);
 
 impl Default for Chain {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChainParameters {
@@ -235,7 +237,7 @@ impl ChainBuilder {
     /// [`micro_ccd_per_euro`][Self::micro_ccd_per_euro].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
@@ -257,7 +259,7 @@ impl ChainBuilder {
     /// [`euro_per_energy`][Self::euro_per_energy].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
@@ -298,7 +300,7 @@ impl ChainBuilder {
     /// [`block_time`][Self::block_time].
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// # use concordium_smart_contract_testing::*;
     /// let chain = ChainBuilder::new()
     ///     .external_node_connection(Endpoint::from_static("http://node.testnet.concordium.com:20000"))
@@ -389,7 +391,9 @@ impl ChainBuilder {
 }
 
 impl Default for ChainBuilder {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // Exit early with an out of energy error.
@@ -408,7 +412,9 @@ impl Chain {
     /// pattern.
     ///
     /// See the [`ChainBuilder`] for more details.
-    pub fn builder() -> ChainBuilder { ChainBuilder::new() }
+    pub fn builder() -> ChainBuilder {
+        ChainBuilder::new()
+    }
 
     /// Create a new [`Chain`](Self) where all the configurable parameters are
     /// provided.
@@ -424,15 +430,15 @@ impl Chain {
         euro_per_energy: ExchangeRate,
     ) -> Result<Self, ExchangeRateError> {
         Ok(Self {
-            parameters:               ChainParameters::new_with_time_and_rates(
+            parameters: ChainParameters::new_with_time_and_rates(
                 block_time,
                 micro_ccd_per_euro,
                 euro_per_energy,
             )?,
-            accounts:                 BTreeMap::new(),
-            modules:                  BTreeMap::new(),
-            contracts:                BTreeMap::new(),
-            next_contract_index:      0,
+            accounts: BTreeMap::new(),
+            modules: BTreeMap::new(),
+            contracts: BTreeMap::new(),
+            next_contract_index: 0,
             external_node_connection: None,
         })
     }
@@ -529,15 +535,17 @@ impl Chain {
         // If users use our tools to deploy modules the costs are calculated for them so
         // that deployment should never fail with out of energy. Not requiring energy
         // provides a more ergonomic experience.
-        let Ok(sender_account) = self.accounts.get_mut(&sender.into()).ok_or(AccountDoesNotExist {
-            address: sender,
-        }) else {
+        let Ok(sender_account) = self
+            .accounts
+            .get_mut(&sender.into())
+            .ok_or(AccountDoesNotExist { address: sender })
+        else {
             // Ensure sender account exists.
             return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::SenderDoesNotExist(AccountDoesNotExist {
+                kind: ModuleDeployErrorKind::SenderDoesNotExist(AccountDoesNotExist {
                     address: sender,
                 }),
-                energy_used:     0.into(),
+                energy_used: 0.into(),
                 transaction_fee: Amount::zero(),
             });
         };
@@ -547,10 +555,8 @@ impl Chain {
         // specific cost. We charge 0 for it.
         if wasm_module.version != WasmVersion::V1 {
             return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::UnsupportedModuleVersion(
-                    wasm_module.version,
-                ),
-                energy_used:     0.into(),
+                kind: ModuleDeployErrorKind::UnsupportedModuleVersion(wasm_module.version),
+                energy_used: 0.into(),
                 transaction_fee: Amount::zero(),
             });
         }
@@ -577,8 +583,8 @@ impl Chain {
         // the energy).
         if sender_account.balance.available() < transaction_fee {
             return Err(ModuleDeployError {
-                kind:            ModuleDeployErrorKind::InsufficientFunds,
-                energy_used:     0.into(),
+                kind: ModuleDeployErrorKind::InsufficientFunds,
+                energy_used: 0.into(),
                 transaction_fee: Amount::zero(),
             });
         };
@@ -616,12 +622,18 @@ impl Chain {
                 transaction_fee,
             });
         }
-        self.modules.insert(module_reference, ContractModule {
-            // we follow protocol 6 semantics, and don't count the custom section size towards
-            // module size.
-            size:     wasm_module.source.size().saturating_sub(artifact.custom_sections_size),
-            artifact: Arc::new(artifact.artifact),
-        });
+        self.modules.insert(
+            module_reference,
+            ContractModule {
+                // we follow protocol 6 semantics, and don't count the custom section size towards
+                // module size.
+                size: wasm_module
+                    .source
+                    .size()
+                    .saturating_sub(artifact.custom_sections_size),
+                artifact: Arc::new(artifact.artifact),
+            },
+        );
         Ok(ModuleDeploySuccess {
             module_reference,
             energy_used,
@@ -654,9 +666,7 @@ impl Chain {
         let mut remaining_energy = energy_reserved;
         if !self.account_exists(sender) {
             return Err(self.convert_to_init_error(
-                ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist {
-                    address: sender,
-                }),
+                ContractInitErrorKind::SenderDoesNotExist(AccountDoesNotExist { address: sender }),
                 energy_reserved,
                 remaining_energy,
             ));
@@ -683,8 +693,10 @@ impl Chain {
         };
 
         // Charge the account.
-        self.account_mut(sender).expect("existence already checked").balance.total -=
-            transaction_fee;
+        self.account_mut(sender)
+            .expect("existence already checked")
+            .balance
+            .total -= transaction_fee;
         res
     }
 
@@ -722,7 +734,10 @@ impl Chain {
         };
 
         // Charge the header cost.
-        exit_ooe!(remaining_energy.tick_energy(check_header_cost), DebugTracker::empty_trace());
+        exit_ooe!(
+            remaining_energy.tick_energy(check_header_cost),
+            DebugTracker::empty_trace()
+        );
 
         // Ensure that the parameter has a valid size.
         if payload.param.as_ref().len() > contracts_common::constants::MAX_PARAMETER_LEN {
@@ -746,7 +761,10 @@ impl Chain {
         let lookup_cost = lookup_module_cost(&module);
 
         // Charge the cost for looking up the module.
-        exit_ooe!(remaining_energy.tick_energy(lookup_cost), DebugTracker::empty_trace());
+        exit_ooe!(
+            remaining_energy.tick_energy(lookup_cost),
+            DebugTracker::empty_trace()
+        );
 
         // Ensure the module contains the provided init name.
         let init_name = payload.init_name.as_contract_name().get_chain_name();
@@ -815,11 +833,17 @@ impl Chain {
                 let energy_used_in_interpreter = from_interpreter_energy(
                     &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
+                exit_ooe!(
+                    remaining_energy.tick_energy(energy_used_in_interpreter),
+                    trace
+                );
 
                 // Charge one energy per stored state byte.
                 let energy_for_state_storage = Energy::from(collector.collect());
-                exit_ooe!(remaining_energy.tick_energy(energy_for_state_storage), trace);
+                exit_ooe!(
+                    remaining_energy.tick_energy(energy_for_state_storage),
+                    trace
+                );
 
                 // Charge the constant cost for initializing a contract.
                 exit_ooe!(
@@ -830,19 +854,21 @@ impl Chain {
 
                 let contract = Contract {
                     module_reference: payload.mod_ref,
-                    contract_name:    payload.init_name,
-                    state:            persisted_state,
-                    owner:            sender,
-                    self_balance:     payload.amount,
-                    address:          contract_address,
+                    contract_name: payload.init_name,
+                    state: persisted_state,
+                    owner: sender,
+                    self_balance: payload.amount,
+                    address: contract_address,
                 };
 
                 // Save the contract.
                 self.contracts.insert(contract_address, contract);
 
                 // Subtract the amount from the invoker.
-                self.account_mut(sender).expect("Account known to exist").balance.total -=
-                    payload.amount;
+                self.account_mut(sender)
+                    .expect("Account known to exist")
+                    .balance
+                    .total -= payload.amount;
 
                 let energy_used = energy_reserved - *remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
@@ -864,9 +890,12 @@ impl Chain {
                 let energy_used_in_interpreter = from_interpreter_energy(
                     &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
+                exit_ooe!(
+                    remaining_energy.tick_energy(energy_used_in_interpreter),
+                    trace
+                );
                 Err(ContractInitErrorKind::ExecutionError {
-                    error:       InitExecutionError::Reject {
+                    error: InitExecutionError::Reject {
                         reason,
                         return_value,
                     },
@@ -881,32 +910,32 @@ impl Chain {
                 let energy_used_in_interpreter = from_interpreter_energy(
                     &energy_given_to_interpreter.saturating_sub(&remaining_interpreter_energy),
                 );
-                exit_ooe!(remaining_energy.tick_energy(energy_used_in_interpreter), trace);
+                exit_ooe!(
+                    remaining_energy.tick_energy(energy_used_in_interpreter),
+                    trace
+                );
                 Err(ContractInitErrorKind::ExecutionError {
-                    error:       InitExecutionError::Trap {
+                    error: InitExecutionError::Trap {
                         error: error.into(),
                     },
                     debug_trace: trace,
                 })
             }
-            Ok(v1::InitResult::OutOfEnergy {
-                trace,
-            }) => {
+            Ok(v1::InitResult::OutOfEnergy { trace }) => {
                 *remaining_energy = Energy::from(0);
                 Err(ContractInitErrorKind::ExecutionError {
-                    error:       InitExecutionError::OutOfEnergy,
+                    error: InitExecutionError::OutOfEnergy,
                     debug_trace: trace,
                 })
             }
-            Err(InvalidReturnCodeError {
-                value,
-                debug_trace,
-            }) => Err(ContractInitErrorKind::ExecutionError {
-                error: InitExecutionError::Trap {
-                    error: anyhow::anyhow!("Invalid return value received: {value:?}").into(),
-                },
-                debug_trace,
-            }),
+            Err(InvalidReturnCodeError { value, debug_trace }) => {
+                Err(ContractInitErrorKind::ExecutionError {
+                    error: InitExecutionError::Trap {
+                        error: anyhow::anyhow!("Invalid return value received: {value:?}").into(),
+                    },
+                    debug_trace,
+                })
+            }
         }
     }
 
@@ -1014,10 +1043,7 @@ impl Chain {
         module_load_energy: Energy,
     ) -> Result<ContractInvokeSuccess, ContractInvokeError> {
         match result {
-            v1::InvokeResponse::Success {
-                new_balance,
-                data,
-            } => {
+            v1::InvokeResponse::Success { new_balance, data } => {
                 let energy_used = energy_reserved - remaining_energy;
                 let transaction_fee = self.parameters.calculate_energy_cost(energy_used);
                 Ok(ContractInvokeSuccess {
@@ -1031,12 +1057,8 @@ impl Chain {
                     module_load_energy,
                 })
             }
-            v1::InvokeResponse::Failure {
-                kind,
-            } => Err(self.convert_to_invoke_error(
-                ContractInvokeErrorKind::ExecutionError {
-                    failure_kind: kind,
-                },
+            v1::InvokeResponse::Failure { kind } => Err(self.convert_to_invoke_error(
+                ContractInvokeErrorKind::ExecutionError { failure_kind: kind },
                 trace_elements,
                 energy_reserved,
                 remaining_energy,
@@ -1075,10 +1097,10 @@ impl Chain {
             // is verified upfront. So what we do here is custom behaviour, and we reject
             // without consuming any energy.
             return Err(ContractInvokeError {
-                energy_used:        Energy::from(0),
-                transaction_fee:    Amount::zero(),
-                trace_elements:     Vec::new(),
-                kind:               ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                energy_used: Energy::from(0),
+                transaction_fee: Amount::zero(),
+                trace_elements: Vec::new(),
+                kind: ContractInvokeErrorKind::SenderDoesNotExist(sender),
                 module_load_energy: 0.into(),
             });
         }
@@ -1086,14 +1108,12 @@ impl Chain {
         // Ensure the invoker exists.
         let Ok(account_info) = self.account(invoker) else {
             return Err(ContractInvokeError {
-                energy_used:        Energy::from(0),
-                transaction_fee:    Amount::zero(),
-                trace_elements:     Vec::new(),
-                kind:               ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist {
-                        address: invoker,
-                    },
-                ),
+                energy_used: Energy::from(0),
+                transaction_fee: Amount::zero(),
+                trace_elements: Vec::new(),
+                kind: ContractInvokeErrorKind::InvokerDoesNotExist(AccountDoesNotExist {
+                    address: invoker,
+                }),
                 module_load_energy: 0.into(),
             });
         };
@@ -1108,15 +1128,17 @@ impl Chain {
 
         // Charge the header cost.
         let mut remaining_energy =
-            energy_reserved.checked_sub(check_header_cost).ok_or(ContractInvokeError {
-                energy_used:        Energy::from(0),
-                transaction_fee:    Amount::zero(),
-                trace_elements:     Vec::new(),
-                kind:               ContractInvokeErrorKind::OutOfEnergy {
-                    debug_trace: DebugTracker::empty_trace(), // we haven't done anything yet.
-                },
-                module_load_energy: 0.into(),
-            })?;
+            energy_reserved
+                .checked_sub(check_header_cost)
+                .ok_or(ContractInvokeError {
+                    energy_used: Energy::from(0),
+                    transaction_fee: Amount::zero(),
+                    trace_elements: Vec::new(),
+                    kind: ContractInvokeErrorKind::OutOfEnergy {
+                        debug_trace: DebugTracker::empty_trace(), // we haven't done anything yet.
+                    },
+                    module_load_energy: 0.into(),
+                })?;
 
         let invoker_amount_reserved_for_nrg =
             self.parameters.calculate_energy_cost(energy_reserved);
@@ -1190,8 +1212,10 @@ impl Chain {
             Err(e) => e.transaction_fee,
         };
         // Charge for execution.
-        self.account_mut(invoker).expect("existence already checked").balance.total -=
-            transaction_fee;
+        self.account_mut(invoker)
+            .expect("existence already checked")
+            .balance
+            .total -= transaction_fee;
         res
     }
 
@@ -1219,24 +1243,22 @@ impl Chain {
         // Ensure the sender exists.
         if !self.address_exists(sender) {
             return Err(ContractInvokeError {
-                energy_used:        Energy::from(0),
-                transaction_fee:    Amount::zero(),
-                trace_elements:     Vec::new(),
-                kind:               ContractInvokeErrorKind::SenderDoesNotExist(sender),
+                energy_used: Energy::from(0),
+                transaction_fee: Amount::zero(),
+                trace_elements: Vec::new(),
+                kind: ContractInvokeErrorKind::SenderDoesNotExist(sender),
                 module_load_energy: 0.into(),
             });
         }
 
         let Some(account_info) = self.accounts.get(&invoker.into()) else {
             return Err(ContractInvokeError {
-                energy_used:        Energy::from(0),
-                transaction_fee:    Amount::zero(),
-                trace_elements:     Vec::new(),
-                kind:               ContractInvokeErrorKind::InvokerDoesNotExist(
-                    AccountDoesNotExist {
-                        address: invoker,
-                    },
-                ),
+                energy_used: Energy::from(0),
+                transaction_fee: Amount::zero(),
+                trace_elements: Vec::new(),
+                kind: ContractInvokeErrorKind::InvokerDoesNotExist(AccountDoesNotExist {
+                    address: invoker,
+                }),
                 module_load_energy: 0.into(),
             });
         };
@@ -1372,12 +1394,12 @@ impl Chain {
                     .invoke_instance(
                         block_identifier,
                         &sdk::types::smart_contracts::ContractContext {
-                            invoker:   sender.map(|ext_addr| ext_addr.to_address()),
-                            contract:  payload.address.address,
-                            amount:    payload.amount,
-                            method:    payload.receive_name,
+                            invoker: sender.map(|ext_addr| ext_addr.to_address()),
+                            contract: payload.address.address,
+                            amount: payload.amount,
+                            method: payload.receive_name,
                             parameter: payload.message,
-                            energy:    Some(energy_reserved),
+                            energy: Some(energy_reserved),
                         },
                     )
                     .await?
@@ -1393,8 +1415,8 @@ impl Chain {
                 used_energy,
             } => Ok(ContractInvokeExternalSuccess {
                 trace_elements: events,
-                energy_used:    used_energy,
-                return_value:   return_value.map(|rv| rv.value).unwrap_or_default(),
+                energy_used: used_energy,
+                return_value: return_value.map(|rv| rv.value).unwrap_or_default(),
             }),
             InvokeContractResult::Failure {
                 return_value,
@@ -1464,9 +1486,7 @@ impl Chain {
                         block_identifier,
                     )
                     .await?;
-                Ok::<_, ExternalNodeError>(ExternalAccountAddress {
-                    address,
-                })
+                Ok::<_, ExternalNodeError>(ExternalAccountAddress { address })
             })?;
 
         connection.accounts.insert(external_addr);
@@ -1494,9 +1514,7 @@ impl Chain {
                 // Try to get the contract instance info to verify the existence of the
                 // contract, but discard the result.
                 client.get_instance_info(address, block_identifier).await?;
-                Ok::<_, ExternalNodeError>(ExternalContractAddress {
-                    address,
-                })
+                Ok::<_, ExternalNodeError>(ExternalContractAddress { address })
             })?;
 
         connection.contracts.insert(external_addr);
@@ -1519,7 +1537,9 @@ impl Chain {
 
     /// Returns the available balance of an account if it exists.
     pub fn account_balance_available(&self, address: AccountAddress) -> Option<Amount> {
-        self.accounts.get(&address.into()).map(|ai| ai.balance.available())
+        self.accounts
+            .get(&address.into())
+            .map(|ai| ai.balance.available())
     }
 
     /// Returns the balance of an contract if it exists.
@@ -1548,9 +1568,9 @@ impl Chain {
 
     /// Returns an immutable reference to an [`Account`].
     pub fn account(&self, address: AccountAddress) -> Result<&Account, AccountDoesNotExist> {
-        self.accounts.get(&address.into()).ok_or(AccountDoesNotExist {
-            address,
-        })
+        self.accounts
+            .get(&address.into())
+            .ok_or(AccountDoesNotExist { address })
     }
 
     /// Returns a mutable reference to [`Account`].
@@ -1558,9 +1578,9 @@ impl Chain {
         &mut self,
         address: AccountAddress,
     ) -> Result<&mut Account, AccountDoesNotExist> {
-        self.accounts.get_mut(&address.into()).ok_or(AccountDoesNotExist {
-            address,
-        })
+        self.accounts
+            .get_mut(&address.into())
+            .ok_or(AccountDoesNotExist { address })
     }
 
     /// Check whether an [`Account`] exists.
@@ -1625,9 +1645,7 @@ impl Chain {
         module_load_energy: Energy,
     ) -> ContractInvokeError {
         self.convert_to_invoke_error(
-            ContractInvokeErrorKind::OutOfEnergy {
-                debug_trace,
-            },
+            ContractInvokeErrorKind::OutOfEnergy { debug_trace },
             Vec::new(),
             energy_reserved,
             Energy::from(0),
@@ -1676,13 +1694,16 @@ impl Chain {
 
         // Get the values from the external node.
         connection.with_client(None, |block_identifier, mut client| async move {
-            let (euro_per_energy, micro_ccd_per_euro) =
-                match client.get_block_chain_parameters(block_identifier).await?.response {
-                    sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                    sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                    sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                    sdk::v2::ChainParameters::V3(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                };
+            let (euro_per_energy, micro_ccd_per_euro) = match client
+                .get_block_chain_parameters(block_identifier)
+                .await?
+                .response
+            {
+                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                sdk::v2::ChainParameters::V3(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+            };
             Ok(ExchangeRates {
                 euro_per_energy,
                 micro_ccd_per_euro,
@@ -1709,8 +1730,11 @@ impl Chain {
     /// assert_eq!(chain.block_time(), Timestamp::from_timestamp_millis(123));
     /// ```
     pub fn tick_block_time(&mut self, duration: Duration) -> Result<(), BlockTimeOverflow> {
-        self.parameters.block_time =
-            self.parameters.block_time.checked_add(duration).ok_or(BlockTimeOverflow)?;
+        self.parameters.block_time = self
+            .parameters
+            .block_time
+            .checked_add(duration)
+            .ok_or(BlockTimeOverflow)?;
         Ok(())
     }
 
@@ -1791,9 +1815,7 @@ impl Chain {
                     });
                 }
                 Err(sdk::v2::QueryError::RPCError(error)) => {
-                    return Err(SetupExternalNodeError::CannotCheckQueryBlockExistence {
-                        error,
-                    })
+                    return Err(SetupExternalNodeError::CannotCheckQueryBlockExistence { error })
                 }
             };
             Ok(block_hash)
@@ -1854,13 +1876,19 @@ impl Chain {
     }
 
     /// Return the current microCCD per euro exchange rate.
-    pub fn micro_ccd_per_euro(&self) -> ExchangeRate { self.parameters.micro_ccd_per_euro }
+    pub fn micro_ccd_per_euro(&self) -> ExchangeRate {
+        self.parameters.micro_ccd_per_euro
+    }
 
     /// Return the current euro per energy exchange rate.
-    pub fn euro_per_energy(&self) -> ExchangeRate { self.parameters.euro_per_energy }
+    pub fn euro_per_energy(&self) -> ExchangeRate {
+        self.parameters.euro_per_energy
+    }
 
     /// Return the current block time.
-    pub fn block_time(&self) -> Timestamp { self.parameters.block_time }
+    pub fn block_time(&self) -> Timestamp {
+        self.parameters.block_time
+    }
 
     /// Return the block used for external queries by default.
     ///
@@ -1885,14 +1913,11 @@ impl ExternalNodeConnection {
     /// returned.
     ///
     /// *This method cannot be nested, as that will cause a panic.*
-    fn with_client<T, F, Fut>(
-        &self,
-        block: Option<BlockHash>,
-        f: F,
-    ) -> Result<T, ExternalNodeError>
+    fn with_client<T, F, Fut>(&self, block: Option<BlockHash>, f: F) -> Result<T, ExternalNodeError>
     where
         F: FnOnce(sdk::v2::BlockIdentifier, sdk::v2::Client) -> Fut,
-        Fut: Future<Output = Result<T, ExternalNodeError>>, {
+        Fut: Future<Output = Result<T, ExternalNodeError>>,
+    {
         // Get the block identifier, either using the provided block or the default
         // query block.
         let block_identifier = if let Some(block) = block {
@@ -1951,10 +1976,15 @@ impl Account {
         balance: AccountBalance,
         policy: OwnedPolicy,
     ) -> Self {
-        Self::new_with_policy_and_keys(address, balance, policy, AccountAccessStructure {
-            threshold: AccountThreshold::try_from(1u8).expect("1 is a valid threshold."),
-            keys:      BTreeMap::new(),
-        })
+        Self::new_with_policy_and_keys(
+            address,
+            balance,
+            policy,
+            AccountAccessStructure {
+                threshold: AccountThreshold::try_from(1u8).expect("1 is a valid threshold."),
+                keys: BTreeMap::new(),
+            },
+        )
     }
 
     /// Create a new [`Account`](Self) with the provided balance and a default
@@ -1983,7 +2013,7 @@ impl Account {
         Self::new_with_policy(
             address,
             AccountBalance {
-                total:  total_balance,
+                total: total_balance,
                 staked: Amount::zero(),
                 locked: Amount::zero(),
             },
@@ -1998,9 +2028,9 @@ impl Account {
     fn empty_policy() -> OwnedPolicy {
         OwnedPolicy {
             identity_provider: 0,
-            created_at:        Timestamp::from_timestamp_millis(0),
-            valid_to:          Timestamp::from_timestamp_millis(u64::MAX),
-            items:             Vec::new(),
+            created_at: Timestamp::from_timestamp_millis(0),
+            valid_to: Timestamp::from_timestamp_millis(u64::MAX),
+            items: Vec::new(),
         }
     }
 }
@@ -2036,7 +2066,7 @@ pub fn module_load_v1_raw(module_path: impl AsRef<Path>) -> Result<WasmModule, M
     })?;
     Ok(WasmModule {
         version: WasmVersion::V1,
-        source:  ModuleSource::from(buffer),
+        source: ModuleSource::from(buffer),
     })
 }
 
@@ -2077,9 +2107,7 @@ pub fn module_load_output() -> Result<WasmModule, OutputModuleLoadError> {
 impl Signer {
     /// Create a signer which always signs with one key.
     pub const fn with_one_key() -> Self {
-        Self {
-            num_keys: 1,
-        }
+        Self { num_keys: 1 }
     }
 
     /// Create a signer with a non-zero number of keys.
@@ -2087,9 +2115,7 @@ impl Signer {
         if num_keys == 0 {
             return Err(ZeroKeysError);
         }
-        Ok(Self {
-            num_keys,
-        })
+        Ok(Self { num_keys })
     }
 }
 
@@ -2102,11 +2128,7 @@ impl ContractInvokeError {
     pub fn return_value(&self) -> Option<&[u8]> {
         match &self.kind {
             ContractInvokeErrorKind::ExecutionError {
-                failure_kind:
-                    v1::InvokeFailure::ContractReject {
-                        data,
-                        ..
-                    },
+                failure_kind: v1::InvokeFailure::ContractReject { data, .. },
             } => Some(data),
             _ => None,
         }
@@ -2117,11 +2139,7 @@ impl ContractInvokeError {
     pub fn reject_code(&self) -> Option<i32> {
         match &self.kind {
             ContractInvokeErrorKind::ExecutionError {
-                failure_kind:
-                    v1::InvokeFailure::ContractReject {
-                        code,
-                        ..
-                    },
+                failure_kind: v1::InvokeFailure::ContractReject { code, .. },
             } => Some(*code),
             _ => None,
         }
@@ -2153,18 +2171,18 @@ impl ContractInvokeError {
 impl From<TestConfigurationError> for ContractInvokeErrorKind {
     fn from(err: TestConfigurationError) -> Self {
         match err {
-            TestConfigurationError::OutOfEnergy {
-                debug_trace,
-            } => Self::OutOfEnergy {
-                debug_trace,
-            },
+            TestConfigurationError::OutOfEnergy { debug_trace } => {
+                Self::OutOfEnergy { debug_trace }
+            }
             TestConfigurationError::BalanceOverflow => Self::BalanceOverflow,
         }
     }
 }
 
 /// Convert [`Energy`] to [`InterpreterEnergy`] by multiplying by `1000`.
-pub(crate) fn to_interpreter_energy(energy: Energy) -> u64 { energy.energy * 1000 }
+pub(crate) fn to_interpreter_energy(energy: Energy) -> u64 {
+    energy.energy * 1000
+}
 
 /// Convert [`InterpreterEnergy`] to [`Energy`] by dividing by `1000`.
 pub(crate) fn from_interpreter_energy(interpreter_energy: &InterpreterEnergy) -> Energy {
@@ -2240,11 +2258,15 @@ pub(crate) fn contract_events_from_logs(logs: v0::Logs) -> Vec<ContractEvent> {
 }
 
 impl From<ExternalNodeNotConfigured> for ExternalNodeError {
-    fn from(_: ExternalNodeNotConfigured) -> Self { Self::NotConfigured }
+    fn from(_: ExternalNodeNotConfigured) -> Self {
+        Self::NotConfigured
+    }
 }
 
 impl From<ExchangeRateError> for ChainBuilderError {
-    fn from(_: ExchangeRateError) -> Self { Self::ExchangeRateError }
+    fn from(_: ExchangeRateError) -> Self {
+        Self::ExchangeRateError
+    }
 }
 
 #[cfg(test)]
@@ -2315,8 +2337,14 @@ mod tests {
         assert_eq!(acc_eq.cmp(&acc_alias_eq), std::cmp::Ordering::Equal);
         assert_eq!(acc_eq.cmp(&acc_other_eq), std::cmp::Ordering::Less);
 
-        assert_eq!(chain.account_balance_available(acc_alias), Some(expected_amount));
-        assert_eq!(chain.account_balance_available(acc_other), Some(expected_amount_other));
+        assert_eq!(
+            chain.account_balance_available(acc_alias),
+            Some(expected_amount)
+        );
+        assert_eq!(
+            chain.account_balance_available(acc_other),
+            Some(expected_amount_other)
+        );
     }
 
     /// Test that building a chain with valid parameters succeeds.
@@ -2396,8 +2424,14 @@ mod io_tests {
             chain.micro_ccd_per_euro(),
             ExchangeRate::new_unchecked(10338559485590134784, 79218205097)
         );
-        assert_eq!(chain.euro_per_energy(), ExchangeRate::new_unchecked(1, 50000));
-        assert_eq!(chain.block_time(), Timestamp::from_timestamp_millis(1687865059500));
+        assert_eq!(
+            chain.euro_per_energy(),
+            ExchangeRate::new_unchecked(1, 50000)
+        );
+        assert_eq!(
+            chain.block_time(),
+            Timestamp::from_timestamp_millis(1687865059500)
+        );
     }
 
     /// Test that the correct error is returned when an unknown query block is
@@ -2407,21 +2441,23 @@ mod io_tests {
     /// appear on testnet.
     #[test]
     fn test_block_time_from_unknown_block() {
-        let err =
-            Chain::builder()
-                .external_node_connection(Endpoint::from_static(
-                    "http://node.testnet.concordium.com:20000",
-                ))
-                .external_query_block(
-                    "4f38c7e63645c59e9bf32f7ca837a029810b21c439f7492c3cebe229a2e3ea07"
-                        .parse()
-                        .unwrap(), // A block from mainnet.
-                )
-                .build()
-                .unwrap_err();
-        assert!(matches!(err, ChainBuilderError::SetupExternalNodeError {
-            error: SetupExternalNodeError::CannotCheckQueryBlockExistence { .. },
-        }));
+        let err = Chain::builder()
+            .external_node_connection(Endpoint::from_static(
+                "http://node.testnet.concordium.com:20000",
+            ))
+            .external_query_block(
+                "4f38c7e63645c59e9bf32f7ca837a029810b21c439f7492c3cebe229a2e3ea07"
+                    .parse()
+                    .unwrap(), // A block from mainnet.
+            )
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ChainBuilderError::SetupExternalNodeError {
+                error: SetupExternalNodeError::CannotCheckQueryBlockExistence { .. },
+            }
+        ));
     }
 
     /// Invoke an external contract and check that it succeeds. Also check that
@@ -2436,11 +2472,15 @@ mod io_tests {
             .unwrap();
 
         // A CIS-2 contract.
-        let external_contr = chain.add_external_contract(ContractAddress::new(5089, 0)).unwrap();
+        let external_contr = chain
+            .add_external_contract(ContractAddress::new(5089, 0))
+            .unwrap();
 
         let external_acc = chain
             .add_external_account(
-                "3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini".parse().unwrap(),
+                "3U4sfVSqGG6XK8g6eho2qRYtnHc4MWJBG1dfxdtPGbfHwFxini"
+                    .parse()
+                    .unwrap(),
             )
             .unwrap();
 
@@ -2449,10 +2489,10 @@ mod io_tests {
                 Some(external_acc.into()),
                 10000.into(),
                 InvokeExternalContractPayload {
-                    amount:       Amount::zero(),
-                    address:      external_contr,
+                    amount: Amount::zero(),
+                    address: external_contr,
                     receive_name: OwnedReceiveName::new_unchecked("cis2_multi.view".into()),
-                    message:      OwnedParameter::empty(),
+                    message: OwnedParameter::empty(),
                 },
                 None,
             )

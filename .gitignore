@@ -30,3 +30,5 @@ Cargo.lock
 # Nix artifacts
 **/*.nix
 **/flake.lock
+
+.idea

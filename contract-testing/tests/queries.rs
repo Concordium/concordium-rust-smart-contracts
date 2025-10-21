@@ -35,17 +35,22 @@ mod query_account_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
 
         // The contract will query the balance of helpers::ACC_1 and assert that the
         // three balances match this input.
-        let input_param = (helpers::ACC_1, initial_balance, Amount::zero(), Amount::zero());
+        let input_param = (
+            helpers::ACC_1,
+            initial_balance,
+            Amount::zero(),
+            Amount::zero(),
+        );
 
         let res_update = chain
             .contract_update(
@@ -54,11 +59,11 @@ mod query_account_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
@@ -72,9 +77,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Queries the balance of the invoker account, which will have have the
@@ -102,10 +108,10 @@ mod query_account_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
@@ -117,7 +123,12 @@ mod query_account_balance {
         // The contract will query the balance of helpers::ACC_1, which is also the
         // invoker, and assert that the three balances match this input.
         let expected_balance = initial_balance - invoker_reserved_amount;
-        let input_param = (helpers::ACC_1, expected_balance, Amount::zero(), Amount::zero());
+        let input_param = (
+            helpers::ACC_1,
+            expected_balance,
+            Amount::zero(),
+            Amount::zero(),
+        );
 
         let res_update = chain
             .contract_update(
@@ -126,11 +137,11 @@ mod query_account_balance {
                 Address::Account(helpers::ACC_1),
                 energy_limit,
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       update_amount,
+                    amount: update_amount,
                 },
             )
             .expect("Updating valid contract should work");
@@ -145,9 +156,10 @@ mod query_account_balance {
             // for the NRG use. Not the reserved amount.
             Some(initial_balance - res_update.transaction_fee - update_amount)
         );
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Makes a transfer to an account, then queries its balance and asserts
@@ -178,18 +190,23 @@ mod query_account_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    amount_to_send, // Make sure the contract has CCD to transfer.
+                    param: OwnedParameter::empty(),
+                    amount: amount_to_send, // Make sure the contract has CCD to transfer.
                 },
             )
             .expect("Initializing valid contract should work");
 
         let amount_to_send = Amount::from_ccd(123);
         let expected_balance = initial_balance + amount_to_send;
-        let input_param =
-            (helpers::ACC_1, amount_to_send, expected_balance, Amount::zero(), Amount::zero());
+        let input_param = (
+            helpers::ACC_1,
+            amount_to_send,
+            expected_balance,
+            Amount::zero(),
+            Amount::zero(),
+        );
 
         let res_update = chain
             .contract_update(
@@ -198,11 +215,11 @@ mod query_account_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(10000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
@@ -221,12 +238,15 @@ mod query_account_balance {
             chain.account_balance_available(helpers::ACC_1),
             Some(initial_balance + amount_to_send)
         );
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Transferred { .. },
-            ContractTraceElement::Resumed { .. },
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Transferred { .. },
+                ContractTraceElement::Resumed { .. },
+                ContractTraceElement::Updated { .. }
+            ]
+        ));
     }
 
     #[test]
@@ -251,17 +271,22 @@ mod query_account_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
 
         // The contract will query the balance of helpers::ACC_1 and assert that the
         // three balances match this input.
-        let input_param = (helpers::ACC_1, initial_balance, Amount::zero(), Amount::zero());
+        let input_param = (
+            helpers::ACC_1,
+            initial_balance,
+            Amount::zero(),
+            Amount::zero(),
+        );
 
         let res_update = chain
             .contract_update(
@@ -270,11 +295,11 @@ mod query_account_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
@@ -288,9 +313,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Queries the balance of a missing account and asserts that it returns
@@ -318,10 +344,10 @@ mod query_account_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
@@ -336,11 +362,11 @@ mod query_account_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
@@ -354,9 +380,10 @@ mod query_account_balance {
                     - res_update.transaction_fee
             )
         );
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }
 
@@ -388,10 +415,10 @@ mod query_contract_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
@@ -402,10 +429,10 @@ mod query_contract_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    init_amount, // Set up another contract with `init_amount` balance
+                    param: OwnedParameter::empty(),
+                    amount: init_amount, // Set up another contract with `init_amount` balance
                 },
             )
             .expect("Initializing valid contract should work");
@@ -420,18 +447,19 @@ mod query_contract_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Test querying the balance of the contract instance itself. This
@@ -460,10 +488,10 @@ mod query_contract_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    init_amount,
+                    param: OwnedParameter::empty(),
+                    amount: init_amount,
                 },
             )
             .expect("Initializing valid contract should work");
@@ -478,18 +506,19 @@ mod query_contract_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       update_amount,
+                    amount: update_amount,
                 },
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 
     /// Test querying the balance after a transfer of CCD.
@@ -520,10 +549,10 @@ mod query_contract_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    init_amount,
+                    param: OwnedParameter::empty(),
+                    amount: init_amount,
                 },
             )
             .expect("Initializing valid contract should work");
@@ -542,21 +571,24 @@ mod query_contract_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       update_amount,
+                    amount: update_amount,
                 },
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Interrupted { .. },
-            ContractTraceElement::Transferred { .. },
-            ContractTraceElement::Resumed { .. },
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [
+                ContractTraceElement::Interrupted { .. },
+                ContractTraceElement::Transferred { .. },
+                ContractTraceElement::Resumed { .. },
+                ContractTraceElement::Updated { .. }
+            ]
+        ));
     }
 
     /// Test querying the balance of a contract that doesn't exist.
@@ -583,10 +615,10 @@ mod query_contract_balance {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
@@ -601,18 +633,19 @@ mod query_contract_balance {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }
 
@@ -642,10 +675,10 @@ mod query_exchange_rates {
                 helpers::ACC_0,
                 Energy::from(10000),
                 InitContractPayload {
-                    mod_ref:   res_deploy.module_reference,
+                    mod_ref: res_deploy.module_reference,
                     init_name: OwnedContractName::new_unchecked("init_contract".into()),
-                    param:     OwnedParameter::empty(),
-                    amount:    Amount::zero(),
+                    param: OwnedParameter::empty(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Initializing valid contract should work");
@@ -660,17 +693,18 @@ mod query_exchange_rates {
                 Address::Account(helpers::ACC_0),
                 Energy::from(100000),
                 UpdateContractPayload {
-                    address:      res_init.contract_address,
+                    address: res_init.contract_address,
                     receive_name: OwnedReceiveName::new_unchecked("contract.query".into()),
-                    message:      OwnedParameter::from_serial(&input_param)
+                    message: OwnedParameter::from_serial(&input_param)
                         .expect("Parameter has valid size"),
-                    amount:       Amount::zero(),
+                    amount: Amount::zero(),
                 },
             )
             .expect("Updating valid contract should work");
 
-        assert!(matches!(res_update.effective_trace_elements_cloned()[..], [
-            ContractTraceElement::Updated { .. }
-        ]));
+        assert!(matches!(
+            res_update.effective_trace_elements_cloned()[..],
+            [ContractTraceElement::Updated { .. }]
+        ));
     }
 }

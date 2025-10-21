@@ -70,9 +70,9 @@ pub struct InitParams {
 #[derive(Serial, Deserial, SchemaType)]
 pub struct MintParams {
     /// Owner of the newly minted tokens.
-    pub owner:              Address,
+    pub owner: Address,
     /// A collection of tokens to mint.
-    pub tokens:             collections::BTreeMap<ContractTokenId, ContractTokenAmount>,
+    pub tokens: collections::BTreeMap<ContractTokenId, ContractTokenAmount>,
     /// Royalty payable to minter (in percentage)
     pub royalty_percentage: u8,
 }
@@ -83,7 +83,7 @@ pub struct MintParams {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct SetImplementorsParams {
     /// The identifier for the standard.
-    pub id:           StandardIdentifierOwned,
+    pub id: StandardIdentifierOwned,
     /// The addresses of the implementors of the standard.
     pub implementors: Vec<ContractAddress>,
 }
@@ -93,7 +93,7 @@ pub struct SetImplementorsParams {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct CheckRoyaltyParams {
     /// The identifier of the token.
-    pub id:         ContractTokenId,
+    pub id: ContractTokenId,
     /// The sale price.
     pub sale_price: u64,
 }
@@ -103,7 +103,7 @@ pub struct CheckRoyaltyResult {
     /// The Address of the payee.
     pub royalty_receiver: Address,
     /// The royalties to pay.
-    pub payment:          u64,
+    pub payment: u64,
 }
 
 /// The state for each address.
@@ -111,7 +111,7 @@ pub struct CheckRoyaltyResult {
 #[concordium(state_parameter = "S")]
 struct AddressState<S = StateApi> {
     /// The amount of tokens owned by this address.
-    balances:  StateMap<ContractTokenId, ContractTokenAmount, S>,
+    balances: StateMap<ContractTokenId, ContractTokenAmount, S>,
     /// The address which are currently enabled as operators for this address.
     operators: StateSet<Address, S>,
 }
@@ -120,7 +120,7 @@ struct AddressState<S = StateApi> {
 #[derive(Debug, Serialize, SchemaType)]
 pub struct TokenDetails {
     /// Who minted this token.
-    pub minter:  Address,
+    pub minter: Address,
     /// The percentage royalty.
     pub royalty: u8,
 }
@@ -128,7 +128,7 @@ pub struct TokenDetails {
 impl AddressState {
     fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
-            balances:  state_builder.new_map(),
+            balances: state_builder.new_map(),
             operators: state_builder.new_set(),
         }
     }
@@ -142,17 +142,17 @@ impl AddressState {
 #[concordium(state_parameter = "S")]
 struct State<S = StateApi> {
     /// The state of addresses.
-    state:         StateMap<Address, AddressState<S>, S>,
+    state: StateMap<Address, AddressState<S>, S>,
     /// All of the token IDs
-    tokens:        StateSet<ContractTokenId, S>,
+    tokens: StateSet<ContractTokenId, S>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors:  StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
     /// Map with details of who minted the token and what the royalty payment
     /// is.
     token_details: StateMap<ContractTokenId, TokenDetails, S>,
     /// Boolean which controls whether royalties are paid.
-    pay_royalty:   bool,
+    pay_royalty: bool,
 }
 
 /// The different errors the contract can produce.
@@ -199,12 +199,16 @@ impl From<LogError> for CustomContractError {
 
 /// Mapping errors related to contract invocations to CustomContractError.
 impl<T> From<CallContractError<T>> for CustomContractError {
-    fn from(_cce: CallContractError<T>) -> Self { Self::InvokeContractError }
+    fn from(_cce: CallContractError<T>) -> Self {
+        Self::InvokeContractError
+    }
 }
 
 /// Mapping CustomContractError to ContractError
 impl From<CustomContractError> for ContractError {
-    fn from(c: CustomContractError) -> Self { Cis2Error::Custom(c) }
+    fn from(c: CustomContractError) -> Self {
+        Cis2Error::Custom(c)
+    }
 }
 
 impl State {
@@ -229,20 +233,27 @@ impl State {
         royalty: u8,
     ) {
         self.tokens.insert(*token_id);
-        let _ = self.token_details.insert(*token_id, TokenDetails {
-            minter: *owner,
-            royalty,
-        });
+        let _ = self.token_details.insert(
+            *token_id,
+            TokenDetails {
+                minter: *owner,
+                royalty,
+            },
+        );
 
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         let mut owner_balance = owner_state.balances.entry(*token_id).or_insert(0.into());
         *owner_balance += amount;
     }
 
     /// Check that the token ID currently exists in this contract.
     #[inline(always)]
-    fn contains_token(&self, token_id: &ContractTokenId) -> bool { self.tokens.contains(token_id) }
+    fn contains_token(&self, token_id: &ContractTokenId) -> bool {
+        self.tokens.contains(token_id)
+    }
 
     /// Get the current balance of a given token id for a given address.
     /// Results in an error if the token id does not exist in the state.
@@ -253,7 +264,10 @@ impl State {
     ) -> ContractResult<ContractTokenAmount> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         let balance = self.state.get(address).map_or(0.into(), |address_state| {
-            address_state.balances.get(token_id).map_or(0.into(), |x| *x)
+            address_state
+                .balances
+                .get(token_id)
+                .map_or(0.into(), |x| *x)
         });
         Ok(balance)
     }
@@ -287,8 +301,10 @@ impl State {
         // balance is interpreted as 0 and the transfer amount must be more than
         // 0 at this point.
         {
-            let mut from_address_state =
-                self.state.entry(*from).occupied_or(ContractError::InsufficientFunds)?;
+            let mut from_address_state = self
+                .state
+                .entry(*from)
+                .occupied_or(ContractError::InsufficientFunds)?;
             let mut from_balance = from_address_state
                 .balances
                 .entry(*token_id)
@@ -303,16 +319,23 @@ impl State {
                 .entry(royalties.royalty_receiver)
                 .occupied_or(CustomContractError::InvalidRoyaltyAddress)?;
 
-            let mut minter_balance =
-                royalties_state.balances.entry(*token_id).or_insert(TokenAmountU64(0));
+            let mut minter_balance = royalties_state
+                .balances
+                .entry(*token_id)
+                .or_insert(TokenAmountU64(0));
 
             *minter_balance += concordium_cis2::TokenAmountU64(royalties.payment);
             amount -= concordium_cis2::TokenAmountU64(royalties.payment);
         }
 
-        let mut to_address_state =
-            self.state.entry(*to).or_insert_with(|| AddressState::empty(state_builder));
-        let mut to_address_balance = to_address_state.balances.entry(*token_id).or_insert(0.into());
+        let mut to_address_state = self
+            .state
+            .entry(*to)
+            .or_insert_with(|| AddressState::empty(state_builder));
+        let mut to_address_balance = to_address_state
+            .balances
+            .entry(*token_id)
+            .or_insert(0.into());
         *to_address_balance += amount;
 
         Ok(())
@@ -327,8 +350,10 @@ impl State {
         operator: &Address,
         state_builder: &mut StateBuilder,
     ) {
-        let mut owner_state =
-            self.state.entry(*owner).or_insert_with(|| AddressState::empty(state_builder));
+        let mut owner_state = self
+            .state
+            .entry(*owner)
+            .or_insert_with(|| AddressState::empty(state_builder));
         owner_state.operators.insert(*operator);
     }
 
@@ -362,8 +387,10 @@ impl State {
         &mut self,
         params: CheckRoyaltyParams,
     ) -> Result<CheckRoyaltyResult, ContractError> {
-        let token_details =
-            self.token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
+        let token_details = self
+            .token_details
+            .get(&params.id)
+            .ok_or(ContractError::InvalidTokenId)?;
 
         let minter = token_details.minter;
         let royalty_to_pay: u64 = params
@@ -374,7 +401,7 @@ impl State {
 
         Ok(CheckRoyaltyResult {
             royalty_receiver: minter,
-            payment:          royalty_to_pay,
+            payment: royalty_to_pay,
         })
     }
 }
@@ -404,20 +431,24 @@ fn contract_init(ctx: &InitContext, state_builder: &mut StateBuilder) -> InitRes
 
 #[derive(Serialize, SchemaType, Debug, PartialEq, Eq)]
 pub struct ViewAddressState {
-    pub balances:  Vec<(ContractTokenId, ContractTokenAmount)>,
+    pub balances: Vec<(ContractTokenId, ContractTokenAmount)>,
     pub operators: Vec<Address>,
 }
 
 #[derive(Serialize, SchemaType)]
 pub struct ViewState {
-    pub state:  Vec<(Address, ViewAddressState)>,
+    pub state: Vec<(Address, ViewAddressState)>,
     pub tokens: Vec<ContractTokenId>,
 }
 
 /// View function for testing. This reports on the entire state of the contract
 /// for testing purposes. In a realistic example there `balance_of` and similar
 /// functions with a smaller response.
-#[receive(contract = "cis2_multi_royalties", name = "view", return_value = "ViewState")]
+#[receive(
+    contract = "cis2_multi_royalties",
+    name = "view",
+    return_value = "ViewState"
+)]
 fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
@@ -432,10 +463,13 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
             operators.push(*o);
         }
 
-        inner_state.push((*k, ViewAddressState {
-            balances,
-            operators,
-        }));
+        inner_state.push((
+            *k,
+            ViewAddressState {
+                balances,
+                operators,
+            },
+        ));
     }
     let mut tokens = Vec::new();
     for v in state.tokens.iter() {
@@ -485,12 +519,21 @@ fn contract_mint(
 
     // Parse the parameter.
     let params: MintParams = ctx.parameter_cursor().get()?;
-    ensure!(params.royalty_percentage <= 100, CustomContractError::InvalidRoyaltyValue.into());
+    ensure!(
+        params.royalty_percentage <= 100,
+        CustomContractError::InvalidRoyaltyValue.into()
+    );
 
     let (state, builder) = host.state_and_builder();
     for (token_id, token_amount) in params.tokens {
         // Mint the token in the state.
-        state.mint(&token_id, token_amount, &params.owner, builder, params.royalty_percentage);
+        state.mint(
+            &token_id,
+            token_amount,
+            &params.owner,
+            builder,
+            params.royalty_percentage,
+        );
 
         // Event for minted token.
         logger.log(&Cis2Event::Mint(MintEvent {
@@ -500,13 +543,15 @@ fn contract_mint(
         }))?;
 
         // Metadata URL for the token.
-        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(TokenMetadataEvent {
-            token_id,
-            metadata_url: MetadataUrl {
-                url:  build_token_metadata_url(&token_id),
-                hash: None,
+        logger.log(&Cis2Event::TokenMetadata::<_, ContractTokenAmount>(
+            TokenMetadataEvent {
+                token_id,
+                metadata_url: MetadataUrl {
+                    url: build_token_metadata_url(&token_id),
+                    hash: None,
+                },
             },
-        }))?;
+        ))?;
     }
     Ok(())
 }
@@ -554,13 +599,16 @@ fn contract_transfer(
     {
         let (state, builder) = host.state_and_builder();
         // Authenticate the sender for this transfer
-        ensure!(from == sender || state.is_operator(&sender, &from), ContractError::Unauthorized);
+        ensure!(
+            from == sender || state.is_operator(&sender, &from),
+            ContractError::Unauthorized
+        );
         let to_address = to.address();
         let mut royalties: Option<CheckRoyaltyResult> = None;
 
         if state.pay_royalty {
             let royalty_parameters = CheckRoyaltyParams {
-                id:         token_id,
+                id: token_id,
                 sale_price: amount.into(),
             };
 
@@ -644,13 +692,15 @@ fn contract_update_operator(
         }
 
         // Log the appropriate event
-        logger.log(&Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
-            UpdateOperatorEvent {
-                owner:    sender,
-                operator: param.operator,
-                update:   param.update,
-            },
-        ))?;
+        logger.log(
+            &Cis2Event::<ContractTokenId, ContractTokenAmount>::UpdateOperator(
+                UpdateOperatorEvent {
+                    owner: sender,
+                    operator: param.operator,
+                    update: param.update,
+                },
+            ),
+        )?;
     }
     Ok(())
 }
@@ -747,10 +797,13 @@ fn contract_token_metadata(
     let mut response = Vec::with_capacity(params.queries.len());
     for token_id in params.queries {
         // Check the token exists.
-        ensure!(host.state().contains_token(&token_id), ContractError::InvalidTokenId);
+        ensure!(
+            host.state().contains_token(&token_id),
+            ContractError::InvalidTokenId
+        );
 
         let metadata_url = MetadataUrl {
-            url:  build_token_metadata_url(&token_id),
+            url: build_token_metadata_url(&token_id),
             hash: None,
         };
         response.push(metadata_url);
@@ -779,7 +832,11 @@ fn contract_token_metadata(
 /// - It fails to parse the parameter.
 /// - Contract name part of the parameter is invalid.
 /// - Calling back `transfer` to sender contract rejects.
-#[receive(contract = "cis2_multi_royalties", name = "onReceivingCIS2", error = "ContractError")]
+#[receive(
+    contract = "cis2_multi_royalties",
+    name = "onReceivingCIS2",
+    error = "ContractError"
+)]
 fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<()> {
     // Ensure the sender is a contract.
     let sender = if let Address::Contract(contract) = ctx.sender() {
@@ -795,10 +852,10 @@ fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> Contra
     // Build the transfer from this contract to the contract owner.
     let transfer = Transfer {
         token_id: params.token_id,
-        amount:   params.amount,
-        from:     Address::Contract(ctx.self_address()),
-        to:       Receiver::from_account(ctx.owner()),
-        data:     AdditionalData::empty(),
+        amount: params.amount,
+        from: Address::Contract(ctx.self_address()),
+        to: Receiver::from_account(ctx.owner()),
+        data: AdditionalData::empty(),
     };
 
     let parameter = TransferParams::from(vec![transfer]);
@@ -860,11 +917,15 @@ fn contract_supports(
 )]
 fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
-    ensure!(ctx.sender().matches_account(&ctx.owner()), ContractError::Unauthorized);
+    ensure!(
+        ctx.sender().matches_account(&ctx.owner()),
+        ContractError::Unauthorized
+    );
     // Parse the parameter.
     let params: SetImplementorsParams = ctx.parameter_cursor().get()?;
     // Update the implementors in the state
-    host.state_mut().set_implementors(params.id, params.implementors);
+    host.state_mut()
+        .set_implementors(params.id, params.implementors);
     Ok(())
 }
 
@@ -885,14 +946,29 @@ fn contract_check_royalty(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
 ) -> ContractResult<CheckRoyaltyResult> {
-    ensure!(host.state().pay_royalty, CustomContractError::ContractDoesNotPayRoyalties.into());
+    ensure!(
+        host.state().pay_royalty,
+        CustomContractError::ContractDoesNotPayRoyalties.into()
+    );
 
     let params: CheckRoyaltyParams = ctx.parameter_cursor().get()?;
-    ensure!(params.sale_price > 0, CustomContractError::NoRoyaltyPayable.into());
-    ensure!(host.state().contains_token(&params.id), ContractError::InvalidTokenId);
-    let token_details =
-        host.state().token_details.get(&params.id).ok_or(ContractError::InvalidTokenId)?;
-    ensure!(token_details.royalty > 0, CustomContractError::NoRoyaltyPayable.into());
+    ensure!(
+        params.sale_price > 0,
+        CustomContractError::NoRoyaltyPayable.into()
+    );
+    ensure!(
+        host.state().contains_token(&params.id),
+        ContractError::InvalidTokenId
+    );
+    let token_details = host
+        .state()
+        .token_details
+        .get(&params.id)
+        .ok_or(ContractError::InvalidTokenId)?;
+    ensure!(
+        token_details.royalty > 0,
+        CustomContractError::NoRoyaltyPayable.into()
+    );
 
     host.state_mut().calculate_royalty_payments(params)
 }

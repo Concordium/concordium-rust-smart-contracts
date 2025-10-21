@@ -25,18 +25,18 @@ pub struct ElectionConfig {
     /// The description of the election.
     pub description: String,
     /// All the voting options.
-    pub options:     Vec<String>,
+    pub options: Vec<String>,
     /// The last timestamp at which an account can vote.
     /// An election is open from the point in time that the smart contract is
     /// initialized until the deadline.
-    pub deadline:    Timestamp,
+    pub deadline: Timestamp,
 }
 
 /// The smart contract state.
 #[derive(Serialize, SchemaType)]
 struct State {
     /// The configuration of the election.
-    config:  ElectionConfig,
+    config: ElectionConfig,
     /// A map from voters to options, specifying who has voted for what.
     ballots: HashMap<AccountAddress, String>,
     /// A map from vote options to a vote count, specifying how many votes each
@@ -52,7 +52,7 @@ struct State {
     ///
     /// Thus, we favor duplicating the data in another hashmap, where the vote
     /// count can be retrieved and updated in constant time.
-    tally:   HashMap<String, u32>,
+    tally: HashMap<String, u32>,
 }
 
 /// The different errors that the `vote` function can produce.
@@ -89,7 +89,7 @@ impl From<LogError> for VotingError {
 #[derive(Debug, Serialize, SchemaType, PartialEq, Eq)]
 pub struct VoteEvent {
     /// The account that casts the vote.
-    pub voter:  AccountAddress,
+    pub voter: AccountAddress,
     /// The voting option that the account is voting for.
     pub option: String,
 }
@@ -158,7 +158,10 @@ fn vote(
     let vote_option: String = ctx.parameter_cursor().get()?;
 
     // Check that the vote option is valid (exists).
-    ensure!(host.state().config.options.contains(&vote_option), VotingError::InvalidVote);
+    ensure!(
+        host.state().config.options.contains(&vote_option),
+        VotingError::InvalidVote
+    );
 
     let state_mut = host.state_mut();
 
@@ -183,7 +186,7 @@ fn vote(
 
     // Log event for the vote.
     logger.log(&VoteEvent {
-        voter:  acc,
+        voter: acc,
         option: vote_option,
     })?;
 
@@ -206,7 +209,12 @@ fn get_votes(ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<u32> {
 
     // Get the number of votes for this option from the tally map.
     // See doc comment on the tally field for why it is done this way.
-    Ok(host.state().tally.get(&vote_option).copied().unwrap_or_default())
+    Ok(host
+        .state()
+        .tally
+        .get(&vote_option)
+        .copied()
+        .unwrap_or_default())
 }
 
 /// Get the election information.

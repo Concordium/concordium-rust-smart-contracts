@@ -25,11 +25,10 @@ fn test_invoke_1() {
         Address::Account(helpers::ACC_0),
         Energy::from(10000),
         UpdateContractPayload {
-            address:      contract_address,
-            amount:       Amount::from_micro_ccd(123),
+            address: contract_address,
+            amount: Amount::from_micro_ccd(123),
             receive_name: OwnedReceiveName::new_unchecked("transfer.forward".into()),
-            message:      OwnedParameter::from_serial(&parameter)
-                .expect("Parameter has valid size."),
+            message: OwnedParameter::from_serial(&parameter).expect("Parameter has valid size."),
         },
     );
     assert_success(
@@ -75,11 +74,10 @@ fn test_invoke_2() {
         Address::Account(helpers::ACC_0),
         Energy::from(10000),
         UpdateContractPayload {
-            address:      self_address,
+            address: self_address,
             receive_name: OwnedReceiveName::new_unchecked("transfer.forward".into()),
-            message:      OwnedParameter::from_serial(&parameter)
-                .expect("Parameter has valid size."),
-            amount:       Amount::from_micro_ccd(123),
+            message: OwnedParameter::from_serial(&parameter).expect("Parameter has valid size."),
+            amount: Amount::from_micro_ccd(123),
         },
     );
     assert_success(
@@ -113,14 +111,18 @@ fn deploy_and_init(
             helpers::ACC_0,
             Energy::from(10000),
             InitContractPayload {
-                mod_ref:   res_deploy.module_reference,
+                mod_ref: res_deploy.module_reference,
                 init_name: OwnedContractName::new_unchecked(contract_name.into()),
-                param:     OwnedParameter::empty(),
-                amount:    Amount::zero(),
+                param: OwnedParameter::empty(),
+                amount: Amount::zero(),
             },
         )
         .expect("Initializing valid contract should work");
-    (chain, res_init.contract_address, res_deploy.module_reference)
+    (
+        chain,
+        res_init.contract_address,
+        res_deploy.module_reference,
+    )
 }
 
 /// Helper for asserting the success.
@@ -131,7 +133,10 @@ fn assert_success(
     error_message: &str,
 ) {
     if let Ok(success) = result {
-        assert_eq!(success.return_value, to_bytes(&(expected_before, expected_after)))
+        assert_eq!(
+            success.return_value,
+            to_bytes(&(expected_before, expected_after))
+        )
     } else {
         panic!("Test failed ( {} )", error_message)
     }

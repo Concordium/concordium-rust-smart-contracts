@@ -1,0 +1,53 @@
+name: Release Concordium std-derive
+
+on:
+
+  workflow_dispatch: # allows manual trigger
+
+  push:
+    tags:
+      - releases/concordium-std-derive/*
+
+env:
+  TAG: ${{ github.ref_name }}
+
+jobs:
+
+  ## Concordium std-derive Release Build
+  concordium-std-derive-release:
+    name: concordium-std-derive:release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Set the default working directory to concordium-std-derive
+        working-directory: concordium-std-derive
+    environment: release
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Validate that the tag version matches the version in Cargo.toml
+      - name: validate tag version has correct matching tag
+        run: |
+          echo "Validating tag version $TAG matches expected version from Cargo.toml"
+          EXPECTED_VERSION_FROM_CARGO=$(yq .package.version ./Cargo.toml)
+          TAG_VERSION_NUMBER=${TAG##releases/concordium-std-derive/}
+          
+          # Check if the tag version number matches the expected version from Cargo.toml
+          if [ "$TAG_VERSION_NUMBER" != "$EXPECTED_VERSION_FROM_CARGO" ]; then
+            echo "version tagged: $TAG_VERSION_NUMBER  does not match cargo version: $EXPECTED_VERSION_FROM_CARGO. Exiting."
+            exit 1
+          else
+            echo "Tag version number matches expected version from Cargo.toml. Proceeding with release."
+          fi
+
+      # Publish to crates.io
+      - name: Publish to crates.io
+        env:
+          CARGO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          echo "Publishing Concordium std-derive to crates.io for version: $TAG_VERSION"
+          cargo publish --token $CARGO_TOKEN --locked

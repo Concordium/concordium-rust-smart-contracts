@@ -28,7 +28,11 @@ pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {
 
 #[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
 use getrandom::register_custom_getrandom;
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 /// A custom function for generating random numbers.
 /// There is no Wasm primitive to sample random numbers and this function
 /// redirects calls to the `get_random` primitive (host function), which is
@@ -41,7 +45,11 @@ fn get_random(dest: &mut [u8]) -> Result<(), getrandom::Error> {
     Ok(())
 }
 
-#[cfg(all(feature = "wasm-test", feature = "concordium-quickcheck", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "wasm-test",
+    feature = "concordium-quickcheck",
+    target_arch = "wasm32"
+))]
 // When compiling to Wasm, we register our own custom random number generation
 // function, so all the calls, that depend on `getrandom` (like
 // `from_entropy`) will call our function instead.
@@ -65,7 +73,9 @@ const QUICKCHECK_MAX_WITH_DISCARDED_TESTS: u64 = 100_000_000;
 ///
 /// The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    let mut qc = QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS);
+    let mut qc = QuickCheck::new()
+        .tests(num_tests)
+        .max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS);
     let res = qc.quicktest(f);
     match res {
         Ok(n_tests_passed) => {
@@ -88,5 +98,8 @@ pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
 /// A wrapper for QuickCheck test runner for non-wasm targets.
 // The `num_tests` parameter specifies how many random tests to run.
 pub fn concordium_qc<A: Testable>(num_tests: u64, f: A) {
-    QuickCheck::new().tests(num_tests).max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS).quickcheck(f)
+    QuickCheck::new()
+        .tests(num_tests)
+        .max_tests(QUICKCHECK_MAX_WITH_DISCARDED_TESTS)
+        .quickcheck(f)
 }

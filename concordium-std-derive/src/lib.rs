@@ -72,7 +72,12 @@ fn unwrap_or_report(res: syn::Result<TokenStream>) -> TokenStream {
 fn acc_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let address = match AccountAddress::from_str(&str) {
         Ok(addr) => tokenize_slice(&addr.0),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid account address: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid account address: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::AccountAddress(#address)).into())
@@ -81,7 +86,12 @@ fn acc_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
 fn pubkey_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let public_key = match PublicKeyEd25519::from_str(&str) {
         Ok(pk) => tokenize_slice(&pk.0),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 public key: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid Ed25519 public key: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::PublicKeyEd25519(#public_key)).into())
@@ -90,7 +100,12 @@ fn pubkey_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
 fn pubkey_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let public_key = match PublicKeyEcdsaSecp256k1::from_str(&str) {
         Ok(pk) => tokenize_slice(&pk.0),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA public key: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid ECDSA public key: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::PublicKeyEcdsaSecp256k1(#public_key)).into())
@@ -99,7 +114,12 @@ fn pubkey_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
 fn signature_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let signature = match SignatureEd25519::from_str(&str) {
         Ok(sig) => tokenize_slice(&sig.0),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid Ed25519 signature: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid Ed25519 signature: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::SignatureEd25519(#signature)).into())
@@ -108,7 +128,12 @@ fn signature_ed25519_worker(str: String, span: Span) -> syn::Result<TokenStream>
 fn signature_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let signature = match SignatureEcdsaSecp256k1::from_str(&str) {
         Ok(sig) => tokenize_slice(&sig.0),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid ECDSA signature: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid ECDSA signature: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::SignatureEcdsaSecp256k1(#signature)).into())
@@ -117,7 +142,12 @@ fn signature_ecdsa_worker(str: String, span: Span) -> syn::Result<TokenStream> {
 fn contract_address_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let (index, subindex) = match ContractAddress::from_str(&str) {
         Ok(con) => (con.index, con.subindex),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid contract address: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid contract address: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::ContractAddress::new(#index, #subindex)).into())
@@ -126,7 +156,12 @@ fn contract_address_worker(str: String, span: Span) -> syn::Result<TokenStream> 
 fn module_ref_worker(str: String, span: Span) -> syn::Result<TokenStream> {
     let module_ref = match ModuleReference::from_str(&str) {
         Ok(mod_ref) => tokenize_slice(&mod_ref.bytes),
-        Err(e) => return Err(syn::Error::new(span, format!("Invalid module reference: {}", e))),
+        Err(e) => {
+            return Err(syn::Error::new(
+                span,
+                format!("Invalid module reference: {}", e),
+            ))
+        }
     };
 
     Ok(quote!(concordium_std::ModuleReference::new(#module_ref)).into())
