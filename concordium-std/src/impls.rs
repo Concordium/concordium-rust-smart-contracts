@@ -932,7 +932,7 @@ where
 {
     /// Lookup the value with the given key. Return [None] if there is no value
     /// with the given key.
-    pub fn get(&self, key: &K) -> Option<StateRef<V>> {
+    pub fn get(&self, key: &K) -> Option<StateRef<'_, V>> {
         let k = self.key_with_map_prefix(key);
         self.state_api.lookup_entry(&k).map(|mut entry| {
             // Unwrapping is safe when using only the high-level API.
@@ -942,7 +942,7 @@ where
 
     /// Lookup a mutable reference to the value with the given key. Return
     /// [None] if there is no value with the given key.
-    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, S>> {
+    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<'_, V, S>> {
         let k = self.key_with_map_prefix(key);
         let entry = self.state_api.lookup_entry(&k)?;
         Some(StateRefMut::new(entry, self.state_api.clone()))
@@ -1398,7 +1398,7 @@ impl<T, S: HasStateApi> StateSet<T, S> {
     /// Get an iterator over the elements in the `StateSet`. The iterator
     /// returns elements in increasing order, where elements are ordered
     /// lexicographically via their serializations.
-    pub fn iter(&self) -> StateSetIter<T, S> {
+    pub fn iter(&self) -> StateSetIter<'_, T, S> {
         match self.state_api.iterator(&self.prefix) {
             Ok(state_iter) => StateSetIter {
                 state_iter: Some(state_iter),

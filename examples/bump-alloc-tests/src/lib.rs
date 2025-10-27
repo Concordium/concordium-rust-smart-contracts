@@ -153,7 +153,7 @@ fn appender(text: &mut String, n: u32, on_even: &str, on_odd: &str) {
     if n == 0 {
         return;
     }
-    let is_even = n % 2 == 0;
+    let is_even = n.is_multiple_of(2);
     if is_even {
         text.push_str(on_even);
     } else {

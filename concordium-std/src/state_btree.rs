@@ -168,7 +168,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     }
 
     /// Get a reference to the value corresponding to the key.
-    pub fn get(&self, key: &K) -> Option<StateRef<V>>
+    pub fn get(&self, key: &K) -> Option<StateRef<'_, V>>
     where
         K: Serialize,
         V: Serial + DeserialWithState<StateApi>,
@@ -183,7 +183,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     }
 
     /// Get a mutable reference to the value corresponding to the key.
-    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<V, StateApi>>
+    pub fn get_mut(&mut self, key: &K) -> Option<StateRefMut<'_, V, StateApi>>
     where
         K: Serialize,
         V: Serial + DeserialWithState<StateApi>,
@@ -209,7 +209,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns the smallest key in the map that is strictly larger than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
-    pub fn higher(&self, key: &K) -> Option<StateRef<K>>
+    pub fn higher(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -219,7 +219,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns the smallest key in the map that is equal or larger than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
-    pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
+    pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -229,7 +229,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns the largest key in the map that is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
-    pub fn lower(&self, key: &K) -> Option<StateRef<K>>
+    pub fn lower(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -239,7 +239,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns the largest key in the map that is equal or smaller than the
     /// provided key. `None` meaning no such key is present in the map.
     #[inline(always)]
-    pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
+    pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -249,7 +249,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns a reference to the first key in the map, if any. This key is
     /// always the minimum of all keys in the map.
     #[inline(always)]
-    pub fn first_key(&self) -> Option<StateRef<K>>
+    pub fn first_key(&self) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -259,7 +259,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Returns a reference to the last key in the map, if any. This key is
     /// always the maximum of all keys in the map.
     #[inline(always)]
-    pub fn last_key(&self) -> Option<StateRef<K>>
+    pub fn last_key(&self) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -281,7 +281,7 @@ impl<const M: usize, K, V> StateBTreeMap<K, V, M> {
     /// Create an iterator over the entries of [`StateBTreeMap`].
     /// Ordered by `K` ascending.
     #[inline(always)]
-    pub fn iter(&self) -> StateBTreeMapIter<K, V, M> {
+    pub fn iter(&self) -> StateBTreeMapIter<'_, '_, K, V, M> {
         StateBTreeMapIter {
             key_iter: self.key_order.iter(),
             map: &self.key_value,
@@ -499,7 +499,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Get an iterator over the elements in the `StateBTreeSet`. The iterator
     /// returns elements in increasing order.
-    pub fn iter(&self) -> StateBTreeSetIter<K, M> {
+    pub fn iter(&self) -> StateBTreeSetIter<'_, '_, K, M> {
         StateBTreeSetIter {
             length: self.len.try_into().unwrap_abort(),
             next_node: self.root,
@@ -522,7 +522,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns the smallest key in the set that is strictly larger than the
     /// provided key. `None` meaning no such key is present in the set.
-    pub fn higher(&self, key: &K) -> Option<StateRef<K>>
+    pub fn higher(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -559,7 +559,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns the smallest key in the set that is equal or larger than the
     /// provided key. `None` meaning no such key is present in the set.
-    pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<K>>
+    pub fn eq_or_higher(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -596,7 +596,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns the largest key in the set that is strictly smaller than the
     /// provided key. `None` meaning no such key is present in the set.
-    pub fn lower(&self, key: &K) -> Option<StateRef<K>>
+    pub fn lower(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -628,7 +628,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns the largest key in the set that is equal or smaller than the
     /// provided key. `None` meaning no such key is present in the set.
-    pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<K>>
+    pub fn eq_or_lower(&self, key: &K) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -664,7 +664,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns a reference to the first key in the set, if any. This key is
     /// always the minimum of all keys in the set.
-    pub fn first(&self) -> Option<StateRef<K>>
+    pub fn first(&self) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
@@ -679,7 +679,7 @@ impl<const M: usize, K> StateBTreeSet<K, M> {
 
     /// Returns a reference to the last key in the set, if any. This key is
     /// always the maximum of all keys in the set.
-    pub fn last(&self) -> Option<StateRef<K>>
+    pub fn last(&self) -> Option<StateRef<'_, K>>
     where
         K: Serialize + Ord,
     {
