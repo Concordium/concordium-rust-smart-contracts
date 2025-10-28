@@ -153,6 +153,7 @@ fn appender(text: &mut String, n: u32, on_even: &str, on_odd: &str) {
     if n == 0 {
         return;
     }
+    #[allow(clippy::manual_is_multiple_of)]
     let is_even = n % 2 == 0;
     if is_even {
         text.push_str(on_even);

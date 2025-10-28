@@ -420,7 +420,7 @@ impl EntrypointInvocationHandler<'_, '_> {
 
                     let update_event = ContractTraceElement::Updated {
                         data: InstanceUpdatedEvent {
-                            contract_version: WasmVersion::V1,
+                            contract_version: WasmVersion::V1.into(),
                             address: invocation_data.address,
                             instigator: invocation_data.sender,
                             amount: invocation_data.amount,
