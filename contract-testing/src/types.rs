@@ -1208,6 +1208,9 @@ pub enum ExternalNodeError {
     /// The query timed out.
     #[error("The query timed out.")]
     QueryTimeout,
+    /// The node provided an unsupported response
+    #[error("The node provided an unsupported response")]
+    UnsupportedResponse,
 }
 
 /// The error returned when an external node has not been configured prior to

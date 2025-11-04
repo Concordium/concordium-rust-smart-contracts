@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Extended the `ExternalNodeError` with a variant to handle unsupported responses.
 - Pinned the dependency `base64ct` to version `1.6.0`, since otherwise rust
   version `1.73` would refuse to build.
 

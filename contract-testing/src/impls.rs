@@ -1699,8 +1699,12 @@ impl Chain {
                 .await?
                 .response;
             let exchange_rates = ExchangeRates {
-                euro_per_energy: chain_parameters.euro_per_energy.unwrap(),
-                micro_ccd_per_euro: chain_parameters.micro_ccd_per_euro.unwrap(),
+                euro_per_energy: chain_parameters
+                    .euro_per_energy
+                    .ok_or(ExternalNodeError::UnsupportedResponse)?,
+                micro_ccd_per_euro: chain_parameters
+                    .micro_ccd_per_euro
+                    .ok_or(ExternalNodeError::UnsupportedResponse)?,
             };
             Ok(exchange_rates)
         })
