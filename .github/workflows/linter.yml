@@ -500,7 +500,7 @@ jobs:
   test-examples:
     name: Test examples
     runs-on: ubuntu-latest
-    #needs: [rustfmt, clippy-schema]
+    needs: [rustfmt, clippy-schema]
     strategy:
       matrix:
         crates:
