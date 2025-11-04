@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Removed the native test `StateTrie`
+
 ## concordium-std 10.1.0 (2024-04-04)
 
 - Add support for querying the module reference and contract name of an instance,

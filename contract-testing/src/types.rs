@@ -1,4 +1,5 @@
 use concordium_rust_sdk as sdk;
+use concordium_rust_sdk::v2::Upward;
 use concordium_rust_sdk::{
     base::{
         base::{AccountAddressEq, Energy},
@@ -466,7 +467,7 @@ pub struct ContractInvokeSuccess {
 pub struct ContractInvokeExternalSuccess {
     /// Host events that occurred. This includes interrupts, resumes, and
     /// upgrades.
-    pub trace_elements: Vec<ContractTraceElement>,
+    pub trace_elements: Vec<Upward<ContractTraceElement>>,
     /// The energy used.
     pub energy_used: Energy,
     /// The returned value.
@@ -1071,7 +1072,7 @@ pub enum ContractInvokeExternalError {
     )]
     Failure {
         /// The reason why the invoke failed.
-        reason: sdk::types::RejectReason,
+        reason: Upward<sdk::types::RejectReason>,
         /// The energy used before failure.
         energy_used: Energy,
         /// The value returned.
@@ -1207,6 +1208,9 @@ pub enum ExternalNodeError {
     /// The query timed out.
     #[error("The query timed out.")]
     QueryTimeout,
+    /// The node provided an unsupported response
+    #[error("The node provided an unsupported response")]
+    UnsupportedResponse,
 }
 
 /// The error returned when an external node has not been configured prior to

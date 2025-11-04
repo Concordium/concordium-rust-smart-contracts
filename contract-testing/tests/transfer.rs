@@ -115,7 +115,7 @@ fn test_transfer() {
                     address: contract_address,
                     amount: Amount::zero(),
                     receive_name: OwnedReceiveName::new_unchecked("transfer.send".into()),
-                    contract_version: WasmVersion::V1,
+                    contract_version: WasmVersion::V1.into(),
                     instigator: Address::Account(helpers::ACC_0),
                     message: parameter,
                     events: Vec::new(),

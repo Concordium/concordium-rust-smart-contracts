@@ -1748,7 +1748,7 @@ impl StandardIdentifierOwned {
     }
 
     /// Convert to standard identifier.
-    pub fn as_standard_identifier(&self) -> StandardIdentifier {
+    pub fn as_standard_identifier(&self) -> StandardIdentifier<'_> {
         StandardIdentifier::new_unchecked(&self.id)
     }
 }

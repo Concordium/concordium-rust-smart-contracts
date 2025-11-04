@@ -13,7 +13,7 @@ use concordium_std::*;
 
 type State = u64;
 
-#[derive(Serial, Deserial, PartialEq)]
+#[derive(SchemaType, Serial, Deserial, PartialEq)]
 pub enum ReentryOccurance {
     NoReentryAttack,
     ReentryAttack,

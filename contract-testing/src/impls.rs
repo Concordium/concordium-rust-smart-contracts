@@ -1694,20 +1694,19 @@ impl Chain {
 
         // Get the values from the external node.
         connection.with_client(None, |block_identifier, mut client| async move {
-            let (euro_per_energy, micro_ccd_per_euro) = match client
+            let chain_parameters = client
                 .get_block_chain_parameters(block_identifier)
                 .await?
-                .response
-            {
-                sdk::v2::ChainParameters::V0(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V1(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V2(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
-                sdk::v2::ChainParameters::V3(p) => (p.euro_per_energy, p.micro_ccd_per_euro),
+                .response;
+            let exchange_rates = ExchangeRates {
+                euro_per_energy: chain_parameters
+                    .euro_per_energy
+                    .ok_or(ExternalNodeError::UnsupportedResponse)?,
+                micro_ccd_per_euro: chain_parameters
+                    .micro_ccd_per_euro
+                    .ok_or(ExternalNodeError::UnsupportedResponse)?,
             };
-            Ok(ExchangeRates {
-                euro_per_energy,
-                micro_ccd_per_euro,
-            })
+            Ok(exchange_rates)
         })
     }
 

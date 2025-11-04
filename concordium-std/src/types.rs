@@ -23,21 +23,6 @@ use core::{fmt, str::FromStr};
 /// New maps can be constructed using the
 /// [`new_map`][StateBuilder::new_map] method on the [`StateBuilder`].
 ///
-///
-/// ```
-/// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
-/// /// In an init method:
-/// let mut map1 = state_builder.new_map();
-/// # map1.insert(0u8, 1u8); // Specifies type of map.
-///
-/// # let mut host = TestHost::new((), state_builder);
-/// /// In a receive method:
-/// let mut map2 = host.state_builder().new_map();
-/// # map2.insert(0u16, 1u16);
-/// ```
-///
 /// ## Type parameters
 ///
 /// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
@@ -58,22 +43,6 @@ use core::{fmt, str::FromStr};
 ///
 /// However values may contain references to the low-level state, in particular
 /// maps may be nested.
-///
-/// ### Low-level state `S`
-///
-/// The type parameter `S` is extra compared to usual Rust collections. As
-/// mentioned above it specifies the [low-level state
-/// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one ([`StateApi`]), which is the
-/// implementation supported by external host functions provided by the chain,
-/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
-/// is only useful for testing with the deprecated
-/// [`test_infrastructure`](crate::test_infrastructure) module.
-///
-/// In user code this type parameter should generally be treated as boilerplate,
-/// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
-/// `StateApi`, unless you intend to use the deprecated testing library.
 ///
 /// #### Example
 /// ```rust
@@ -192,20 +161,6 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// New sets can be constructed using the
 /// [`new_set`][StateBuilder::new_set] method on the [`StateBuilder`].
 ///
-/// ```
-/// # use concordium_std::*;
-/// # use concordium_std::test_infrastructure::*;
-/// # let mut state_builder = TestStateBuilder::new();
-/// /// In an init method:
-/// let mut set1 = state_builder.new_set();
-/// # set1.insert(0u8); // Specifies type of set.
-///
-/// # let mut host = TestHost::new((), state_builder);
-/// /// In a receive method:
-/// let mut set2 = host.state_builder().new_set();
-/// # set2.insert(0u16);
-/// ```
-///
 /// ## Type parameters
 ///
 /// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
@@ -219,22 +174,6 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// [`Serialize`](crate::Serialize) **sets cannot be nested**. If this is really
 /// required then a custom solution should be devised using the operations on
 /// `S` (see [HasStateApi](crate::HasStateApi)).
-///
-/// ### Low-level state `S`
-///
-/// The type parameter `S` is extra compared to usual Rust collections. As
-/// mentioned above it specifies the [low-level state
-/// implementation](crate::HasStateApi). This library provides two such
-/// implementations. The "external" one ([`StateApi`]), which is the
-/// implementation supported by external host functions provided by the chain,
-/// and a [test](crate::test_infrastructure::TestStateApi) one. The latter one
-/// is only useful for testing with the deprecated
-/// [`test_infrastructure`](crate::test_infrastructure) module.
-///
-/// In user code this type parameter should generally be treated as boilerplate,
-/// and contract entrypoints should always be stated in terms of a generic type
-/// `S` that implements [HasStateApi](crate::HasStateApi) and defaults to
-/// `StateApi`, unless you intend to use the deprecated testing library.
 ///
 /// #### Example
 /// ```rust

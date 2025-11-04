@@ -73,7 +73,7 @@ type InitialInvokeResponse = Result<
     InvokeResponse,
 >;
 
-impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
+impl EntrypointInvocationHandler<'_, '_> {
     /// Used for handling the *initial* part of invoking an entrypoint.
     ///
     /// **Preconditions:**
@@ -420,7 +420,7 @@ impl<'a, 'b> EntrypointInvocationHandler<'a, 'b> {
 
                     let update_event = ContractTraceElement::Updated {
                         data: InstanceUpdatedEvent {
-                            contract_version: WasmVersion::V1,
+                            contract_version: WasmVersion::V1.into(),
                             address: invocation_data.address,
                             instigator: invocation_data.sender,
                             amount: invocation_data.amount,
