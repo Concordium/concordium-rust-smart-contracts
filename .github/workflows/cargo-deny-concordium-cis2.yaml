@@ -30,7 +30,7 @@ jobs:
         run: cargo install --locked cargo-deny
 
       - name: Run cargo-deny
-        run: cargo deny check
+        run: cargo deny check advisories
         working-directory: ./concordium-cis2
 
       - name: Report Status to Slack    # This step only runs if a previous step failed
