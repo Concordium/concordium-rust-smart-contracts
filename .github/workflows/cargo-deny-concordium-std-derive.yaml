@@ -14,7 +14,7 @@ on:
 
 jobs:
   cargo-deny:
-    name: Run cargo-deny-concordium-std-derive
+    name: Run cargo-deny-concordium-rust-smart-contracts
     runs-on: ubuntu-latest
 
     steps:
