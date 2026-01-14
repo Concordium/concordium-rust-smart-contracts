@@ -1,0 +1,47 @@
+# the purpose of this workflow is to run cargo-deny on a schedule to catch
+# any new license/advisories/sources/bans issues that may arise as dependencies are updated.
+name: Check Concordium CIS2 subfolder with Cargo Deny
+
+on:
+  schedule:
+    - cron: '0 12 * * *' # run every day at 12
+
+  push:
+    branches:
+      # - main
+      - COR-2061/cargo-deny
+  workflow_dispatch: # allows manual trigger
+
+jobs:
+  cargo-deny:
+    name: Run cargo-deny-concordium-cis2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+
+      - name: Run cargo-deny
+        run: cargo deny check advisories
+        working-directory: ./concordium-cis2
+
+      - name: Report Status to Slack    # This step only runs if a previous step failed
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SECURITY_ADVISORIES_SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TITLE: "Cargo Deny Audit Failed!"
+          SLACK_MESSAGE: |
+            The license or security audit for *concordium-cis2* has failed. 
+            Please check the GitHub Actions logs.
+            *View Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Click here to open the Summary page>
+          SLACK_USERNAME: CargoDenyBot
