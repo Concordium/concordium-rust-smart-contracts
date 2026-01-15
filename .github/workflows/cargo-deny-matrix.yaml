@@ -21,6 +21,7 @@ jobs:
         directory:
           - concordium-cis2
           - concordium-std-derive
+          - concordium-std
 
     steps:
       - name: Checkout code
