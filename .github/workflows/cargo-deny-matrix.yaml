@@ -8,8 +8,7 @@ on:
 
   push:
     branches:
-      # - main
-      - COR-2061/cargo-deny
+      - main
   workflow_dispatch: # allows manual trigger
 
 jobs:
