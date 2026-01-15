@@ -1,0 +1,49 @@
+# the purpose of this workflow is to run cargo-deny on a schedule to catch
+# any new license/advisories/sources/bans issues that may arise as dependencies are updated.
+name: Check subfolders in Concordium Rust Smart Contracts with Cargo Deny
+
+on:
+  schedule:
+    - cron: '0 12 * * *' # run every day at 12
+
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allows manual trigger
+
+jobs:
+  cargo-deny:
+    name: Run cargo-deny-concordium-rust-smart-contracts
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory:
+          - concordium-cis2
+          - concordium-std-derive
+          - concordium-std
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+
+      - name: Run cargo-deny
+        run: cargo deny check advisories
+        working-directory: ${{ matrix.directory }}
+
+      - name: Report Status to Slack    # This step only runs if a previous step failed
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SECURITY_ADVISORIES_SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TITLE: "Cargo Deny Audit Failed: ${{ matrix.directory }}"
+          SLACK_MESSAGE: |
+            The license or security audit for *${{ matrix.directory }}* has failed. 
+            Please check the GitHub Actions logs.
+            *View Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Click here to open the Summary page>
+          SLACK_USERNAME: CargoDenyBot

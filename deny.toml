@@ -1,0 +1,22 @@
+# Cargo deny configuration for the repo.
+# Currently, we only check advisories - with the command `cargo deny check advisories`
+
+# The graph table configures how the dependency graph is constructed and thus
+# which crates the checks are performed against
+[graph]
+all-features = true
+
+# This section is considered when running `cargo deny check advisories`
+# More documentation for the advisories section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+[advisories]
+unmaintained = "workspace"
+ignore = [
+    #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
+]
+
+# This section is considered when running `cargo deny check bans`.
+# More documentation about the 'bans' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
+[bans]
+multiple-versions = "allow"
