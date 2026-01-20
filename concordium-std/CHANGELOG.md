@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Removed the native test `StateTrie`
+- Address security advisories and execute cargo update to upgrade the library dependencies below:
+  - advisory update: concordium-std, curve25519-dalek v3.2.1 - RUSTSEC-2024-0344
 
 ## concordium-std 10.1.0 (2024-04-04)
 
