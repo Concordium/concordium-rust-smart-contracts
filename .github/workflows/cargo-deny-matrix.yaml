@@ -5,10 +5,6 @@ name: Check subfolders in Concordium Rust Smart Contracts with Cargo Deny
 on:
   schedule:
     - cron: '0 12 * * *' # run every day at 12
-
-  push:
-    branches:
-      - main
   workflow_dispatch: # allows manual trigger
 
 jobs:
@@ -16,6 +12,7 @@ jobs:
     name: Run cargo-deny-concordium-rust-smart-contracts
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         directory:
           - concordium-cis2
