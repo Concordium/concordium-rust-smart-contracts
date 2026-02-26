@@ -56,3 +56,5 @@ cargo fmt
 ```
 
 In order to contribute you should make a pull request and ask at least two people familiar with the code to do a review.
+<br>## Welcome to Concordium WASM Contracts<br>Concordium's Rust SDK enables secure ID-based contracts—new contributors, start with the account token tutorial for your first CIS module. Tip: Use concordium-client for testing! <br>
+
