@@ -2994,9 +2994,6 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let mut bytes = to_bytes(&bytes_length);
     bytes.extend_from_slice(input);
     let ptr = bytes.as_mut_ptr();
-    #[cfg(feature = "std")]
-    ::std::mem::forget(bytes);
-    #[cfg(not(feature = "std"))]
     core::mem::forget(bytes);
     ptr
 }

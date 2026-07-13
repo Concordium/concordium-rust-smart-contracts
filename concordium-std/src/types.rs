@@ -811,7 +811,6 @@ macro_rules! ensure_ne {
 /// It reports back error information to the host.
 /// Used only in testing with
 /// [`test_infrastructure`](crate::test_infrastructure).
-#[cfg(feature = "std")]
 #[macro_export]
 macro_rules! fail {
     () => {
@@ -823,31 +822,7 @@ macro_rules! fail {
     };
     ($($arg:tt)*) => {
         {
-            let msg = format!($($arg)*);
-            #[allow(deprecated)]
-            $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
-            panic!("{}", msg)
-        }
-    };
-}
-
-/// The `fail` macro is used for testing as a substitute for the panic macro.
-/// It reports back error information to the host.
-/// Used only in testing with
-/// [`test_infrastructure`](crate::test_infrastructure).
-#[cfg(not(feature = "std"))]
-#[macro_export]
-macro_rules! fail {
-    () => {
-        {
-            #[allow(deprecated)]
-            $crate::test_infrastructure::report_error("", file!(), line!(), column!());
-            panic!()
-        }
-    };
-    ($($arg:tt)*) => {
-        {
-            let msg = &$crate::alloc::format!($($arg)*);
+            let msg = alloc::format!($($arg)*);
             #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)

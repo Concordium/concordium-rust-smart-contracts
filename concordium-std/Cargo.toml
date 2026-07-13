@@ -26,8 +26,8 @@ default-features = false
 features = ["smart-contract"]
 
 [features]
-default = ["std"]
-std = ["concordium-contracts-common/std"]
+default = []
+std = ["concordium-contracts-common/std"] # todo ar remove entirely?
 wasm-test = ["concordium-contracts-common/wasm-test"]
 # Own internal wasm-tests leak out to the smart contracts using this library,
 # so a separate feature 'internal-wasm-test' is introduced for these.
@@ -40,7 +40,7 @@ bump_alloc = []
 
 [lib]
 # cdylib is needed below to compile into a wasm module with internal unit tests.
-crate-type = ["cdylib", "rlib"]
+# crate-type = ["cdylib", "rlib"] # todo ar move tests?
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

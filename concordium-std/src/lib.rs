@@ -393,12 +393,7 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
-#![cfg_attr(
-    not(feature = "std"),
-    no_std,
-    allow(internal_features),
-    feature(core_intrinsics)
-)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 pub extern crate alloc;
 
@@ -431,23 +426,12 @@ fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
 // Provide some re-exports to make it easier to use the library.
 // This should be expanded in the future.
 /// Re-export.
-#[cfg(not(feature = "std"))]
 pub use alloc::{
     borrow::ToOwned, boxed, boxed::Box, format, rc, string, string::String, string::ToString, vec,
     vec::Vec,
 };
 /// Re-export.
-#[cfg(not(feature = "std"))]
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
-#[cfg(feature = "std")]
-pub(crate) use std::vec;
-
-/// Re-export.
-#[cfg(feature = "std")]
-pub use std::{
-    boxed, boxed::Box, cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, rc,
-    string::String, vec::Vec,
-};
 
 #[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
 pub mod bump_alloc;
@@ -458,12 +442,7 @@ static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::Bum
 
 /// Re-export.
 pub mod collections {
-    #[cfg(not(feature = "std"))]
-    use alloc::collections;
-    #[cfg(feature = "std")]
-    use std::collections;
-
-    pub use collections::*;
+    pub use alloc::collections::*;
     pub use concordium_contracts_common::{HashMap, HashSet};
 }
 
