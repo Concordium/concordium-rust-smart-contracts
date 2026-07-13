@@ -400,7 +400,6 @@
     feature(core_intrinsics)
 )]
 
-#[cfg(not(feature = "std"))]
 pub extern crate alloc;
 
 /// Terminate execution immediately without panicking.
