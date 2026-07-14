@@ -408,19 +408,21 @@ pub use std::process::abort as trap;
 pub fn trap() -> ! {
     core::arch::wasm32::unreachable()
 }
-#[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
-#[inline(always)]
-pub fn trap() -> ! {
-    core::intrinsics::abort()
-}
 
-#[cfg(not(feature = "std"))]
+// #[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
+// #[inline(always)]
+// pub fn trap() -> ! {
+//     // core::intrinsics::abort()
+//     panic!() // todo ar
+// }
+
+#[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
 #[panic_handler]
 fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
     #[cfg(target_arch = "wasm32")]
     core::arch::wasm32::unreachable();
-    #[cfg(not(target_arch = "wasm32"))]
-    loop {}
+    // #[cfg(not(target_arch = "wasm32"))] // todo ar
+    // loop {}
 }
 
 // Provide some re-exports to make it easier to use the library.
@@ -433,10 +435,10 @@ pub use alloc::{
 /// Re-export.
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))] // todo ar
 pub mod bump_alloc;
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))] // todo ar
 #[cfg_attr(feature = "bump_alloc", global_allocator)]
 static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::BumpAllocator::new() };
 
