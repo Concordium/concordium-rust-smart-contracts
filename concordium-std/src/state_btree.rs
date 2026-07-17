@@ -1327,6 +1327,9 @@ where
 mod wasm_test_btree {
     use super::*;
     use crate::{StateApi, StateBuilder, claim, claim_eq, concordium_test};
+    use alloc::string::String;
+    use alloc::{format, vec};
+    use core::fmt;
 
     /// The invariants to check in a btree.
     /// Should only be used while debugging and testing the btree itself.
@@ -1434,7 +1437,7 @@ mod wasm_test_btree {
         /// Should only be used while debugging and testing the btree itself.
         pub(crate) fn debug(&self) -> String
         where
-            K: Serialize + std::fmt::Debug + Ord,
+            K: Serialize + fmt::Debug + Ord,
         {
             let Some(root_node_id) = self.root else {
                 return format!("no root");
@@ -1869,6 +1872,7 @@ mod wasm_test_btree {
     // The module is using `concordium_quickcheck` which is located in a deprecated
     // module.
     #[allow(deprecated)]
+    #[cfg(feature = "concordium-quickcheck")] // todo ar remove
     mod quickcheck {
         use super::super::*;
         use crate::{
@@ -1876,6 +1880,9 @@ mod wasm_test_btree {
             concordium_test, fail,
         };
         use ::quickcheck::{Arbitrary, Gen, TestResult};
+        use alloc::boxed::Box;
+        use alloc::string::String;
+        use alloc::{format, vec};
 
         /// Quickcheck inserting random items, check invariants on the tree and
         /// query every item ensuring the tree contains it.

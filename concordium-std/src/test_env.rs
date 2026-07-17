@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use concordium_contracts_common::{
     AccountAddress, Address, Amount, ContractAddress, EntrypointName, Serial, SlotTime,
 };
@@ -152,7 +154,7 @@ mod wasm_test {
         let original = Timestamp::from_timestamp_millis(10);
         TestEnv.set_slot_time(original);
         let stored = extern_chain_meta.block_time();
-        claim_eq!(original, stored)
+        claim_eq!(original, stored);
     }
 
     #[concordium_test]

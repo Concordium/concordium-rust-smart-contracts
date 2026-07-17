@@ -303,7 +303,7 @@ unsafe extern "C" {
 // available in a test environment.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
 #[cfg(feature = "wasm-test")]
-extern "C" {
+unsafe extern "C" {
     /// Set the slot time in milliseconds.
     /// The slot time represents the beginning of the smart contract's block.
     pub(crate) fn set_slot_time(slot_time: u64);

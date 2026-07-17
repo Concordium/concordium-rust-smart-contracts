@@ -3299,6 +3299,9 @@ mod wasm_test {
         INITIAL_NEXT_ITEM_PREFIX, ParseResult, Serial, StateApi, StateBuilder, StateError,
         StateMap, StateSet, claim, claim_eq, concordium_test, to_bytes,
     };
+    use alloc::string::String;
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
 
     const GENERIC_MAP_PREFIX: u64 = 1;
 

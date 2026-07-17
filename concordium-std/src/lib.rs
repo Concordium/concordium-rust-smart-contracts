@@ -459,9 +459,6 @@ pub use types::*;
 )]
 pub mod test_infrastructure;
 
-#[cfg(feature = "debug")]
-pub use alloc::format;
-
 #[macro_export]
 #[cfg(feature = "debug")]
 /// When the `debug` feature of `concordium-std` is enabled this will use the
