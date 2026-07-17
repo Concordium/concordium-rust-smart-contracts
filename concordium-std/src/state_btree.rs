@@ -1,7 +1,7 @@
 use crate::{
-    self as concordium_std, cmp::Ordering, marker::PhantomData, mem, prims, vec::Vec, Deletable,
-    Deserial, DeserialWithState, Get, HasStateApi, ParseResult, Read, Serial, Serialize, StateApi,
-    StateItemPrefix, StateMap, StateRef, StateRefMut, UnwrapAbort, Write, STATE_ITEM_PREFIX_SIZE,
+    self as concordium_std, Deletable, Deserial, DeserialWithState, Get, HasStateApi, ParseResult,
+    Read, STATE_ITEM_PREFIX_SIZE, Serial, Serialize, StateApi, StateItemPrefix, StateMap, StateRef,
+    StateRefMut, UnwrapAbort, Write, cmp::Ordering, marker::PhantomData, mem, prims, vec::Vec,
 };
 
 /// An ordered map based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
@@ -1326,7 +1326,7 @@ where
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test_btree {
     use super::*;
-    use crate::{claim, claim_eq, concordium_test, StateApi, StateBuilder};
+    use crate::{StateApi, StateBuilder, claim, claim_eq, concordium_test};
 
     /// The invariants to check in a btree.
     /// Should only be used while debugging and testing the btree itself.
@@ -1872,8 +1872,8 @@ mod wasm_test_btree {
     mod quickcheck {
         use super::super::*;
         use crate::{
-            self as concordium_std, concordium_quickcheck, concordium_test, fail, StateApi,
-            StateBuilder, StateError,
+            self as concordium_std, StateApi, StateBuilder, StateError, concordium_quickcheck,
+            concordium_test, fail,
         };
         use ::quickcheck::{Arbitrary, Gen, TestResult};
 

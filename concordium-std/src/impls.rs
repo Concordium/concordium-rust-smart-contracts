@@ -1,5 +1,6 @@
 use crate::vec;
 use crate::{
+    String,
     cell::UnsafeCell,
     convert::{self, TryInto},
     fmt,
@@ -11,7 +12,6 @@ use crate::{
     traits::*,
     types::*,
     vec::Vec,
-    String,
 };
 pub(crate) use concordium_contracts_common::*;
 
@@ -3295,9 +3295,9 @@ mod tests {
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test {
     use crate::{
-        claim, claim_eq, concordium_test, to_bytes, Deletable, Deserial, DeserialWithState,
-        EntryRaw, HasStateApi, HasStateEntry, ParseResult, Serial, StateApi, StateBuilder,
-        StateError, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, Deserial, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry,
+        INITIAL_NEXT_ITEM_PREFIX, ParseResult, Serial, StateApi, StateBuilder, StateError,
+        StateMap, StateSet, claim, claim_eq, concordium_test, to_bytes,
     };
 
     const GENERIC_MAP_PREFIX: u64 = 1;
@@ -3548,16 +3548,20 @@ mod wasm_test {
             .insert(my_set_key, set)
             .expect("Insert failed");
 
-        claim!(state_builder
-            .get::<_, StateSet<u8, _>>(my_set_key)
-            .unwrap()
-            .unwrap()
-            .contains(&0),);
-        claim!(!state_builder
-            .get::<_, StateSet<u8, _>>(my_set_key)
-            .unwrap()
-            .unwrap()
-            .contains(&2),);
+        claim!(
+            state_builder
+                .get::<_, StateSet<u8, _>>(my_set_key)
+                .unwrap()
+                .unwrap()
+                .contains(&0),
+        );
+        claim!(
+            !state_builder
+                .get::<_, StateSet<u8, _>>(my_set_key)
+                .unwrap()
+                .unwrap()
+                .contains(&2),
+        );
 
         let set = state_builder
             .get::<_, StateSet<u8, _>>(my_set_key)

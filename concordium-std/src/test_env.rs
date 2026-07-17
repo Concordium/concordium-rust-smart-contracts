@@ -65,11 +65,7 @@ impl TestEnv {
         let mut buf = vec![0; event_len.try_into().unwrap()];
         let bytes_written = unsafe { prims::get_event(index, buf.as_mut_ptr()) };
 
-        if bytes_written < 0 {
-            None
-        } else {
-            Some(buf)
-        }
+        if bytes_written < 0 { None } else { Some(buf) }
     }
 
     /// Set the address of the sender.
