@@ -393,36 +393,27 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(target_arch = "wasm32", no_std)]
 
 pub extern crate alloc;
 
 /// Terminate execution immediately without panicking.
-/// When the `std` feature is enabled this is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).
-/// When `std` is not present and the target architecture is `wasm32` this will
+///
+/// On the target architecture is `wasm32` this will
 /// simply emit the [unreachable](https://doc.rust-lang.org/core/arch/wasm32/fn.unreachable.html) instruction.
-#[cfg(feature = "std")]
-pub use std::process::abort as trap;
-#[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
+/// On other architectures where the `std` crate is available is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).
 #[inline(always)]
 pub fn trap() -> ! {
-    core::arch::wasm32::unreachable()
-}
-
-// #[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
-// #[inline(always)]
-// pub fn trap() -> ! {
-//     // core::intrinsics::abort()
-//     panic!() // todo ar
-// }
-
-#[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
-#[panic_handler]
-fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
     #[cfg(target_arch = "wasm32")]
     core::arch::wasm32::unreachable();
-    // #[cfg(not(target_arch = "wasm32"))] // todo ar
-    // loop {}
+    #[cfg(not(target_arch = "wasm32"))]
+    std::process::abort()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[panic_handler]
+fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
 }
 
 // Provide some re-exports to make it easier to use the library.
@@ -435,11 +426,11 @@ pub use alloc::{
 /// Re-export.
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))] // todo ar
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
 pub mod bump_alloc;
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))] // todo ar
-#[cfg_attr(feature = "bump_alloc", global_allocator)]
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[global_allocator]
 static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::BumpAllocator::new() };
 
 /// Re-export.
@@ -468,10 +459,8 @@ pub use types::*;
 )]
 pub mod test_infrastructure;
 
-#[cfg(all(feature = "debug", not(feature = "std")))]
+#[cfg(feature = "debug")]
 pub use alloc::format;
-#[cfg(all(feature = "debug", feature = "std"))]
-pub use std::format;
 
 #[macro_export]
 #[cfg(feature = "debug")]
