@@ -34,7 +34,7 @@
 //! interface. The `serde` features derives `serde::Serialize` and
 //! `serde::Deserialize` for a variety of types.
 
-#![cfg_attr(target_arch = "wasm32", no_std)]
+#![no_std]
 
 mod cis2_client;
 pub use cis2_client::{Cis2Client, Cis2ClientError};

@@ -32,7 +32,7 @@
 //!
 //! The admin address can pause/unpause the protocol, set implementors, transfer
 //! the admin address to a new address, and update the metadata URL.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_cis2::{Cis2Event, *};
 use concordium_std::*;
 

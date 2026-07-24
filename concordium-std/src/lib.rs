@@ -393,6 +393,8 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
+// For targets that are not wasm32v1, we compile with std. This enables compiling (which requires and allocator)
+// and also running pure unit tests.
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
 pub extern crate alloc;
