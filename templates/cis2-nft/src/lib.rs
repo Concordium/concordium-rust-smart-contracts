@@ -21,7 +21,7 @@
 //!
 //! Tests are located in `./tests/tests.rs`.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::*;
 use concordium_std::*;

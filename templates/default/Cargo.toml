@@ -3,20 +3,15 @@
 [package]
 name = "{{ crate_name }}"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MPL-2.0"
 authors = ["{{ authors }}"]
 
-[features]
-default = ["std"]
-std = ["concordium-std/std"]
-bump_alloc = ["concordium-std/bump_alloc"]
-
 [dependencies]
-concordium-std = { version = "10.1", default-features = false }
+concordium-std = { version = "10.1" }
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4.3"
+concordium-smart-contract-testing = "4.4"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
