@@ -14,7 +14,3 @@ concordium-std-derive = { path = "../../concordium-std-derive" }
 
 [lib]
 crate-type=["cdylib", "rlib"]
-
-[profile.release]
-opt-level = 3
-panic = "abort"

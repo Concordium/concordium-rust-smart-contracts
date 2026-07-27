@@ -1,5 +1,5 @@
 [package]
-name = "smart_contract_upgrade"
+name = "smart_contract_upgrade1"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
@@ -16,6 +16,4 @@ concordium-std-derive = { path = "../../../concordium-std-derive" }
 [lib]
 crate-type=["cdylib", "rlib"]
 
-[profile.release]
-opt-level = "s"
-codegen-units = 1
+
