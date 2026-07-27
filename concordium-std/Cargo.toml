@@ -27,10 +27,10 @@ wasm-test = ["concordium-contracts-common/wasm-test"]
 # Own internal wasm-tests leak out to the smart contracts using this library,
 # so a separate feature 'internal-wasm-test' is introduced for these.
 internal-wasm-test = ["wasm-test"]
-#internal-wasm-test = ["wasm-test", "concordium-quickcheck"] # todo ar
+#internal-wasm-test = ["wasm-test", "concordium-quickcheck"] # todo reenable property based tests as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target
 # Make smart contract macros generate function in the smart contract that allows inspecting the schema of the contract functions.
 build-schema = ["concordium-contracts-common/build-schema"]
-concordium-quickcheck = ["getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck"] # // todo ar "std"
+concordium-quickcheck = ["getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck"] # // decide what to do with this feature flag as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target
 # Enabling debug feature changes the #[concoridum_dbg] macro to log messages via the WASM interpreter
 debug = []
 # Custom allocator. See module documentation for bump_alloc in this crate

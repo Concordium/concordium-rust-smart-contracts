@@ -1872,7 +1872,7 @@ mod wasm_test_btree {
     // The module is using `concordium_quickcheck` which is located in a deprecated
     // module.
     #[allow(deprecated)]
-    #[cfg(feature = "concordium-quickcheck")] // todo ar remove
+    #[cfg(feature = "concordium-quickcheck")] // todo remove this conditional as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target to reenable property testst
     mod quickcheck {
         use super::super::*;
         use crate::{
