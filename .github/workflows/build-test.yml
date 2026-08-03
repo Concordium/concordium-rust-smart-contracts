@@ -91,7 +91,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+        with:
+          submodules: recursive
       - name: Run cargo check
         working-directory: concordium-std
         run: |
@@ -104,7 +105,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+        with:
+          submodules: recursive
       - name: Run cargo check
         working-directory: concordium-std
         run: |
@@ -125,7 +127,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+        with:
+          submodules: recursive
       - name: Run cargo check
         working-directory: concordium-cis2
         run: |
@@ -148,6 +151,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - name: Format
         working-directory: examples
         run: |
@@ -175,7 +180,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+        with:
+          submodules: recursive
       - name: Run cargo check
         working-directory: examples
         run: |
