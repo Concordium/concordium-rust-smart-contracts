@@ -105,7 +105,7 @@ impl TestEnv {
     }
 }
 
-#[cfg(feature = "internal-wasm-test")]
+#[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
 mod wasm_test {
     use core::{num::NonZeroU32, str::FromStr};
 
@@ -227,7 +227,7 @@ mod wasm_test {
         let event_size = unsafe { prims::get_event_size(0) };
 
         claim_eq!(store_status, 1);
-        claim_eq!(event_size, i32::try_from(event_prim.len()).unwrap_abort());
+      claim_eq!(event_size, i32::try_from(event_prim.len()).unwrap_abort());
 
         let mut buf = vec![0; event_prim.len()];
         let bytes_written = unsafe { prims::get_event(0, buf.as_mut_ptr()) };

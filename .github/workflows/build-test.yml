@@ -75,7 +75,7 @@ jobs:
         with:
           submodules: recursive
       - name: Test
-        run: cargo test -- --skip io_tests # Skip the I/O tests in the testing library.
+        run: cargo test --features concordium-cis2/u256_amount -- --skip io_tests # Skip the I/O tests in the testing library.
 
   # Run unit-tests for concordium-std compiled to wasm using cargo concordium test.
   std-internal-wasm-test:
@@ -95,10 +95,27 @@ jobs:
           sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           cargo concordium test --only-unit-tests -- --features internal-wasm-test
 
+  cis2_check:
+    name: Check on concordium-contracts-common for x64 and wasm32 and different features
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
 
+      - name: Run cargo check
+        working-directory: concordium-cis2
+        run: |
+          # Try different feature combinations on default (x86 linux) target
+          cargo check
+          cargo check --no-default-features --features std
+          cargo check --no-default-features --features derive-serde
+          cargo check --all-features
 
-
-
+          # Try different feature combinations on wasm32v1 target
+          rustup target add wasm32v1-none
+          cargo check --target wasm32v1-none --no-default-features --features smart-contract 
+          cargo check --target wasm32v1-none --no-default-features --features smart-contract,wasm-test
+          cargo check --target wasm32v1-none --no-default-features --features smart-contract,build-schema
 
 
 

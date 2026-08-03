@@ -47,5 +47,5 @@ crate-type = ["rlib"]
 # exist on that platform.
 targets = ["wasm32v1-none"]
 # Default features to build documentation for.
-features = ["std", "u256_amount", "serde"]
+features = ["u256_amount", "serde"]
 rustc-args = ["--cfg", "docsrs"]
