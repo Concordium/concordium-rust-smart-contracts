@@ -393,78 +393,51 @@
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
 
-#![cfg_attr(
-    not(feature = "std"),
-    no_std,
-    allow(internal_features),
-    feature(core_intrinsics)
-)]
+// For targets that are not wasm32v1, we compile with std. This enables compiling (which requires and allocator)
+// and also running pure unit tests.
+#![cfg_attr(target_arch = "wasm32", no_std)]
 
-#[cfg(not(feature = "std"))]
 pub extern crate alloc;
 
 /// Terminate execution immediately without panicking.
-/// When the `std` feature is enabled this is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).
-/// When `std` is not present and the target architecture is `wasm32` this will
+///
+/// On the target architecture is `wasm32` this will
 /// simply emit the [unreachable](https://doc.rust-lang.org/core/arch/wasm32/fn.unreachable.html) instruction.
-#[cfg(feature = "std")]
-pub use std::process::abort as trap;
-#[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
+/// On other architectures where the `std` crate is available is just [std::process::abort](https://doc.rust-lang.org/std/process/fn.abort.html).
 #[inline(always)]
 pub fn trap() -> ! {
-    core::arch::wasm32::unreachable()
-}
-#[cfg(all(not(feature = "std"), not(target_arch = "wasm32")))]
-#[inline(always)]
-pub fn trap() -> ! {
-    core::intrinsics::abort()
-}
-
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
     #[cfg(target_arch = "wasm32")]
     core::arch::wasm32::unreachable();
     #[cfg(not(target_arch = "wasm32"))]
-    loop {}
+    std::process::abort()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[panic_handler]
+fn abort_panic(_info: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
 }
 
 // Provide some re-exports to make it easier to use the library.
 // This should be expanded in the future.
 /// Re-export.
-#[cfg(not(feature = "std"))]
 pub use alloc::{
     borrow::ToOwned, boxed, boxed::Box, format, rc, string, string::String, string::ToString, vec,
     vec::Vec,
 };
 /// Re-export.
-#[cfg(not(feature = "std"))]
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
-#[cfg(feature = "std")]
-pub(crate) use std::vec;
-
-/// Re-export.
-#[cfg(feature = "std")]
-pub use std::{
-    boxed, boxed::Box, cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, rc,
-    string::String, vec::Vec,
-};
 
 #[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
 pub mod bump_alloc;
 
 #[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
-#[cfg_attr(feature = "bump_alloc", global_allocator)]
+#[global_allocator]
 static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::BumpAllocator::new() };
 
 /// Re-export.
 pub mod collections {
-    #[cfg(not(feature = "std"))]
-    use alloc::collections;
-    #[cfg(feature = "std")]
-    use std::collections;
-
-    pub use collections::*;
+    pub use alloc::collections::*;
     pub use concordium_contracts_common::{HashMap, HashSet};
 }
 
@@ -487,11 +460,6 @@ pub use types::*;
     note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
 )]
 pub mod test_infrastructure;
-
-#[cfg(all(feature = "debug", not(feature = "std")))]
-pub use alloc::format;
-#[cfg(all(feature = "debug", feature = "std"))]
-pub use std::format;
 
 #[macro_export]
 #[cfg(feature = "debug")]

@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use concordium_contracts_common::{
     AccountAddress, Address, Amount, ContractAddress, EntrypointName, Serial, SlotTime,
 };
@@ -65,11 +67,7 @@ impl TestEnv {
         let mut buf = vec![0; event_len.try_into().unwrap()];
         let bytes_written = unsafe { prims::get_event(index, buf.as_mut_ptr()) };
 
-        if bytes_written < 0 {
-            None
-        } else {
-            Some(buf)
-        }
+        if bytes_written < 0 { None } else { Some(buf) }
     }
 
     /// Set the address of the sender.
@@ -156,7 +154,7 @@ mod wasm_test {
         let original = Timestamp::from_timestamp_millis(10);
         TestEnv.set_slot_time(original);
         let stored = extern_chain_meta.block_time();
-        claim_eq!(original, stored)
+        claim_eq!(original, stored);
     }
 
     #[concordium_test]

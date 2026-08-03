@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 //! A simple contract that records account addresses, and has
 //! an entrypoint to invoke transfers to all those addresses.

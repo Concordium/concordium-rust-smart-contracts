@@ -34,7 +34,7 @@
 //! whether royalties are paid and how much are configured in the State
 //! initialisation.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_cis2::*;
 use concordium_std::*;
 

@@ -2,17 +2,16 @@
 //! This allows setting-up mock objects for testing individual
 //! contract invocations.
 
-#[cfg(not(feature = "std"))]
 use crate::vec::Vec;
 use crate::{
-    types::{LogError, StateError},
     AccountSignatures, CallContractResult, CheckAccountSignatureResult, EntryRaw, ExchangeRates,
-    HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
-    PublicKeyEd25519, QueryAccountBalanceResult, QueryAccountPublicKeysResult,
-    QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
-    SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
+    HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
+    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, QueryAccountBalanceResult,
+    QueryAccountPublicKeysResult, QueryContractBalanceResult, ReadOnlyCallContractResult,
+    SignatureEcdsaSecp256k1, SignatureEd25519, StateBuilder, TransferResult, UpgradeResult,
+    VacantEntryRaw,
+    types::{LogError, StateError},
 };
-#[cfg(feature = "p7")]
 use crate::{QueryContractModuleReferenceResult, QueryContractNameResult};
 use concordium_contracts_common::*;
 
@@ -539,14 +538,12 @@ pub trait HasHost<State>: Sized {
     ///
     /// Note: after a successful [`Self::upgrade`], this will return the new
     /// module reference.
-    #[cfg(feature = "p7")]
     fn contract_module_reference(
         &self,
         address: ContractAddress,
     ) -> QueryContractModuleReferenceResult;
 
     /// Get the contract name of a contract instance.
-    #[cfg(feature = "p7")]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult;
 
     /// Get an immutable reference to the contract state.

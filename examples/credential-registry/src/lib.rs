@@ -1,4 +1,7 @@
 #![doc = include_str!("../README.md")]
+
+#![no_std]
+
 use concordium_cis2::*;
 use concordium_std::*;
 

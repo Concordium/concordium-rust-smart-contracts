@@ -35,7 +35,7 @@
 //! This function is not very useful and is only there to showcase a simple
 //! implementation of a token receive hook.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::*;
 use concordium_std::*;

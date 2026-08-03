@@ -4,6 +4,7 @@
 //! signature. It shows off how to use the `crypto_primitives` attribute, which
 //! gives the function access to the cryptographic primitives from the
 //! [`HasCryptoPrimitives`] trait.
+#![no_std]
 use concordium_std::*;
 
 type State = ();

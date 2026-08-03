@@ -54,7 +54,7 @@
 //! (that have exactly one credential and exactly one public key for that
 //! credential), the signaturesMaps/publicKeyMaps in this contract, will have
 //! only one value at key 0 in the inner and outer maps.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
