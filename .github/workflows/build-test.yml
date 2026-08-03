@@ -97,6 +97,7 @@ jobs:
         working-directory: concordium-std
         run: |
           rustup component add clippy
+          rustup target add wasm32v1-none          
           cargo clippy --target wasm32v1-none -- -D warnings
 
   std_check:

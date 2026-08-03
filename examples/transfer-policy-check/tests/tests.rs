@@ -1,6 +1,6 @@
 //! Tests for the transfer-policy-check contract.
 use concordium_smart_contract_testing::*;
-use concordium_std::{attributes, OwnedPolicy};
+use concordium_std::{OwnedPolicy, attributes};
 use concordium_std_derive::*;
 use transfer_policy_check::*;
 

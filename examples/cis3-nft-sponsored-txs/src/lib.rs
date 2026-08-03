@@ -57,7 +57,7 @@
 #![no_std]
 
 use concordium_cis2::*;
-use concordium_std::{collections::BTreeMap, EntrypointName, *};
+use concordium_std::{EntrypointName, collections::BTreeMap, *};
 
 /// The url for the token metadata. Every `token_id` in this contract has the
 /// same metadata url for simplicity.

@@ -117,7 +117,7 @@
 //! https://github.com/Concordium/concordium-rust-smart-contracts/blob/main/examples/smart-contract-upgrade/contract-version2/src/lib.rs
 #![no_std]
 use concordium_cis2::*;
-use concordium_std::{collections::BTreeMap, EntrypointName, *};
+use concordium_std::{EntrypointName, collections::BTreeMap, *};
 
 /// The standard identifier for the CIS-3 standard.
 pub const CIS3_STANDARD_IDENTIFIER: StandardIdentifier<'static> =

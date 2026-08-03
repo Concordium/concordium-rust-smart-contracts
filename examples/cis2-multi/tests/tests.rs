@@ -3,8 +3,8 @@ use cis2_multi::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, *
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::{
-    collections::BTreeMap, AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256,
-    SignatureEd25519, Timestamp,
+    AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519,
+    Timestamp, collections::BTreeMap,
 };
 use concordium_std_derive::*;
 
@@ -39,7 +39,9 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 const SIGNER: Signer = Signer::with_one_key();
 
 /// Dummy signature used as placeholder.
-const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!(
+    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+);
 
 /// Test minting succeeds and the tokens are owned by the given address and
 /// the appropriate events are logged.
