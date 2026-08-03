@@ -1,5 +1,5 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    Cursor, HasStateApi, Serial, Vec, cell::UnsafeCell, marker::PhantomData, num::NonZeroU32,
 };
 use concordium_contracts_common::{
     AccountBalance, Amount, ModuleReference, OwnedContractName, ParseError,

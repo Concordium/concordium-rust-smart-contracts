@@ -1383,7 +1383,7 @@ mod wasm_test_btree {
             }
 
             for i in 1..root.keys.len() {
-                if &root.keys[i - 1] >= &root.keys[i] {
+                if root.keys[i - 1] >= root.keys[i] {
                     return Err(InvariantViolation::NodeKeysOutOfOrder);
                 }
             }
@@ -1440,7 +1440,7 @@ mod wasm_test_btree {
             K: Serialize + fmt::Debug + Ord,
         {
             let Some(root_node_id) = self.root else {
-                return format!("no root");
+                return "no root".to_string();
             };
             let mut string = String::new();
             let root: Node<M, K> = self.get_node(root_node_id);
@@ -1475,7 +1475,7 @@ mod wasm_test_btree {
             K: Ord,
         {
             for i in 1..self.keys.len() {
-                if &self.keys[i - 1] >= &self.keys[i] {
+                if self.keys[i - 1] >= self.keys[i] {
                     return Err(InvariantViolation::NodeKeysOutOfOrder);
                 }
             }
@@ -1667,7 +1667,7 @@ mod wasm_test_btree {
         for n in 0..500 {
             claim!(tree.insert(n));
         }
-        for n in (500..1000).into_iter().rev() {
+        for n in (500..1000).rev() {
             claim!(tree.insert(n));
         }
 
@@ -1729,7 +1729,7 @@ mod wasm_test_btree {
     fn test_btree_remove_only_key_higher_leaf_in_three_node() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut tree = state_builder.new_btree_set_degree::<2, _>();
-        for n in (0..4).into_iter().rev() {
+        for n in (0..4).rev() {
             tree.insert(n);
         }
         tree.remove(&3);
@@ -1752,7 +1752,7 @@ mod wasm_test_btree {
     fn test_btree_remove_from_higher_leaf_in_three_node_taking_from_sibling() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut tree = state_builder.new_btree_set_degree::<2, _>();
-        for n in (0..4).into_iter().rev() {
+        for n in (0..4).rev() {
             tree.insert(n);
         }
         claim!(tree.contains(&3));
@@ -1830,7 +1830,7 @@ mod wasm_test_btree {
     fn test_btree_remove_from_root_in_three_node_taking_key_from_lower_child() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut tree = state_builder.new_btree_set_degree::<2, _>();
-        for n in (0..4).into_iter().rev() {
+        for n in (0..4).rev() {
             tree.insert(n);
         }
         claim!(tree.contains(&2));
@@ -1843,11 +1843,11 @@ mod wasm_test_btree {
     fn test_btree_iter() {
         let mut state_builder = StateBuilder::open(StateApi::open());
         let mut tree = state_builder.new_btree_set_degree::<2, _>();
-        let keys: Vec<u32> = (0..15).into_iter().collect();
+        let keys: Vec<u32> = (0..15).collect();
         for &k in &keys {
             tree.insert(k);
         }
-        let iter_keys: Vec<u32> = tree.iter().map(|k| k.clone()).collect();
+        let iter_keys: Vec<u32> = tree.iter().map(|k| *k).collect();
         claim_eq!(keys, iter_keys);
     }
 
@@ -2064,6 +2064,7 @@ mod wasm_test_btree {
         }
 
         /// The different mutating operations to generate for the btree.
+        #[allow(clippy::enum_variant_names)]
         #[derive(Debug, Clone, Copy)]
         enum Operation {
             /// Insert a new key in the set.
@@ -2083,7 +2084,7 @@ mod wasm_test_btree {
             tree: &mut StateBTreeSet<u32, M>,
             mutations: &[(u32, Operation)],
         ) -> Result<(), String> {
-            for (k, op) in mutations.into_iter() {
+            for (k, op) in mutations.iter() {
                 if let Err(violation) = tree.check_invariants() {
                     return Err(format!("Invariant violated: {:?}", violation));
                 }
@@ -2115,14 +2116,13 @@ mod wasm_test_btree {
 
         impl Arbitrary for Operation {
             fn arbitrary(g: &mut Gen) -> Self {
-                g.choose(&[
+                *g.choose(&[
                     Self::InsertKeyNotPresent,
                     Self::InsertKeyPresent,
                     Self::RemoveKeyPresent,
                     Self::RemoveKeyNotPresent,
                 ])
                 .unwrap()
-                .clone()
             }
         }
 
@@ -2141,9 +2141,8 @@ mod wasm_test_btree {
                 while mutations.len() < g.size() {
                     let op: Operation = Operation::arbitrary(g);
                     match op {
-                        Operation::InsertKeyPresent if inserted_keys.len() > 0 => {
-                            let indexes: Vec<usize> =
-                                (0..inserted_keys.len()).into_iter().collect();
+                        Operation::InsertKeyPresent if !inserted_keys.is_empty() => {
+                            let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
                             let k_index = g.choose(&indexes).unwrap();
                             let k = &inserted_keys[*k_index];
                             mutations.push((k.clone(), op));
@@ -2155,9 +2154,8 @@ mod wasm_test_btree {
                                 mutations.push((k, op));
                             }
                         }
-                        Operation::RemoveKeyPresent if inserted_keys.len() > 0 => {
-                            let indexes: Vec<usize> =
-                                (0..inserted_keys.len()).into_iter().collect();
+                        Operation::RemoveKeyPresent if !inserted_keys.is_empty() => {
+                            let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
                             let k_index = g.choose(&indexes).unwrap();
                             let k = inserted_keys.remove(*k_index);
                             mutations.push((k, op));
@@ -2173,9 +2171,7 @@ mod wasm_test_btree {
                 }
 
                 Self {
-                    expected_keys: crate::collections::BTreeSet::from_iter(
-                        inserted_keys.into_iter(),
-                    ),
+                    expected_keys: crate::collections::BTreeSet::from_iter(inserted_keys),
                     mutations,
                 }
             }
