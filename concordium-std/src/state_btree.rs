@@ -1323,9 +1323,10 @@ where
 
 /// This test module relies on the runtime providing host functions and can only
 /// be run using `cargo concordium test`.
-#[cfg(feature = "internal-wasm-test")]
+#[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
 mod wasm_test_btree {
     use super::*;
+    use crate::alloc::string::ToString;
     use crate::{StateApi, StateBuilder, claim, claim_eq, concordium_test};
     use alloc::string::String;
     use alloc::{format, vec};
