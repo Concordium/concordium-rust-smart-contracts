@@ -18,8 +18,6 @@ PREREQUISITES=(
     cis2-multi
 )
 
-failed=()
-
 for crate in "${PREREQUISITES[@]}"; do
     if ! ( cd "$crate" && cargo concordium build); then
         exit 1
