@@ -82,7 +82,8 @@ jobs:
           # chmod +x /tmp/cargo-concordium
           # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
-          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch ar/cor-2468-update-cargo-concordium-to-use-wasm32v1-target --locked
+          rustup target add wasm32v1-none          
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
           cargo concordium test --only-unit-tests -- --features internal-wasm-test
 
   std_clippy_wasm32v1:
@@ -93,11 +94,11 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: recursive
-      - name: Run cargo check
+      - name: Run cargo clippy
         working-directory: concordium-std
         run: |
           rustup component add clippy
-          rustup target add wasm32v1-none          
+          rustup target add wasm32v1-none
           cargo clippy --target wasm32v1-none -- -D warnings
 
   std_check:
@@ -244,7 +245,8 @@ jobs:
 #          # chmod +x /tmp/cargo-concordium
 #          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
 #          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
-#          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch ar/cor-2468-update-cargo-concordium-to-use-wasm32v1-target --locked
+#          rustup target add wasm32v1-none
+#          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
 #        # The 'smart-contract-upgrade' example has a v1 and v2 contract and the tests in v1 needs the wasm module from v2 for upgrading.
 #      - name: Build contract-upgrade version 2 module if needed
 #        if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
