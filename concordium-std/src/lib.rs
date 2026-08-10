@@ -411,7 +411,7 @@ pub use alloc::{
 /// Re-export.
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 
-// dlalloc is the "default" allocator
+// dlmalloc is the "default" allocator
 #[cfg(all(
     not(feature = "no_alloc"),
     not(feature = "bump_alloc"),

@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Removed the native test `StateTrie`
-- The crate is now intended for use on the [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html) target, which is a no-`std` target.   
+- The crate is now intended for use on the [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html) target, which is a `no_std` target.   
   Smart contracts using `concordium-std` should specify `#[no_std]` and compile to the target `wasm32v1-none`. The previously supported target `wasm32-unknown-unknown`
   (which has a partly stubbed `std` implementation) is no longer supported with `concordium-std`. The crate feature `std` has likewise been removed. 
   The allocator used by default by `concordium-std` is [`dlmalloc`](https://crates.io/crates/dlmalloc). The crate feature `bump_alloc` still exists and
