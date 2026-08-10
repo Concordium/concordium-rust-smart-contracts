@@ -69,9 +69,8 @@ use core::{fmt, str::FromStr};
 ///
 /// ### Low-level state type
 ///
-/// The third type parameter has a default type that
-/// specifies the type of the low-level state `S`.
-/// Generally, there should be no need to specify it manually.
+/// The third type parameter specifies the type of the low-level state `S`
+/// and as a default type. Generally, there should be no need to specify it manually.
 ///
 /// ## **Caution**
 ///
@@ -203,9 +202,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi = ExternStateApi> {
 ///
 /// ### Low-level state type
 ///
-/// The second type parameter has a default type that
-/// specifies the type of the low-level state `S`.
-/// Generally, there should be no need to specify it manually.
+/// The second type parameter specifies the type of the low-level state `S`
+/// and as a default type. Generally, there should be no need to specify it manually.
 ///
 /// ## **Caution**
 ///
