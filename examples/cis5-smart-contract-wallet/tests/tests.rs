@@ -920,7 +920,7 @@ fn alice_deposits_cis2_tokens(
     // Check that Alice has 0 tokens, Bob has 0 tokens, and the
     // service_fee_recipient has 0 tokens on their public keys.
     let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
+        chain,
         smart_contract_wallet,
         cis2_token_contract_address,
         alice_public_key,
@@ -953,7 +953,7 @@ fn alice_deposits_cis2_tokens(
     // Check that Alice now has AIRDROP_TOKEN_AMOUNT tokens, Bob has 0 tokens, and
     // the service_fee_recipient has 0 tokens on their public keys.
     let balances = get_cis2_token_balances_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
+        chain,
         smart_contract_wallet,
         cis2_token_contract_address,
         alice_public_key,
@@ -991,7 +991,7 @@ fn alice_deposits_ccd(
     // Check that Alice has 0 CCD, Bob has 0 CCD, and the service_fee_recipient has
     // 0 CCD on their public keys.
     let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
+        chain,
         smart_contract_wallet,
         alice_public_key,
     );
@@ -1018,7 +1018,7 @@ fn alice_deposits_ccd(
     // Check that Alice now has AIRDROP_CCD_AMOUNT CCD, Bob has 0 CCD, and the
     // service_fee_recipient has 0 CCD on their public keys.
     let balances = get_ccd_balance_from_alice_and_bob_and_service_fee_recipient(
-        &chain,
+        chain,
         smart_contract_wallet,
         alice_public_key,
     );
