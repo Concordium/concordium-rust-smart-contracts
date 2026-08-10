@@ -85,16 +85,15 @@ pub struct SetImplementorsParams {
 
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
-#[concordium(state_parameter = "S")]
-struct AddressState<S> {
+struct AddressState {
     /// The amount of tokens owned by this address.
-    balances: StateMap<ContractTokenId, ContractTokenAmount, S>,
+    balances: StateMap<ContractTokenId, ContractTokenAmount>,
     /// The addresses which are currently enabled as operators for this address.
-    operators: StateSet<Address, S>,
+    operators: StateSet<Address>,
 }
 
-impl<S: HasStateApi> AddressState<S> {
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+impl AddressState {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
         AddressState {
             balances: state_builder.new_map(),
             operators: state_builder.new_set(),
@@ -125,16 +124,15 @@ impl TokenMetadataState {
 /// Note: The specification does not specify how to structure the contract state
 /// and this could be structured in a more space efficient way.
 #[derive(Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-struct State<S> {
+struct State {
     /// The state of addresses.
-    state: StateMap<Address, AddressState<S>, S>,
+    state: StateMap<Address, AddressState>,
     /// Token IDs and the MetadataStates which holds the counter and the list of
     /// MetadataURls
-    tokens: StateMap<ContractTokenId, TokenMetadataState, S>,
+    tokens: StateMap<ContractTokenId, TokenMetadataState>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>>,
 }
 
 /// The different errors the contract can produce.
@@ -183,9 +181,9 @@ impl From<CustomContractError> for ContractError {
     }
 }
 
-impl<S: HasStateApi> State<S> {
+impl State {
     /// Construct a state with no tokens
-    fn empty(state_builder: &mut StateBuilder<S>) -> Self {
+    fn empty(state_builder: &mut StateBuilder) -> Self {
         State {
             state: state_builder.new_map(),
             tokens: state_builder.new_map(),
@@ -200,7 +198,7 @@ impl<S: HasStateApi> State<S> {
         token_id: &ContractTokenId,
         mint_param: &MintParam,
         owner: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) {
         let _ = self.tokens.insert(
             *token_id,
@@ -318,7 +316,7 @@ impl<S: HasStateApi> State<S> {
         amount: ContractTokenAmount,
         from: &Address,
         to: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) -> ContractResult<()> {
         ensure!(self.contains_token(token_id), ContractError::InvalidTokenId);
         // A zero transfer does not modify the state.
@@ -362,7 +360,7 @@ impl<S: HasStateApi> State<S> {
         &mut self,
         owner: &Address,
         operator: &Address,
-        state_builder: &mut StateBuilder<S>,
+        state_builder: &mut StateBuilder,
     ) {
         let mut owner_state = self
             .state
@@ -405,10 +403,7 @@ impl<S: HasStateApi> State<S> {
     contract = "cis2_dynamic_nft",
     event = "Cis2Event<ContractTokenId, ContractTokenAmount>"
 )]
-fn contract_init<S: HasStateApi>(
-    _ctx: &impl HasInitContext,
-    state_builder: &mut StateBuilder<S>,
-) -> InitResult<State<S>> {
+fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<State> {
     // Construct the initial contract state.
     Ok(State::empty(state_builder))
 }
@@ -441,10 +436,7 @@ pub struct ViewState {
     name = "view",
     return_value = "ViewState"
 )]
-fn contract_view<S: HasStateApi>(
-    _ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ReceiveResult<ViewState> {
+fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<ViewState> {
     let state = host.state();
 
     let mut inner_state = Vec::new();
@@ -491,10 +483,10 @@ pub type TokenUpdateParams = ContractTokenId;
     enable_logger,
     mutable
 )]
-fn contract_upgrade<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
+fn contract_upgrade(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Get the contract owner
     let owner = ctx.owner();
@@ -538,10 +530,10 @@ pub struct AddParams {
     enable_logger,
     mutable
 )]
-fn contract_add_metadata<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
+fn contract_add_metadata(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Get the contract owner
     let owner = ctx.owner();
@@ -590,10 +582,10 @@ fn contract_add_metadata<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_mint<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
+fn contract_mint(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Get the contract owner
     let owner = ctx.owner();
@@ -652,10 +644,10 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
     enable_logger,
     mutable
 )]
-fn contract_transfer<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
+fn contract_transfer(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
@@ -721,10 +713,10 @@ fn contract_transfer<S: HasStateApi>(
     enable_logger,
     mutable
 )]
-fn contract_update_operator<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-    logger: &mut impl HasLogger,
+fn contract_update_operator(
+    ctx: &ReceiveContext,
+    host: &mut Host<State>,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
@@ -773,9 +765,9 @@ type ContractBalanceOfQueryResponse = BalanceOfQueryResponse<ContractTokenAmount
     return_value = "ContractBalanceOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_balance_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_balance_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<ContractBalanceOfQueryResponse> {
     // Parse the parameter.
     let params: ContractBalanceOfQueryParams = ctx.parameter_cursor().get()?;
@@ -802,9 +794,9 @@ fn contract_balance_of<S: HasStateApi>(
     return_value = "OperatorOfQueryResponse",
     error = "ContractError"
 )]
-fn contract_operator_of<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_operator_of(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<OperatorOfQueryResponse> {
     // Parse the parameter.
     let params: OperatorOfQueryParams = ctx.parameter_cursor().get()?;
@@ -835,9 +827,9 @@ pub type ContractTokenMetadataQueryParams = TokenMetadataQueryParams<ContractTok
     return_value = "TokenMetadataQueryResponse",
     error = "ContractError"
 )]
-fn contract_token_metadata<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_token_metadata(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<TokenMetadataQueryResponse> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -872,9 +864,9 @@ struct TokenMetadataList {
     return_value = "TokenMetadataList",
     error = "ContractError"
 )]
-fn contract_token_metadata_list<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_token_metadata_list(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<TokenMetadataList> {
     // Parse the parameter.
     let params: ContractTokenMetadataQueryParams = ctx.parameter_cursor().get()?;
@@ -918,10 +910,7 @@ fn contract_token_metadata_list<S: HasStateApi>(
     name = "onReceivingCIS2",
     error = "ContractError"
 )]
-fn contract_on_cis2_received<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_on_cis2_received(ctx: &ReceiveContext, host: &Host<State>) -> ContractResult<()> {
     // Ensure the sender is a contract.
     let sender = if let Address::Contract(contract) = ctx.sender() {
         contract
@@ -966,9 +955,9 @@ fn contract_on_cis2_received<S: HasStateApi>(
     return_value = "SupportsQueryResponse",
     error = "ContractError"
 )]
-fn contract_supports<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &impl HasHost<State<S>, StateApiType = S>,
+fn contract_supports(
+    ctx: &ReceiveContext,
+    host: &Host<State>,
 ) -> ContractResult<SupportsQueryResponse> {
     // Parse the parameter.
     let params: SupportsQueryParams = ctx.parameter_cursor().get()?;
@@ -999,10 +988,7 @@ fn contract_supports<S: HasStateApi>(
     error = "ContractError",
     mutable
 )]
-fn contract_set_implementor<S: HasStateApi>(
-    ctx: &impl HasReceiveContext,
-    host: &mut impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<()> {
+fn contract_set_implementor(ctx: &ReceiveContext, host: &mut Host<State>) -> ContractResult<()> {
     // Authorize the sender.
     ensure!(
         ctx.sender().matches_account(&ctx.owner()),

@@ -25,18 +25,17 @@ use core::{fmt, str::FromStr};
 ///
 /// ## Type parameters
 ///
-/// The map `StateMap<K, V, S>` is parametrized by the type of _keys_ `K`, the
-/// type of _values_ `V` and the type of the low-level state `S`. In line with
+/// The map `StateMap<K, V>` is parametrized by the type of _keys_ `K` and the
+/// type of _values_ `V`. In line with
 /// other Rust collections, e.g., [`BTreeMap`][btm] and [`HashMap`][hm]
 /// constructing the statemap via [`new_map`](StateBuilder::new_map) does not
 /// require anything specific from `K` and `V`. However most operations do
-/// require that `K` is serializable and `V` can be stored and loaded in the
-/// context of the low-level state `S`.
+/// require that `K` is serializable and `V` can be stored and loaded.
 ///
 /// This concretely means that `K` must implement
 /// [`Serialize`](crate::Serialize) and `V` has to implement
 /// [`Serial`](crate::Serial) and
-/// [`DeserialWithState<S>`](crate::DeserialWithState). In practice, this means
+/// [`DeserialWithState`](crate::DeserialWithState). In practice, this means
 /// that keys must be _flat_, meaning that it cannot have any references to the
 /// low-level state. This is almost all types, except [`StateBox`], [`StateMap`]
 /// and [`StateSet`] and types containing these.
@@ -48,9 +47,8 @@ use core::{fmt, str::FromStr};
 /// ```rust
 /// # use concordium_std::*;
 /// #[derive(Serial, DeserialWithState)]
-/// #[concordium(state_parameter = "S")]
-/// struct MyState<S: HasStateApi = StateApi> {
-///     inner: StateMap<u64, u64, S>,
+/// struct MyState {
+///     inner: StateMap<u64, u64>,
 /// }
 /// #[init(contract = "mycontract")]
 /// fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<MyState> {
@@ -69,6 +67,12 @@ use core::{fmt, str::FromStr};
 /// }
 /// ```
 ///
+/// ### Low-level state type
+///
+/// The third type parameter has a default type that
+/// specifies the type of the low-level state `S`.
+/// Generally, there should be no need to specify it manually.
+///
 /// ## **Caution**
 ///
 /// `StateMap`s must be explicitly deleted when they are no longer needed,
@@ -76,8 +80,8 @@ use core::{fmt, str::FromStr};
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// struct MyState<S: HasStateApi = StateApi> {
-///     inner: StateMap<u64, u64, S>,
+/// struct MyState {
+///     inner: StateMap<u64, u64>,
 /// }
 /// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     // The following is incorrect. The old value of `inner` is not properly deleted.
@@ -90,8 +94,8 @@ use core::{fmt, str::FromStr};
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi = StateApi> {
-/// #    inner: StateMap<u64, u64, S>
+/// # struct MyState {
+/// #    inner: StateMap<u64, u64>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     state.inner.clear_flat();
@@ -100,8 +104,8 @@ use core::{fmt, str::FromStr};
 /// Or alternatively
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi = StateApi> {
-/// #    inner: StateMap<u64, u64, S>
+/// # struct MyState {
+/// #    inner: StateMap<u64, u64>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     let old_map = mem::replace(&mut state.inner, state_builder.new_map());
@@ -109,9 +113,10 @@ use core::{fmt, str::FromStr};
 /// }
 /// ```
 ///
+///
 /// [hm]: crate::collections::HashMap
 /// [btm]: crate::collections::BTreeMap
-pub struct StateMap<K, V, S> {
+pub struct StateMap<K, V, S = ExternStateApi> {
     pub(crate) _marker_key: PhantomData<K>,
     pub(crate) _marker_value: PhantomData<V>,
     pub(crate) prefix: StateItemPrefix,
@@ -125,7 +130,7 @@ pub struct StateMap<K, V, S> {
 ///
 /// This `struct` is created by the [`iter`][StateMap::iter] method on
 /// [`StateMap`]. See its documentation for more.
-pub struct StateMapIter<'a, K, V, S: HasStateApi> {
+pub struct StateMapIter<'a, K, V, S: HasStateApi = ExternStateApi> {
     pub(crate) state_iter: Option<S::IterType>,
     pub(crate) state_api: S,
     pub(crate) _lifetime_marker: PhantomData<&'a (K, V)>,
@@ -138,7 +143,7 @@ pub struct StateMapIter<'a, K, V, S: HasStateApi> {
 ///
 /// This `struct` is created by the [`iter_mut`][StateMap::iter_mut] method on
 /// [`StateMap`]. See its documentation for more.
-pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
+pub struct StateMapIterMut<'a, K, V, S: HasStateApi = ExternStateApi> {
     pub(crate) state_iter: Option<S::IterType>,
     pub(crate) state_api: S,
     pub(crate) _lifetime_marker: PhantomData<&'a mut (K, V)>,
@@ -163,14 +168,14 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// ## Type parameters
 ///
-/// The set `StateSet<T, S>` is parametrized by the type of _values_ `T`, and
-/// the type of the low-level state `S`. In line with other Rust collections,
+/// The set `StateSet<T>` is parametrized by the type of _values_ `T`.
+/// In line with other Rust collections,
 /// e.g., [`BTreeSet`][bts] and [`HashSet`][hs] constructing the stateset via
 /// [`new_set`](StateBuilder::new_set) does not require anything specific from
 /// `T`. However most operations do require that `T` implements
 /// [`Serialize`](crate::Serialize).
 ///
-/// Since `StateSet<T, S>` itself **does not** implement
+/// Since `StateSet<T>` itself **does not** implement
 /// [`Serialize`](crate::Serialize) **sets cannot be nested**. If this is really
 /// required then a custom solution should be devised using the operations on
 /// `S` (see [HasStateApi](crate::HasStateApi)).
@@ -179,9 +184,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// ```rust
 /// # use concordium_std::*;
 /// #[derive(Serial, DeserialWithState)]
-/// #[concordium(state_parameter = "S")]
-/// struct MyState<S: HasStateApi = StateApi> {
-///     inner: StateSet<u64, S>,
+/// struct MyState {
+///     inner: StateSet<u64>,
 /// }
 /// #[init(contract = "mycontract")]
 /// fn contract_init(_ctx: &InitContext, state_builder: &mut StateBuilder) -> InitResult<MyState> {
@@ -197,6 +201,12 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// }
 /// ```
 ///
+/// ### Low-level state type
+///
+/// The second type parameter has a default type that
+/// specifies the type of the low-level state `S`.
+/// Generally, there should be no need to specify it manually.
+///
 /// ## **Caution**
 ///
 /// `StateSet`s must be explicitly deleted when they are no longer needed,
@@ -204,8 +214,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// struct MyState<S: HasStateApi = StateApi> {
-///     inner: StateSet<u64, S>,
+/// struct MyState {
+///     inner: StateSet<u64>,
 /// }
 /// fn incorrect_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     // The following is incorrect. The old value of `inner` is not properly deleted.
@@ -218,8 +228,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi = StateApi> {
-/// #    inner: StateSet<u64, S>
+/// # struct MyState {
+/// #    inner: StateSet<u64>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     state.inner.clear();
@@ -228,8 +238,8 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 /// Or alternatively
 /// ```no_run
 /// # use concordium_std::*;
-/// # struct MyState<S: HasStateApi = StateApi> {
-/// #    inner: StateSet<u64, S>
+/// # struct MyState {
+/// #    inner: StateSet<u64>
 /// # }
 /// fn correct_replace(state_builder: &mut StateBuilder, state: &mut MyState) {
 ///     let old_set = mem::replace(&mut state.inner, state_builder.new_set());
@@ -239,7 +249,7 @@ pub struct StateMapIterMut<'a, K, V, S: HasStateApi> {
 ///
 /// [hs]: crate::collections::HashSet
 /// [bts]: crate::collections::BTreeSet
-pub struct StateSet<T, S> {
+pub struct StateSet<T, S = ExternStateApi> {
     pub(crate) _marker: PhantomData<T>,
     pub(crate) prefix: StateItemPrefix,
     pub(crate) state_api: S,
@@ -251,7 +261,7 @@ pub struct StateSet<T, S> {
 ///
 /// This `struct` is created by the [`iter`][StateSet::iter] method on
 /// [`StateSet`]. See its documentation for more.
-pub struct StateSetIter<'a, T, S: HasStateApi> {
+pub struct StateSetIter<'a, T, S: HasStateApi = ExternStateApi> {
     pub(crate) state_iter: Option<S::IterType>,
     pub(crate) state_api: S,
     pub(crate) _marker_lifetime: PhantomData<&'a T>,
@@ -267,8 +277,9 @@ pub struct StateSetIter<'a, T, S: HasStateApi> {
 /// receive method.
 ///
 /// The type parameter `T` is the type stored in the box. The type parameter `S`
-/// is the state.
-pub struct StateBox<T: Serial, S: HasStateApi> {
+/// has a default type that specifies the type of the low-level state, and
+/// there should generally be no need to specify it manually.
+pub struct StateBox<T: Serial, S: HasStateApi = ExternStateApi> {
     pub(crate) state_api: S,
     pub(crate) inner: UnsafeCell<StateBoxInner<T, S>>,
 }
@@ -316,13 +327,13 @@ impl<V> crate::ops::Deref for StateRef<'_, V> {
 }
 
 #[derive(Debug)]
-/// The [`StateRefMut<_, V, _>`] behaves like `&mut V`, by analogy with other
+/// The [`StateRefMut`] behaves like `&mut V`, by analogy with other
 /// standard library RAII guards like [`RefMut`](std::cell::RefMut).
 /// The type implements [`DerefMut`](crate::ops::DerefMut) which allows the
 /// value to be mutated. Additionally, the [`Drop`](Drop) implementation ensures
 /// that the value is properly stored in the contract state maintained by the
 /// node.
-pub struct StateRefMut<'a, V: Serial, S: HasStateApi> {
+pub struct StateRefMut<'a, V: Serial, S: HasStateApi = ExternStateApi> {
     /// This is set as an `UnsafeCell`, to be able to get a mutable reference to
     /// the entry without `StateRefMut` being mutable.
     pub(crate) entry: UnsafeCell<S::EntryType>,
@@ -372,7 +383,7 @@ pub struct StateEntry {
 ///
 /// Differs from [`VacantEntry`] in that this has access to the raw bytes stored
 /// in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
-pub struct VacantEntryRaw<S> {
+pub struct VacantEntryRaw<S = ExternStateApi> {
     pub(crate) key: Key,
     pub(crate) state_api: S,
 }
@@ -383,7 +394,7 @@ pub struct VacantEntryRaw<S> {
 ///
 /// Differs from [`OccupiedEntry`] in that this has access to the raw bytes
 /// stored in the state via a [`HasStateEntry`][crate::HasStateEntry] type.
-pub struct OccupiedEntryRaw<StateApi: HasStateApi> {
+pub struct OccupiedEntryRaw<StateApi: HasStateApi = ExternStateApi> {
     pub(crate) state_entry: StateApi::EntryType,
 }
 
@@ -392,7 +403,7 @@ pub struct OccupiedEntryRaw<StateApi: HasStateApi> {
 ///
 /// This `enum` is constructed from the [`entry`][crate::HasStateApi::entry]
 /// method on a [`HasStateApi`][crate::HasStateApi] type.
-pub enum EntryRaw<StateApi: HasStateApi> {
+pub enum EntryRaw<StateApi: HasStateApi = ExternStateApi> {
     Vacant(VacantEntryRaw<StateApi>),
     Occupied(OccupiedEntryRaw<StateApi>),
 }
@@ -402,7 +413,7 @@ pub enum EntryRaw<StateApi: HasStateApi> {
 ///
 /// Differs from [`VacantEntryRaw`] in that this automatically handles
 /// serialization.
-pub struct VacantEntry<'a, K, V, S> {
+pub struct VacantEntry<'a, K, V, S = ExternStateApi> {
     pub(crate) key: K,
     pub(crate) key_bytes: Vec<u8>,
     pub(crate) state_api: S,
@@ -421,7 +432,7 @@ pub struct VacantEntry<'a, K, V, S> {
 /// This differs from [`OccupiedEntryRaw`] in that this automatically handles
 /// serialization and provides convenience methods for modifying the value via
 /// the [`DerefMut`](crate::ops::DerefMut) implementation.
-pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi> {
+pub struct OccupiedEntry<'a, K, V: Serial, S: HasStateApi = ExternStateApi> {
     pub(crate) key: K,
     pub(crate) value: V,
     /// Indicates whether the value should be stored by the drop implementation.
@@ -463,7 +474,7 @@ impl<K, V: Serial, S: HasStateApi> Drop for OccupiedEntry<'_, K, V, S> {
 ///
 /// This `enum` is constructed from the [`entry`][StateMap::entry] method
 /// on a [`StateMap`] type.
-pub enum Entry<'a, K, V: Serial, S: HasStateApi> {
+pub enum Entry<'a, K, V: Serial, S: HasStateApi = ExternStateApi> {
     Vacant(VacantEntry<'a, K, V, S>),
     Occupied(OccupiedEntry<'a, K, V, S>),
 }
