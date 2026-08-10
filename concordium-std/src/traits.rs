@@ -5,11 +5,10 @@
 use crate::vec::Vec;
 use crate::{
     AccountSignatures, CallContractResult, CheckAccountSignatureResult, EntryRaw, ExchangeRates,
-    HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw,
-    PublicKeyEcdsaSecp256k1, PublicKeyEd25519, QueryAccountBalanceResult,
-    QueryAccountPublicKeysResult, QueryContractBalanceResult, ReadOnlyCallContractResult,
-    SignatureEcdsaSecp256k1, SignatureEd25519, StateBuilder, TransferResult, UpgradeResult,
-    VacantEntryRaw,
+    HashKeccak256, HashSha2256, HashSha3256, Key, OccupiedEntryRaw, PublicKeyEcdsaSecp256k1,
+    PublicKeyEd25519, QueryAccountBalanceResult, QueryAccountPublicKeysResult,
+    QueryContractBalanceResult, ReadOnlyCallContractResult, SignatureEcdsaSecp256k1,
+    SignatureEd25519, StateBuilder, TransferResult, UpgradeResult, VacantEntryRaw,
     types::{LogError, StateError},
 };
 use crate::{QueryContractModuleReferenceResult, QueryContractNameResult};

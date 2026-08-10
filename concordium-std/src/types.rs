@@ -1,5 +1,5 @@
 use crate::{
-    cell::UnsafeCell, marker::PhantomData, num::NonZeroU32, Cursor, HasStateApi, Serial, Vec,
+    Cursor, HasStateApi, Serial, Vec, cell::UnsafeCell, marker::PhantomData, num::NonZeroU32,
 };
 use concordium_contracts_common::{
     AccountBalance, Amount, ModuleReference, OwnedContractName, ParseError,
@@ -822,7 +822,7 @@ macro_rules! fail {
     };
     ($($arg:tt)*) => {
         {
-            let msg = alloc::format!($($arg)*);
+            let msg = $crate::alloc::format!($($arg)*);
             #[allow(deprecated)]
             $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
