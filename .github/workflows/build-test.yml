@@ -190,72 +190,22 @@ jobs:
           rustup target add wasm32v1-none
           cargo check --target wasm32v1-none 
 
-#  examples_test:
-#    name: Test examples
-#    runs-on: ubuntu-latest
-#    needs: [rustfmt, clippy-schema]
-#    strategy:
-#      matrix:
-#        crates:
-#          - examples/voting
-#          - examples/eSealing
-#          - examples/auction
-#          - examples/cis2-multi
-#          - examples/cis2-dynamic-nft
-#          - examples/cis2-multi-royalties
-#          - examples/cis2-nft
-#          - examples/cis3-nft-sponsored-txs
-#          - examples/cis2-wccd
-#          - examples/cis5-smart-contract-wallet
-#          - examples/credential-registry
-#          - examples/factory
-#          - examples/fib
-#          - examples/icecream
-#          - examples/memo
-#          - examples/nametoken
-#          - examples/piggy-bank/part1
-#          - examples/piggy-bank/part2
-#          - examples/proxy
-#          - examples/recorder
-#          - examples/signature-verifier
-#          - examples/transfer-policy-check
-#          - examples/two-step-transfer
-#          - examples/smart-contract-upgrade/contract-version1
-#          - examples/smart-contract-upgrade/contract-version2
-#          - examples/offchain-transfers
-#          - examples/account-signature-checks
-#          - examples/sponsored-tx-enabled-auction
-#          - examples/bump-alloc-tests
-#
-#    steps:
-#      - name: Checkout sources
-#        uses: actions/checkout@v2
-#        with:
-#          submodules: recursive
-#
-#      - name: Install toolchain
-#        uses: actions-rust-lang/setup-rust-toolchain@v1
-#        with:
-#          toolchain: ${{ env.RUST_VERSION_TESTING_LIBRARY }}
-#          target: wasm32-unknown-unknown
-#
-#      - name: Download and install Cargo Concordium
-#        run: |
-#          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
-#          # chmod +x /tmp/cargo-concordium
-#          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
-#          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
-#          rustup target add wasm32v1-none
-#          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
-#        # The 'smart-contract-upgrade' example has a v1 and v2 contract and the tests in v1 needs the wasm module from v2 for upgrading.
-#      - name: Build contract-upgrade version 2 module if needed
-#        if: ${{ matrix.crates == 'examples/smart-contract-upgrade/contract-version1' }}
-#        run: cargo concordium build --out "examples/smart-contract-upgrade/contract-version2/concordium-out/module.wasm.v1" -- --manifest-path "examples/smart-contract-upgrade/contract-version2/Cargo.toml"
-#
-#        # The 'sponsored-tx-enabled-auction' and 'cis5-smart-contract-wallet' examples need the wasm module `cis2-multi` for its tests.
-#      - name: Build cis2-multi module if needed
-#        if: ${{ matrix.crates == 'examples/sponsored-tx-enabled-auction' || matrix.crates == 'examples/cis5-smart-contract-wallet'}}
-#        run: cargo concordium build --out "examples/cis2-multi/concordium-out/module.wasm.v1" -- --manifest-path "examples/cis2-multi/Cargo.toml"
-#
-#      - name: Run cargo concordium test
-#        run: cargo concordium test --out "${{ matrix.crates }}/concordium-out/module.wasm.v1" -- --manifest-path "${{ matrix.crates }}/Cargo.toml"
+  examples_test:
+    name: Test examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Download and install Cargo Concordium
+        run: |
+          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          # chmod +x /tmp/cargo-concordium
+          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
+          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
+          rustup target add wasm32v1-none
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
+      - name: Run cargo concordium tests script
+        working-directory: examples
+        run: ./run-tests.sh

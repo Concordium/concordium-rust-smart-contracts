@@ -50,8 +50,8 @@ fn test_vote_after_end_time() {
 #[test]
 fn test_invalid_vote() {
     let (mut chain, contract_address) = init();
-
-    let params = "invalid vote".to_string();
+panic!()
+;    let params = "invalid vote".to_string();
 
     // Try to vote.
     let update = chain
