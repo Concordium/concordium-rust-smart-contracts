@@ -5,41 +5,11 @@
 
 cd "$(dirname "$0")"
 
-# The example crates, as listed in the workspace `Cargo.toml` members.
-CRATES=(
-    account-signature-checks
-    auction
-    bump-alloc-tests
-    cis2-dynamic-nft
-    cis2-multi
-    cis2-multi-royalties
-    cis2-nft
-    cis2-wccd
-    cis3-nft-sponsored-txs
-    cis5-smart-contract-wallet
-    counter-notify
-    credential-registry
-    eSealing
-    factory
-    fib
-    icecream
-    memo
-    nametoken
-    offchain-transfers
-    piggy-bank/part1
-    piggy-bank/part2
-    proxy
-    recorder
-    signature-verifier
-    smart-contract-upgrade/contract-version1
-    smart-contract-upgrade/contract-version2
-    sponsored-tx-enabled-auction
-    transfer-policy-check
-    two-step-transfer
-    voting
-)
+# Read the list of crates from Cargo.toml
+CRATES=( $(cargo metadata --no-deps --format-version 1 \
+    | jq -r '.workspace_root as $r | .packages[].manifest_path | ltrimstr($r + "/") | rtrimstr("/Cargo.toml")') )
 
-# Some examples need another example's compiled Wasm module available before
+# Some crates tests need another crates compiled Wasm module available before
 # their tests can run. Build those modules up front so ordering never matters:
 #   - smart-contract-upgrade/contract-version1 upgrades to contract-version2.
 #   - sponsored-tx-enabled-auction and cis5-smart-contract-wallet use cis2-multi.
