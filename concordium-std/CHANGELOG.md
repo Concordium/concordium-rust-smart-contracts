@@ -12,6 +12,8 @@
   The `concordium-std` crate still supports compiling to targets like x64 linux (for unit testing e.g.), in which case the crate will add the Rust `std` crate as a dependency.
 - The crate feature `p7` has been removed. The functionality it guarded (related to protocol P7) is unconditionally compiled.
 - The crate feature `crypto-primitives` has been removed. It had no effect anymore (was previously used by the now deprecated test infrastructure).
+- The types `StateMap` and `StateSet` and related types no longer requires the low-level state type to be specified. 
+  The type parameter `S` for the low-level state type now has default `StateApi`. 
 
 ## concordium-std 10.1.0 (2024-04-04)
 
