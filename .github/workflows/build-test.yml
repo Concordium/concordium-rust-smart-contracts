@@ -76,7 +76,7 @@ jobs:
         with:
           submodules: recursive
       - name: Run internal wasm unit test
-        working-directory: concordium-std
+        working-directory: concordium-std-internal-test
         run: |
           # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
           # chmod +x /tmp/cargo-concordium
@@ -84,7 +84,7 @@ jobs:
           # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
           rustup target add wasm32v1-none          
           cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
-          cargo concordium test --only-unit-tests -- --features internal-wasm-test
+          cargo concordium test --only-unit-tests
 
   std_clippy_wasm32v1:
     name: Clippy on concordium-std for wasm32v1 target
@@ -99,7 +99,7 @@ jobs:
         run: |
           rustup component add clippy
           rustup target add wasm32v1-none
-          cargo clippy --target wasm32v1-none -- -D warnings
+          cargo clippy --target wasm32v1-none --features wasm-test,build-schema,bump_alloc,debug -- -D warnings
 
   std_check:
     name: Check on concordium-std for x64 and wasm32 and different features
@@ -113,11 +113,15 @@ jobs:
         working-directory: concordium-std
         run: |
           # Try different feature combinations on default (x86 linux) target
+          cargo check --no-default-features
           cargo check
 
           # Try different feature combinations on wasm32v1 target
           rustup target add wasm32v1-none
-          cargo check --target wasm32v1-none 
+          cargo check --target wasm32v1-none --no-default-features
+          cargo check --target wasm32v1-none --no-default-features --features bump_alloc                    
+          cargo check --target wasm32v1-none --no-default-features --features bump_alloc,global_alloc
+          cargo check --target wasm32v1-none
           cargo check --target wasm32v1-none --features wasm-test
           cargo check --target wasm32v1-none --features build-schema
           cargo check --target wasm32v1-none --features bump_alloc

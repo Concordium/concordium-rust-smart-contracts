@@ -19,14 +19,15 @@
 //! # Features
 //!
 //! This library has the following features:
-//! [`bump_alloc`](#bump_alloc-and-no_alloc-use-a-custom-allocator),
-//! [`no_alloc`](#bump_alloc-and-no_alloc-use-a-custom-allocator), and
-//! [`debug`](#debug-emit-debug-information)
+//! [`dlmalloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator),
+//! [`bump_alloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator),
+//! [`global_alloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator), and
+//! [`debug`](#debug-emit-debug-information).
 //! And the following features used by tooling only:
 //! [`build-schema`](#build-schema-build-for-generating-a-module-schema) and
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //!
-//! ## `bump_alloc` and `no_alloc`: Use a custom allocator
+//! ## `dlmalloc`, `bump_alloc` and `global_alloc`: Use a custom allocator
 //!
 //! The default allocator is [`dlmalloc`](https://crates.io/crates/dlmalloc), which
 //! is a general purpose allocator. For smart contracts, the lighter [`bump_alloc`](mod@bump_alloc)
@@ -40,7 +41,8 @@
 //! tradeoff. Especially for contracts such as those dealing with tokens.
 //! For very complex contracts it may be beneficial to run benchmarks to see
 //! whether `bump_alloc` is the best option. It is also possible to specify
-//! your own allocator by using the feature flag `no_alloc`.
+//! your own allocator by disabling the feature flag `global_alloc`. If the flag
+//! is enabled, the `concordium-std` will set the global allocator.
 //! See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
 //! documentation for more context and details on using custom allocators.
 //!
@@ -271,12 +273,11 @@
 //! #![no_std]
 //! use concordium_std::*;
 //! ```
-//! `concordium-std` largely replaces the features supplied by the Rust `std` library. If your
-//! smart contract crate currently has an `std` feature flag, you should remove it, since it only makes
+//! If your smart contract crate currently has an `std` feature flag, you should remove it, since it only makes
 //! sense to compile it with `no_std`. If you have code that conditionally should only compile
 //! when WASM is the target, you can condition on the WASM target: `#[cfg(target_arch = "wasm32")]`.
 //!
-//! If you are using a custom allocator, see [this section](#bump_alloc-and-no_alloc-use-a-custom-allocator)
+//! If you are using a custom allocator, see [this section](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator)
 //! on how to configure it.
 //!
 //! ## Version 8.1
@@ -411,10 +412,10 @@ pub use alloc::{
 /// Re-export.
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 
-// dlmalloc is the "default" allocator
 #[cfg(all(
-    not(feature = "no_alloc"),
+    feature = "dlmalloc",
     not(feature = "bump_alloc"),
+    feature = "global_alloc",
     target_arch = "wasm32"
 ))]
 #[global_allocator]
@@ -424,8 +425,8 @@ static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 pub mod bump_alloc;
 
 #[cfg(all(
-    not(feature = "no_alloc"),
     feature = "bump_alloc",
+    feature = "global_alloc",
     target_arch = "wasm32"
 ))]
 #[global_allocator]

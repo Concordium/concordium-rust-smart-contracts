@@ -11,7 +11,7 @@ repository = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 readme = "./README.md"
 
 [dependencies]
-dlmalloc = { version = "0.2.14", features = ["global"] }
+dlmalloc = { version = "0.2.14", features = ["global"], optional = true }
 quickcheck = {version = "1", optional = true }
 getrandom = { version = "0.2", features = ["custom"], optional = true }
 
@@ -22,7 +22,7 @@ default-features = false
 features = ["smart-contract"]
 
 [features]
-default = []
+default = ["dlmalloc", "global_alloc"]
 # Enabling the wasm-test feature changes the #[concoridum_test] macro to output test functions callable from WASM interpreter
 wasm-test = ["concordium-contracts-common/wasm-test"]
 # Own internal wasm-tests leak out to the smart contracts using this library,
@@ -34,14 +34,12 @@ build-schema = ["concordium-contracts-common/build-schema"]
 concordium-quickcheck = ["getrandom", "quickcheck", "concordium-contracts-common/concordium-quickcheck"] # // decide what to do with this feature flag as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target
 # Enabling debug feature changes the #[concoridum_dbg] macro to log messages via the WASM interpreter
 debug = []
+# Use the dlmalloc allocator
+dlmalloc = ["dep:dlmalloc"]
 # Use the custom bump allocator instead of dlmalloc. See module documentation for bump_alloc in this crate.
 bump_alloc = []
-# Do not set an allocator (must be set in smart contract then).
-no_alloc = []
-
-[lib]
-# cdylib is needed below to compile into a wasm module with internal unit tests.
-#crate-type = ["cdylib", "rlib"] #todo ar
+# Set a global allocator. Otherwise, it must be set in smart contract.
+global_alloc = []
 
 [dev-dependencies]
 trybuild = "1.0"

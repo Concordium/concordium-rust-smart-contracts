@@ -4,6 +4,7 @@ resolver = "3"
 members = [
    "concordium-cis2",
    "concordium-std",
+   "concordium-std-internal-test",
    "concordium-std-derive",
    "contract-testing",
 ]
