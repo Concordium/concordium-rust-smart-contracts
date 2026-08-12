@@ -693,7 +693,7 @@ impl TryFrom<String> for TokenIdUnit {
     type Error = ParseError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        if s == "" {
+        if s.is_empty() {
             Ok(Self())
         } else {
             Err(ParseError {})

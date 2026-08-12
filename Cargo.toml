@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+
+members = [
+   "concordium-cis2",
+   "concordium-std",
+   "concordium-std-derive",
+   "contract-testing",
+]
+
+# Exclude crates in submodules
+exclude = ["concordium-rust-sdk"]

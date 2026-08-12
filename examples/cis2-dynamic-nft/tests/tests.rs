@@ -287,7 +287,7 @@ fn test_upgrade() {
         url: format!("https://some.example/token/2/{TOKEN_0}"),
         hash: None,
     };
-    assert_eq!(rv.0.get(0), Some(&expected_metadata));
+    assert_eq!(rv.0.first(), Some(&expected_metadata));
 }
 
 /// Helper function that sets up the contract with two types of tokens minted to

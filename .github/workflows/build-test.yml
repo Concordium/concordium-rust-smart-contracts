@@ -1,0 +1,211 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+
+  workflow_dispatch: # allows manual trigger
+
+name: Clippy & fmt
+
+env:
+  CARGO_CONCORDIUM_VERSION: "4.2.0"
+
+jobs:
+
+  rustfmt:
+    name: Format
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Format
+        run: |
+          rustup component add rustfmt
+          cargo fmt -- --color=always --check    
+
+  rustdoc:
+    name: Lint docs
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Docs
+        run: |
+          rustup component add rust-docs
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+
+  clippy:
+    name: Clippy
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Clippy
+        run: |
+          rustup component add clippy
+          cargo clippy --color=always --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Test
+        run: cargo test --all-features -- --skip io_tests # Skip the I/O tests in the testing library.
+
+  # Run unit-tests for concordium-std compiled to wasm using cargo concordium test.
+  std-internal-wasm-test:
+    name: concordium-std internal wasm tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run internal wasm unit test
+        working-directory: concordium-std
+        run: |
+          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          # chmod +x /tmp/cargo-concordium
+          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
+          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
+          rustup target add wasm32v1-none          
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
+          cargo concordium test --only-unit-tests -- --features internal-wasm-test
+
+  std_clippy_wasm32v1:
+    name: Clippy on concordium-std for wasm32v1 target
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run cargo clippy
+        working-directory: concordium-std
+        run: |
+          rustup component add clippy
+          rustup target add wasm32v1-none
+          cargo clippy --target wasm32v1-none -- -D warnings
+
+  std_check:
+    name: Check on concordium-std for x64 and wasm32 and different features
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run cargo check
+        working-directory: concordium-std
+        run: |
+          # Try different feature combinations on default (x86 linux) target
+          cargo check
+
+          # Try different feature combinations on wasm32v1 target
+          rustup target add wasm32v1-none
+          cargo check --target wasm32v1-none 
+          cargo check --target wasm32v1-none --features wasm-test
+          cargo check --target wasm32v1-none --features build-schema
+          cargo check --target wasm32v1-none --features bump_alloc
+          cargo check --target wasm32v1-none --features debug
+
+  cis2_check:
+    name: Check on concordium-cis2 for x64 and wasm32 and different features
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run cargo check
+        working-directory: concordium-cis2
+        run: |
+          # Try different feature combinations on default (x86 linux) target
+          cargo check
+          cargo check --features serde
+          cargo check --features u256_amount
+          cargo check --all-features
+
+          # Try different feature combinations on wasm32v1 target
+          rustup target add wasm32v1-none
+          cargo check --target wasm32v1-none 
+          cargo check --target wasm32v1-none --features u256_amount
+
+
+  examples-rustfmt:
+    name: Examples format
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Format
+        working-directory: examples
+        run: |
+          rustup component add rustfmt
+          cargo fmt -- --color=always --check  
+
+  examples-clippy:
+    name: Examples clippy
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Clippy
+        working-directory: examples
+        run: |
+          rustup component add clippy
+          cargo clippy --color=always --all-targets --all-features -- -D warnings
+
+  examples_check:
+    name: Check on examples using wasm32v1 target
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run cargo check
+        working-directory: examples
+        run: |
+          rustup target add wasm32v1-none
+          cargo check --target wasm32v1-none 
+
+  examples_test:
+    name: Test examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Download and install Cargo Concordium
+        run: |
+          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
+          # chmod +x /tmp/cargo-concordium
+          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
+          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
+          rustup target add wasm32v1-none
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
+      - name: Run cargo concordium tests script
+        working-directory: examples
+        run: ./run-tests.sh

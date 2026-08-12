@@ -3,10 +3,10 @@
 //! Run the tests by:
 //!
 //! 1. Open a terminal and navigate to the:
-//! `examples/smart-contract-upgrade-folder`
+//!    `examples/smart-contract-upgrade-folder`
 //!
 //! 2. Compile the version 2 contract
-//! with:
+//!    with:
 //!    - `cargo concordium build --out
 //!      contract-version2/concordium-out/module.wasm.v1 -- --manifest-path
 //!      contract-version2/Cargo.toml`
