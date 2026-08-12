@@ -104,7 +104,7 @@ impl TestEnv {
         self
     }
 
-    /// A custom function for generating random numbers.
+    /// Function for generating random numbers.
     /// There is no Wasm primitive to sample random numbers and this function
     /// redirects calls to the `get_random` primitive (host function), which is
     /// later handled by `TestHost`, where the actual random number generation
@@ -415,7 +415,7 @@ mod wasm_test {
     }
 
     #[concordium_test]
-    fn get_randum() {
+    fn get_random() {
         let mut r = [1u8; 8];
         TestEnv::get_random(&mut r);
         claim_ne!(r, [1u8; 8]);

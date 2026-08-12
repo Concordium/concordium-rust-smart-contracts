@@ -818,6 +818,8 @@ macro_rules! ensure_ne {
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
+///
+/// Used for tests run as WASM using `#[concordium_test]`.
 #[macro_export]
 macro_rules! fail {
     () => {
@@ -837,6 +839,8 @@ macro_rules! fail {
 
 /// The `claim` macro is used for testing as a substitute for the assert macro.
 /// It checks the condition and if false it reports back an error.
+///
+/// Used for tests run as WASM using `#[concordium_test]`.
 #[macro_export]
 macro_rules! claim {
     ($cond:expr) => {
@@ -858,6 +862,8 @@ macro_rules! claim {
 
 /// Ensure the first two arguments are equal, just like `assert_eq!`, otherwise
 /// reports an error.
+///
+/// Used for tests run as WASM using `#[concordium_test]`.
 #[macro_export]
 macro_rules! claim_eq {
     ($left:expr, $right:expr $(,)?) => {
@@ -878,6 +884,8 @@ macro_rules! claim_eq {
 
 /// Ensure the first two arguments are *not* equal, just like `assert_ne!`,
 /// otherwise reports an error.
+///
+/// Used for tests run as WASM using `#[concordium_test]`.
 #[macro_export]
 macro_rules! claim_ne {
     ($left:expr, $right:expr $(,)?) => {
