@@ -814,26 +814,22 @@ macro_rules! ensure_ne {
     };
 }
 
-// Macros for failing a test (in `concordium_std::test_infrastructure`).
+// Macros for failing a test run as WASM using `#[concordium_test]`.
 
 /// The `fail` macro is used for testing as a substitute for the panic macro.
 /// It reports back error information to the host.
-/// Used only in testing with
-/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! fail {
     () => {
         {
-            #[allow(deprecated)]
-            $crate::test_infrastructure::report_error("", file!(), line!(), column!());
+            $crate::report_error("", file!(), line!(), column!());
             panic!()
         }
     };
     ($($arg:tt)*) => {
         {
             let msg = $crate::alloc::format!($($arg)*);
-            #[allow(deprecated)]
-            $crate::test_infrastructure::report_error(&msg, file!(), line!(), column!());
+            $crate::report_error(&msg, file!(), line!(), column!());
             panic!("{}", msg)
         }
     };
@@ -841,8 +837,6 @@ macro_rules! fail {
 
 /// The `claim` macro is used for testing as a substitute for the assert macro.
 /// It checks the condition and if false it reports back an error.
-/// Used only in testing with
-/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim {
     ($cond:expr) => {
@@ -864,8 +858,6 @@ macro_rules! claim {
 
 /// Ensure the first two arguments are equal, just like `assert_eq!`, otherwise
 /// reports an error.
-/// Used only in testing with
-/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim_eq {
     ($left:expr, $right:expr $(,)?) => {
@@ -886,8 +878,6 @@ macro_rules! claim_eq {
 
 /// Ensure the first two arguments are *not* equal, just like `assert_ne!`,
 /// otherwise reports an error.
-/// Used only in testing with
-/// [`test_infrastructure`](crate::test_infrastructure).
 #[macro_export]
 macro_rules! claim_ne {
     ($left:expr, $right:expr $(,)?) => {
@@ -905,6 +895,31 @@ macro_rules! claim_ne {
         $crate::claim!($left != $right, $($arg)*)
     };
 }
+
+/// Reports back an error to the host when compiled to wasm
+/// Used internally, not meant to be called directly by contract writers
+#[doc(hidden)]
+#[cfg(all(feature = "wasm-test", target_arch = "wasm32"))]
+pub fn report_error(message: &str, filename: &str, line: u32, column: u32) {
+    let msg_bytes = message.as_bytes();
+    let filename_bytes = filename.as_bytes();
+    unsafe {
+        crate::prims::report_error(
+            msg_bytes.as_ptr(),
+            msg_bytes.len() as u32,
+            filename_bytes.as_ptr(),
+            filename_bytes.len() as u32,
+            line,
+            column,
+        )
+    };
+}
+
+/// Reports back an error to the host when compiled to wasm
+/// Used internally, not meant to be called directly by contract writers
+#[doc(hidden)]
+#[cfg(not(all(feature = "wasm-test", target_arch = "wasm32")))]
+pub fn report_error(_message: &str, _filename: &str, _line: u32, _column: u32) {}
 
 /// The expected return type of the receive method of a smart contract.
 ///

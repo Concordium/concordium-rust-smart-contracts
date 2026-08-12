@@ -452,12 +452,6 @@ pub use state_btree::*;
 pub use traits::*;
 pub use types::*;
 
-#[deprecated(
-    since = "8.1.0",
-    note = "Deprecated in favor of [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)."
-)]
-pub mod test_infrastructure;
-
 #[macro_export]
 #[cfg(feature = "debug")]
 /// When the `debug` feature of `concordium-std` is enabled this will use the

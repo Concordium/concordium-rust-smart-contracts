@@ -103,6 +103,17 @@ impl TestEnv {
         unsafe { prims::set_receive_entrypoint(buf.as_ptr()) };
         self
     }
+
+    /// A custom function for generating random numbers.
+    /// There is no Wasm primitive to sample random numbers and this function
+    /// redirects calls to the `get_random` primitive (host function), which is
+    /// later handled by `TestHost`, where the actual random number generation
+    /// happens.
+    pub fn get_random(dest: &mut [u8]) {
+        unsafe {
+            prims::get_random(dest.as_mut_ptr(), dest.len() as u32);
+        }
+    }
 }
 
 #[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
@@ -401,5 +412,12 @@ mod wasm_test {
 
         let received_hash = crypto_primitives().hash_keccak_256(message).0;
         claim_eq!(expected_hash, received_hash);
+    }
+
+    #[concordium_test]
+    fn get_randum() {
+        let mut r = [1u8; 8];
+        TestEnv::get_random(&mut r);
+        claim_ne!(r, [1u8; 8]);
     }
 }
