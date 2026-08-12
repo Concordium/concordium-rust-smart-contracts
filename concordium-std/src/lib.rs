@@ -269,7 +269,7 @@
 //!
 //! Smart contracts are now always compiled to the target `wasm32v1-none` which has no Rust `std` library
 //! implementation. Hence, the contract must specify `no_std` in its `lib.rs` file:
-//! ```no_run
+//! ```ignore
 //! #![no_std]
 //! use concordium_std::*;
 //! ```
