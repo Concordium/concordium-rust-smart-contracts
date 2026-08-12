@@ -108,16 +108,6 @@
 //! contracts. The structure of these are, at present, a bit odd without the
 //! historic context, which is explained below.
 //!
-//! Prior to version 8.1, a number of traits and generics were used when writing
-//! smart contracts, e.g. [`HasHost`], to support the usage of
-//! [`crate::test_infrastructure`] for testing, where two primary
-//! implementations of each trait existed. The first one is supported by
-//! **host** functions, and this is the implementation that is used when
-//! contracts are executed by notes. The second set of implementations supports
-//! testing contracts with [`crate::test_infrastructure`], but since the
-//! deprecation of this module, the preferred way of writing contracts is to use
-//! the concrete types.
-//!
 //! The essential concrete types are:
 //! - [`StateApi`] for operations possible on the contract state
 //! - [`Host`] for invoking operations on the host and accessing the state
@@ -282,14 +272,14 @@
 //!
 //! ## Version 8.1
 //!
-//! Version 8.1 of `concordium-std` deprecates the module [`test_infrastructure`] in favor of the
+//! Version 8.1 of `concordium-std` deprecates the module `test_infrastructure` in favor of the
 //! library [concordium_smart_contract_testing], which should be used instead.
 //!
 //! ### Migration guide for `concordium_smart_contract_testing`
 //!
-//! The module [test_infrastructure] is deprecated and a number of traits are
+//! The module `test_infrastructure` is deprecated and a number of traits are
 //! deprecated at the same time since they only exist to support the
-//! [test_infrastructure] and are not needed in the new testing library.
+//! `test_infrastructure` and are not needed in the new testing library.
 //! The primary of these traits are [`HasHost`], [`HasStateApi`],
 //! [`HasInitContext`], and [`HasReceiveContext`].
 //!

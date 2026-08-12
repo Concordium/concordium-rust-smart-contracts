@@ -1059,12 +1059,6 @@ pub struct ExternHost<State> {
 /// A state builder that allows the creation of [`StateMap`], [`StateSet`], and
 /// [`StateBox`].
 ///
-/// It is parametrized by a parameter `S` that is assumed to
-/// implement [`HasStateApi`] to support testing with the deprecated
-/// [`test_infrastructure`](crate::test_infrastructure). The `S` defaults to
-/// `StateApi`, which is sufficient to test with the [concordium-smart-contract-testing](https://docs.rs/concordium-smart-contract-testing)
-/// library.
-///
 /// The StateBuilder is designed to provide an abstraction over the contract
 /// state, abstracting over the exact **keys** (keys in the sense of key-value
 /// store, which is the low-level semantics of contract state) that are used
