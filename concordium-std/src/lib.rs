@@ -30,7 +30,7 @@
 //! ## `dlmalloc`, `bump_alloc` and `global_alloc`: Use a custom allocator
 //!
 //! The default allocator is [`dlmalloc`](https://crates.io/crates/dlmalloc), which
-//! is a general purpose allocator. For smart contracts, the lighter [`bump_alloc`](mod@bump_alloc)
+//! is a general purpose allocator. For smart contracts, the lighter `bump_alloc`
 //! may be enabled with the feature flag of the same name.
 //! The main reason for using `bump_alloc` instead of the default allocator,
 //! is that `bump_alloc` has a smaller code footprint,
