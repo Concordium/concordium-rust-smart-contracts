@@ -3,7 +3,7 @@ name = "concordium-cis2"
 version = "6.2.1-alpha.1"
 authors = ["Concordium <developers@concordium.com>"]
 rust-version = "1.85"
-edition = "2021"
+edition = "2024"
 license = "MPL-2.0"
 description = "A collection of types for implementing CIS-2 Concordium Token Standard."
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
@@ -13,7 +13,6 @@ readme = "./README.md"
 [dependencies.concordium-std]
 path = "../concordium-std"
 version = "10.0"
-default-features = false
 
 [dependencies.primitive-types]
 version = "0.11"
@@ -32,8 +31,6 @@ optional = true
 default-features = false
 
 [features]
-default = ["std"]
-std = ["concordium-std/std"]
 u256_amount = []
 serde = [
     "dep:serde",
@@ -44,14 +41,11 @@ serde = [
 [lib]
 crate-type = ["rlib"]
 
-[profile.release]
-opt-level = "s"
-
 [package.metadata.docs.rs]
 # This sets the default target to `wasm32-unknown-unknown` and only builds that
 # target on docs.rs. This is useful because the some parts of documentation only
 # exist on that platform.
-targets = ["wasm32-unknown-unknown"]
+targets = ["wasm32v1-none"]
 # Default features to build documentation for.
 features = ["std", "u256_amount", "serde"]
 rustc-args = ["--cfg", "docsrs"]

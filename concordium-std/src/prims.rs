@@ -15,7 +15,7 @@
 // Interface to the chain. These functions are assumed to be instantiated by
 // the scheduler with relevant primitives.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
-extern "C" {
+unsafe extern "C" {
     /// Invoke a host instruction. The arguments are
     ///
     /// - `tag`, which instruction to invoke
@@ -303,7 +303,7 @@ extern "C" {
 // available in a test environment.
 #[cfg_attr(target_arch = "wasm32", link(wasm_import_module = "concordium"))]
 #[cfg(feature = "wasm-test")]
-extern "C" {
+unsafe extern "C" {
     /// Set the slot time in milliseconds.
     /// The slot time represents the beginning of the smart contract's block.
     pub(crate) fn set_slot_time(slot_time: u64);
@@ -363,23 +363,23 @@ extern "C" {
 // This is necessary to compile to x86_64 during unit tests on Windows and OSX.
 #[cfg(not(target_arch = "wasm32"))]
 mod host_dummy_functions {
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn invoke(_tag: u32, _start: *const u8, _length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn write_output(_start: *const u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn upgrade(_module_ref: *const u8) -> u64 {
         unimplemented!("Dummy function! Not to be executed.")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_parameter_size(_i: u32) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_parameter_section(
         _i: u32,
         _param_bytes: *mut u8,
@@ -388,47 +388,47 @@ mod host_dummy_functions {
     ) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_policy_section(_policy_bytes: *mut u8, _length: u32, _offset: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn log_event(_start: *const u8, _length: u32) -> i32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_lookup_entry(_key_start: *const u8, _key_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_create_entry(_key_start: *const u8, _key_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_delete_entry(_entry: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_delete_prefix(_key_start: *const u8, _key_length: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_iterate_prefix(_prefix_start: *const u8, _prefix_length: u32) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_iterator_next(_iterator: u64) -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_iterator_delete(_iterator: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_iterator_key_size(_iterator: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_iterator_key_read(
         _iterator: u64,
         _start: *mut u8,
@@ -437,7 +437,7 @@ mod host_dummy_functions {
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_entry_read(
         _entry: u64,
         _start: *mut u8,
@@ -446,7 +446,7 @@ mod host_dummy_functions {
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_entry_write(
         _entry: u64,
         _start: *const u8,
@@ -455,53 +455,53 @@ mod host_dummy_functions {
     ) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_entry_resize(_entry: u64, _new_size: u32) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub(crate) fn state_entry_size(_entry: u64) -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_init_origin(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_invoker(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_self_address(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_self_balance() -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_sender(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_owner(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_entrypoint_size() -> u32 {
         unimplemented!("Dummy function! Not to be executed")
     }
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_receive_entrypoint(_start: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn get_slot_time() -> u64 {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn verify_ed25519_signature(
         _public_key: *const u8,
         _signature: *const u8,
@@ -511,7 +511,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn verify_ecdsa_secp256k1_signature(
         _public_key: *const u8,
         _signature: *const u8,
@@ -520,22 +520,22 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn hash_sha2_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn hash_sha3_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn hash_keccak_256(_data: *const u8, _data_len: u32, _output: *mut u8) {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn report_error(
         _msg_start: *const u8,
         _msg_length: u32,
@@ -547,7 +547,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn debug_print(
         _msg_start: *const u8,
         _msg_length: u32,
@@ -559,7 +559,7 @@ mod host_dummy_functions {
         unimplemented!("Dummy function! Not to be executed")
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn get_random(_dest: *mut u8, _size: u32) {
         unimplemented!("Dummy function! Not to be executed")
     }

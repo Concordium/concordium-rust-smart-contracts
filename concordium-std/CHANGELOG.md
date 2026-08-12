@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Removed the native test `StateTrie`
+- The crate now targets [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html) as the supported WASM target. The crate also no longer has an `std` crate feature. 
+  Smart contracts using `concordium-std` should specify `#[no_std]` and compile to `wasm32v1-none`. 
+  The `concordium-std` crate still supports compiling to targets like x86 linux (for unit testing e.g.), in which case the crate will add the Rust `std` crate as a dependency.
+- The crate feature `p7` has been removed. The functionality it guarded (related to protocol P7) is unconditionally compiled.
+- The crate feature `crypto-primitives` has been removed. It had no effect anymore (was previously used by the now deprecated test infrastructure).
 
 ## concordium-std 10.1.0 (2024-04-04)
 

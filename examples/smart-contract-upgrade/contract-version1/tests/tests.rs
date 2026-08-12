@@ -17,7 +17,7 @@
 use concordium_smart_contract_testing::*;
 use concordium_std::Deserial;
 use concordium_std_derive::*;
-use smart_contract_upgrade::UpgradeParams;
+use smart_contract_upgrade1::UpgradeParams;
 
 const ACC_ADDR_OWNER: AccountAddress =
     account_address!("2xBpaHottqhwFZURMZW4uZduQvpxNDSy46iXMYs9kceNGaPpZX");

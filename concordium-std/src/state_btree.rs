@@ -1,7 +1,7 @@
 use crate::{
-    self as concordium_std, cmp::Ordering, marker::PhantomData, mem, prims, vec::Vec, Deletable,
-    Deserial, DeserialWithState, Get, HasStateApi, ParseResult, Read, Serial, Serialize, StateApi,
-    StateItemPrefix, StateMap, StateRef, StateRefMut, UnwrapAbort, Write, STATE_ITEM_PREFIX_SIZE,
+    self as concordium_std, Deletable, Deserial, DeserialWithState, Get, HasStateApi, ParseResult,
+    Read, STATE_ITEM_PREFIX_SIZE, Serial, Serialize, StateApi, StateItemPrefix, StateMap, StateRef,
+    StateRefMut, UnwrapAbort, Write, cmp::Ordering, marker::PhantomData, mem, prims, vec::Vec,
 };
 
 /// An ordered map based on [B-Tree](https://en.wikipedia.org/wiki/B-tree), where
@@ -1326,7 +1326,10 @@ where
 #[cfg(feature = "internal-wasm-test")]
 mod wasm_test_btree {
     use super::*;
-    use crate::{claim, claim_eq, concordium_test, StateApi, StateBuilder};
+    use crate::{StateApi, StateBuilder, claim, claim_eq, concordium_test};
+    use alloc::string::String;
+    use alloc::{format, vec};
+    use core::fmt;
 
     /// The invariants to check in a btree.
     /// Should only be used while debugging and testing the btree itself.
@@ -1434,7 +1437,7 @@ mod wasm_test_btree {
         /// Should only be used while debugging and testing the btree itself.
         pub(crate) fn debug(&self) -> String
         where
-            K: Serialize + std::fmt::Debug + Ord,
+            K: Serialize + fmt::Debug + Ord,
         {
             let Some(root_node_id) = self.root else {
                 return format!("no root");
@@ -1869,13 +1872,17 @@ mod wasm_test_btree {
     // The module is using `concordium_quickcheck` which is located in a deprecated
     // module.
     #[allow(deprecated)]
+    #[cfg(feature = "concordium-quickcheck")] // todo remove this conditional as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target to reenable property testst
     mod quickcheck {
         use super::super::*;
         use crate::{
-            self as concordium_std, concordium_quickcheck, concordium_test, fail, StateApi,
-            StateBuilder, StateError,
+            self as concordium_std, StateApi, StateBuilder, StateError, concordium_quickcheck,
+            concordium_test, fail,
         };
         use ::quickcheck::{Arbitrary, Gen, TestResult};
+        use alloc::boxed::Box;
+        use alloc::string::String;
+        use alloc::{format, vec};
 
         /// Quickcheck inserting random items, check invariants on the tree and
         /// query every item ensuring the tree contains it.

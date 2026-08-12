@@ -15,7 +15,7 @@
 //!  - Tallying votes for a requested voting option (`getNumberOfVotes`
 //!    function).
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_std::*;
 

@@ -12,7 +12,7 @@
  * will be forwarded to the account address held in the state. Otherwise,
  * the receive function will reject with `ContractError::NotLocalSender`.
  */
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_std::*;
 
 type State = AccountAddress;

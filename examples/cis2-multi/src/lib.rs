@@ -115,7 +115,7 @@
 //! migration function added to e.g. change the shape of the smart contract
 //! state from `contract-version1` to `contract-version2`.
 //! https://github.com/Concordium/concordium-rust-smart-contracts/blob/main/examples/smart-contract-upgrade/contract-version2/src/lib.rs
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_cis2::*;
 use concordium_std::{collections::BTreeMap, EntrypointName, *};
 
