@@ -6,62 +6,59 @@
 //! contracts. For this reason it re-exports a number of definitions from other
 //! libraries.
 //!
-//! # Versions
-//!
-//! The concordium blockchain at present supports two variants of smart
-//! contracts. The original V0 contracts that use message-passing for
-//! communication and have limited state, and V1 contracts which use synchronous
-//! calls, and have extended state. Versions 1 and 2 of `concordium-std`
-//! **support only V0 contracts**. Version 3 and later of `concordium-std`
-//! **supports only V1 contracts**.
-//!
-//! Also note that `concordium-std` version 4 only works with `cargo-concordium`
-//! version 2.1+.
-//!
-//! Version 8.1 deprecates the module [`test_infrastructure`] in favor of the
-//! library [concordium_smart_contract_testing], which should be used instead.
-//! For more details including how to migrate your contract, see the
-//! [Deprecating the
-//! `test_infrastructure`](#deprecating-the-test_infrastructure) section.
+//! The library is intended to be compiled to the target [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html)
+//! which is a `no_std` target, hence smart contracts must declare `#![no_std]`. The default allocator used
+//! is [`dlmalloc`](https://crates.io/crates/dlmalloc), see the feature flags below.
 //!
 //! # Panic handler
 //!
-//! When compiled without the `std` feature this crate sets the panic handler
-//! so that it terminates the process immediately, without any unwinding or
-//! prints.
-//! Concretely, when compiled to the `wasm32` target panic boils down to the
+//! When compiled to the `wasm32` target panic boils down to the
 //! `unreachable` instruction, which triggers a runtime failure, aborting
 //! execution of the program.
 //!
 //! # Features
 //!
 //! This library has the following features:
-//! [`std`](#std-build-with-the-rust-standard-library),
-//! [`build-schema`](#build-schema-build-for-generating-a-module-schema),
+//! [`dlmalloc`](#dlmalloc-and-bump_alloc-use-a-custom-allocator),
+//! [`bump_alloc`](#dlmalloc-and-bump_alloc-use-a-custom-allocator), and
+//! [`debug`](#debug-emit-debug-information).
+//! And the following features used by tooling only:
+//! [`build-schema`](#build-schema-build-for-generating-a-module-schema) and
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
-//! [`crypto-primitives`][crypto-feature], and
-//! [`bump_alloc`](#use-a-custom-allocator)
-//! [`debug`](#emit-debug-information)
 //!
-//! [crypto-feature]:
-//! #crypto-primitives-for-testing-crypto-with-actual-implementations
+//! ## `dlmalloc` and `bump_alloc`: Use a custom allocator
 //!
-//! ## `std`: Build with the Rust standard library
+//! The default allocator is [`dlmalloc`](https://crates.io/crates/dlmalloc), which
+//! is a general purpose allocator. For smart contracts, the lighter `bump_alloc`
+//! may be enabled with the feature flag of the same name.
+//! The main reason for using `bump_alloc` instead of the default allocator,
+//! is that `bump_alloc` has a smaller code footprint,
+//! i.e, the resulting smart contracts are going to be smaller by about 6-10kB,
+//! which means they are cheaper to deploy and run. `bump_alloc` is designed to
+//! be simple and fast, but it does not use the memory very efficiently. For
+//! short-lived programs, such as smart contracts, this is usually the right
+//! tradeoff. Especially for contracts such as those dealing with tokens.
+//! For very complex contracts it may be beneficial to run benchmarks to see
+//! whether `bump_alloc` is the best option. It is also possible to specify
+//! your own allocator by not enabling any of the `dlmalloc` and `bump_alloc` features.
+//! See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
+//! documentation for more context and details on using custom allocators.
 //!
-//! By default this library will be linked with the
-//! [std](https://doc.rust-lang.org/std/) crate, the rust standard library,
-//! however to minimize code size this library supports toggling compilation
-//! with the `#![no_std]` attribute via the feature `std` which is enabled by
-//! default. Compilation without the `std` feature requires a nightly version of
-//! rust.
+//! ## `debug`: Emit debug information
 //!
-//! To use this library without the `std` feature you have to disable it, which
-//! can be done, for example, as follows.
-//! ```toml
-//! [dependencies.concordium-std]
-//! default-features = false
-//! ```
-//! In your project's `Cargo.toml` file.
+//! During testing and debugging it is often useful to emit debug information to
+//! narrow down the source of the problem. `concordium-std` supports this using
+//! the [`concordium_dbg`] macro which will emit its arguments using a special
+//! host function `debug_print` which is only available when the `debug` feature
+//! is enabled. The output of this function is used by `cargo concordium run`
+//! and `cargo concordium test` to display any output that was emitted.
+//!
+//! The `debug` feature should typically not be enabled manually. It is used
+//! implicitly by `cargo concordium` when debug output is requested. It is also
+//! **crucial** that the `debug` feature is **not** enabled when building the
+//! contract for deployment. If it is the contract is most likely to be rejected
+//! when it is being deployed to the chain. The `concordium_dbg!` macro will
+//! ignore its arguments when the `debug` feature is not enabled.
 //!
 //! ## `build-schema`: Build for generating a module schema
 //!
@@ -102,62 +99,6 @@
 //!
 //! **Note** This feature is used by `cargo-concordium`, when building for
 //! testing and for most cases this feature should not be set manually.
-//!
-//! ## `crypto-primitives`: For testing crypto with actual implementations
-//!
-//! This features is only relevant when using the **deprecated**
-//! [test_infrastructure].
-//!
-//! Build with this feature if you want to run smart contract tests with actual
-//! (i.e., not mock) implementations of the cryptographic primitives from
-//! [`HasCryptoPrimitives`].
-//!
-//! **WARNING**: It is not possible to build this crate on macOS with the
-//! `crypto-primitives` feature when targeting `wasm32-unknown-unknown`.
-//! The issue arises when compiling the [`secp256k1`](https://docs.rs/secp256k1/latest/secp256k1/) crate.
-//!
-//! ## Use a custom allocator
-//!
-//! Some operations in `concordium-std` need to dynamically allocate memory.
-//! Rust programs compiled with default compiler settings have access to a
-//! [standard allocator](https://doc.rust-lang.org/std/alloc/struct.System.html)
-//! implemented in the Rust standard library. When using the
-//! `no-std` feature there is no default allocator provided by the Rust
-//! toolchain, and so one must be set explicitly.
-//!
-//! In the past `concordium-std` hard-coded the use of [wee_alloc](https://docs.rs/wee_alloc/)
-//! however since version `5.2.0` this is no longer the case.
-//! Instead no allocator is set by default, however there is a `bump_alloc`
-//! feature (disabled by default) that can be enabled which sets the allocator
-//! to `bump_alloc`, which ships with `concordium-std`. This can be used both
-//! with and without the `std` feature.
-//!
-//! The main reason for using `bump_alloc` instead of the default allocator,
-//! even in `std` builds, is that `bump_alloc` has a smaller code footprint,
-//! i.e, the resulting smart contracts are going to be smaller by about 6-10kB,
-//! which means they are cheaper to deploy and run. `bump_alloc` is designed to
-//! be simple and fast, but it does not use the memory very efficiently. For
-//! short-lived programs, such as smart contracts, this is usually the right
-//! tradeoff. Especially for contracts such as those dealing with tokens.
-//! For very complex contracts it may be beneficial to run benchmarks to see
-//! whether `bump_alloc` is the best option. See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
-//! documentation for more context and details on using custom allocators.
-//!
-//! # Emit debug information
-//!
-//! During testing and debugging it is often useful to emit debug information to
-//! narrow down the source of the problem. `concordium-std` supports this using
-//! the [`concordium_dbg`] macro which will emit its arguments using a special
-//! host function `debug_print` which is only available when the `debug` feature
-//! is enabled. The output of this function is used by `cargo concordium run`
-//! and `cargo concordium test` to display any output that was emitted.
-//!
-//! The `debug` feature should typically not be enabled manually. It is used
-//! implicitly by `cargo concordium` when debug output is requested. It is also
-//! **crucial** that the `debug` feature is **not** enabled when building the
-//! contract for deployment. If it is the contract is most likely to be rejected
-//! when it is being deployed to the chain. The `concordium_dbg!` macro will
-//! ignore its arguments when the `debug` feature is not enabled.
 //!
 //! # Essential types
 //!
@@ -308,16 +249,48 @@
 //!   which is located right above/below another key using
 //!   [`higher`](StateBTreeMap::higher)/[`lower`](StateBTreeMap::lower).
 //!
-//! # Deprecating the `test_infrastructure`
+//! # Versions
 //!
-//! Version 8.1 deprecates the [test_infrastructure] in favor of the library
-//! [concordium_smart_contract_testing]. A number of traits are also
+//! ## Version 11
+//!
+//! Version 11 and later of `concordium-std` uses the WASM target `wasm32v1-none`.
+//! Version 10 and earlier uses `wasm32-unknown-unknown`.
+//! The tool [`cargo-concordium`](https://crates.io/crates/cargo-concordium) likewise shifts
+//! which target it uses, which means that the following version combinations are supported:
+//!
+//! | concordium-std   | cargo-concordium |
+//! | ---: | ---: |
+//! | 11.x  | 5.x    |
+//! | <= 10 (recent versions) | 4.x |
+//!
+//! ### Migration guide for `wasm32v1-none`
+//!
+//! Smart contracts are now always compiled to the target `wasm32v1-none` which has no Rust `std` library
+//! implementation. Hence, the contract must specify `no_std` in its `lib.rs` file:
+//! ```ignore
+//! #![no_std]
+//! use concordium_std::*;
+//! ```
+//! If your smart contract crate currently has an `std` feature flag, you should remove it, since it only makes
+//! sense to compile it with `no_std`. If you have code that conditionally should only compile
+//! when WASM is the target, you can condition on the WASM target: `#[cfg(target_arch = "wasm32")]`.
+//!
+//! If you are using a custom allocator, see [this section](#dlmalloc-and-bump_alloc-use-a-custom-allocator)
+//! on how to configure it.
+//!
+//! ## Version 8.1
+//!
+//! Version 8.1 of `concordium-std` deprecates the module [`test_infrastructure`] in favor of the
+//! library [concordium_smart_contract_testing], which should be used instead.
+//!
+//! ### Migration guide for `concordium_smart_contract_testing`
+//!
+//! The module [test_infrastructure] is deprecated and a number of traits are
 //! deprecated at the same time since they only exist to support the
 //! [test_infrastructure] and are not needed in the new testing library.
 //! The primary of these traits are [`HasHost`], [`HasStateApi`],
 //! [`HasInitContext`], and [`HasReceiveContext`].
 //!
-//! ## Migration guide
 //! To migrate your contract and its tests to the new testing library, you need
 //! to do the following two steps:
 //!
@@ -392,6 +365,15 @@
 //! [1]: https://doc.rust-lang.org/std/primitive.unit.html
 //! [test_infrastructure]: ./test_infrastructure/index.html
 //! [concordium_smart_contract_testing]: https://docs.rs/concordium-smart-contract-testing
+//!
+//! ## Version 3
+//!
+//! The concordium blockchain at present supports two variants of smart
+//! contracts. The original V0 contracts that use message-passing for
+//! communication and have limited state, and V1 contracts which use synchronous
+//! calls, and have extended state. Versions 1 and 2 of `concordium-std`
+//! **support only V0 contracts**. Version 3 and later of `concordium-std`
+//! **supports only V1 contracts**.
 
 // For targets that are not wasm32v1, we compile with std. This enables compiling (which requires and allocator)
 // and also running pure unit tests.
@@ -428,12 +410,20 @@ pub use alloc::{
 /// Re-export.
 pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops, result::*};
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "dlmalloc",
+    not(feature = "bump_alloc"),
+    target_arch = "wasm32"
+))]
+#[global_allocator]
+static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
+#[cfg(target_arch = "wasm32")]
 pub mod bump_alloc;
 
 #[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
 #[global_allocator]
-static ALLOC: crate::bump_alloc::BumpAllocator = unsafe { crate::bump_alloc::BumpAllocator::new() };
+static ALLOC: bump_alloc::BumpAllocator = unsafe { bump_alloc::BumpAllocator::new() };
 
 /// Re-export.
 pub mod collections {

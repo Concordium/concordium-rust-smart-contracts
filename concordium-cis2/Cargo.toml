@@ -38,11 +38,8 @@ serde = [
     "primitive-types/impl-serde",
 ]
 
-[lib]
-crate-type = ["rlib"]
-
 [package.metadata.docs.rs]
-# This sets the default target to `wasm32-unknown-unknown` and only builds that
+# This sets the default target to `wasm32v1-none` and only builds that
 # target on docs.rs. This is useful because the some parts of documentation only
 # exist on that platform.
 targets = ["wasm32v1-none"]

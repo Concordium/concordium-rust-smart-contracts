@@ -3,9 +3,13 @@
 ## Unreleased
 
 - Removed the native test `StateTrie`
-- The crate now targets [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html) as the supported WASM target. The crate also no longer has an `std` crate feature. 
-  Smart contracts using `concordium-std` should specify `#[no_std]` and compile to `wasm32v1-none`. 
-  The `concordium-std` crate still supports compiling to targets like x86 linux (for unit testing e.g.), in which case the crate will add the Rust `std` crate as a dependency.
+- The crate is now intended for use on the [`wasm32v1-none`](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html) target, which is a `no_std` target.   
+  Smart contracts using `concordium-std` should specify `#[no_std]` and compile to the target `wasm32v1-none`. The previously supported target `wasm32-unknown-unknown`
+  (which has a partly stubbed `std` implementation) is no longer supported with `concordium-std`. The crate feature `std` has likewise been removed. 
+  The allocator used by default by `concordium-std` is [`dlmalloc`](https://crates.io/crates/dlmalloc). The crate feature `bump_alloc` 
+  will switch to use the custom, lightweight `bump_alloc` allocator. 
+  Notice that `dlmalloc` is the same as used by the `std` implementation of `wasm32-unknown-unknown`. 
+  The `concordium-std` crate still supports compiling to targets like x64 linux (for unit testing e.g.), in which case the crate will add the Rust `std` crate as a dependency.
 - The crate feature `p7` has been removed. The functionality it guarded (related to protocol P7) is unconditionally compiled.
 - The crate feature `crypto-primitives` has been removed. It had no effect anymore (was previously used by the now deprecated test infrastructure).
 - The types `StateMap` and `StateSet` and related types no longer requires the low-level state type to be specified. 
