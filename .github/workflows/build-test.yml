@@ -119,8 +119,8 @@ jobs:
           # Try different feature combinations on wasm32v1 target
           rustup target add wasm32v1-none
           cargo check --target wasm32v1-none --no-default-features
-          cargo check --target wasm32v1-none --no-default-features --features bump_alloc                    
-          cargo check --target wasm32v1-none --no-default-features --features bump_alloc,global_alloc
+          cargo check --target wasm32v1-none --no-default-features --features bump_alloc
+          cargo check --target wasm32v1-none --no-default-features --features dlmalloc
           cargo check --target wasm32v1-none
           cargo check --target wasm32v1-none --features wasm-test
           cargo check --target wasm32v1-none --features build-schema

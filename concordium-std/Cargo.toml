@@ -48,4 +48,4 @@ trybuild = "1.0"
 # exist on that platform.
 targets = ["wasm32v1-none"]
 # Default features to build documentation for.
-features = ["bump_alloc", "debug"]
+features = ["debug"]
