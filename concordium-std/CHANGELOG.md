@@ -13,7 +13,9 @@
 - The crate feature `p7` has been removed. The functionality it guarded (related to protocol P7) is unconditionally compiled.
 - The crate feature `crypto-primitives` has been removed. It had no effect anymore (was previously used by the now deprecated test infrastructure).
 - The types `StateMap` and `StateSet` and related types no longer requires the low-level state type to be specified. 
-  The type parameter `S` for the low-level state type now has default `StateApi`. 
+  The type parameter `S` for the low-level state type now has default `StateApi`.
+- The feature flag `concordium-quickcheck` has been removed. Property based tests using `quickcheck` and run in WASM are no longer supported.
+  The function `TestEnv::get_random` has been made available for those who want to implement their own property based framework suited for running in WASM. 
 
 ## concordium-std 10.1.0 (2024-04-04)
 

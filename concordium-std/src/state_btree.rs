@@ -1326,187 +1326,7 @@ where
 #[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
 mod wasm_test_btree {
     use super::*;
-    use crate::alloc::string::ToString;
     use crate::{StateApi, StateBuilder, claim, claim_eq, concordium_test};
-    use alloc::string::String;
-    use alloc::{format, vec};
-    use core::fmt;
-
-    /// The invariants to check in a btree.
-    /// Should only be used while debugging and testing the btree itself.
-    #[derive(Debug)]
-    pub(crate) enum InvariantViolation {
-        /// The collection has length above 0, but no root.
-        NonZeroLenWithNoRoot,
-        /// The collection contain a root node, but this has no keys.
-        ZeroKeysInRoot,
-        /// Iterating the keys in the entire collection, is not in strictly
-        /// ascending order.
-        IterationOutOfOrder,
-        /// Leaf node found at different depths.
-        LeafAtDifferentDepth,
-        /// The keys in a node are not in strictly ascending order.
-        NodeKeysOutOfOrder,
-        /// The non-leaf node does not contain `keys.len() + 1` children.
-        MismatchingChildrenLenKeyLen,
-        /// The non-root node contains fewer keys than the minimum.
-        KeysLenBelowMin,
-        /// The non-root node contains more keys than the maximum.
-        KeysLenAboveMax,
-        /// The leaf node contains children nodes.
-        LeafWithChildren,
-        /// The non-root non-leaf node contains fewer children than the minimum.
-        ChildrenLenBelowMin,
-        /// The non-root non-leaf node contains more children than the maximum.
-        ChildrenLenAboveMax,
-    }
-
-    impl<K, const M: usize> StateBTreeSet<K, M> {
-        /// Check invariants, producing an error if any of them are
-        /// violated.
-        /// See [`InvariantViolation`] for the of list invariants being checked.
-        /// Should only be used while debugging and testing the btree itself.
-        fn check_invariants(&self) -> Result<(), InvariantViolation>
-        where
-            K: Serialize + Ord,
-        {
-            use crate::ops::Deref;
-            let Some(root_node_id) = self.root else {
-                return if self.len == 0 {
-                    Ok(())
-                } else {
-                    Err(InvariantViolation::NonZeroLenWithNoRoot)
-                };
-            };
-            let root: Node<M, K> = self.get_node(root_node_id);
-            if root.keys.is_empty() {
-                return Err(InvariantViolation::ZeroKeysInRoot);
-            }
-
-            for i in 1..root.keys.len() {
-                if root.keys[i - 1] >= root.keys[i] {
-                    return Err(InvariantViolation::NodeKeysOutOfOrder);
-                }
-            }
-            if root.keys.len() > Node::<M, K>::MAXIMUM_KEY_LEN {
-                return Err(InvariantViolation::KeysLenAboveMax);
-            }
-
-            if root.is_leaf() {
-                if !root.children.is_empty() {
-                    return Err(InvariantViolation::LeafWithChildren);
-                }
-            } else {
-                if root.children.len() != root.keys.len() + 1 {
-                    return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
-                }
-                if root.children.len() > Node::<M, K>::MAXIMUM_CHILD_LEN {
-                    return Err(InvariantViolation::ChildrenLenAboveMax);
-                }
-            }
-
-            let mut stack = vec![(0usize, root.children)];
-            let mut leaf_depth = None;
-            while let Some((node_level, mut nodes)) = stack.pop() {
-                while let Some(node_id) = nodes.pop() {
-                    let node: Node<M, K> = self.get_node(node_id);
-                    node.check_invariants()?;
-                    if node.is_leaf() {
-                        let depth = leaf_depth.get_or_insert(node_level);
-                        if *depth != node_level {
-                            return Err(InvariantViolation::LeafAtDifferentDepth);
-                        }
-                    } else {
-                        stack.push((node_level + 1, node.children));
-                    }
-                }
-            }
-
-            let mut prev = None;
-            for key in self.iter() {
-                if let Some(p) = prev.as_deref() {
-                    if p > key.deref() {
-                        return Err(InvariantViolation::IterationOutOfOrder);
-                    }
-                }
-                prev = Some(key);
-            }
-            Ok(())
-        }
-
-        /// Construct a string for displaying the btree and debug information.
-        /// Should only be used while debugging and testing the btree itself.
-        pub(crate) fn debug(&self) -> String
-        where
-            K: Serialize + fmt::Debug + Ord,
-        {
-            let Some(root_node_id) = self.root else {
-                return "no root".to_string();
-            };
-            let mut string = String::new();
-            let root: Node<M, K> = self.get_node(root_node_id);
-            string.push_str(format!("root: {:#?}", root).as_str());
-            let mut stack = root.children;
-
-            while let Some(node_id) = stack.pop() {
-                let node: Node<M, K> = self.get_node(node_id);
-                string.push_str(
-                    format!(
-                        "node {} {:?}: {:#?},\n",
-                        node_id.id,
-                        node.check_invariants(),
-                        node
-                    )
-                    .as_str(),
-                );
-
-                stack.extend(node.children);
-            }
-            string
-        }
-    }
-
-    impl<const M: usize, K> Node<M, K> {
-        /// Check invariants of a non-root node in a btree, producing an error
-        /// if any of them are violated.
-        /// See [`InvariantViolation`] for the of list invariants being checked.
-        /// Should only be used while debugging and testing the btree itself.
-        pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
-        where
-            K: Ord,
-        {
-            for i in 1..self.keys.len() {
-                if self.keys[i - 1] >= self.keys[i] {
-                    return Err(InvariantViolation::NodeKeysOutOfOrder);
-                }
-            }
-
-            if self.keys.len() < Self::MINIMUM_KEY_LEN {
-                return Err(InvariantViolation::KeysLenBelowMin);
-            }
-            if self.keys.len() > Self::MAXIMUM_KEY_LEN {
-                return Err(InvariantViolation::KeysLenAboveMax);
-            }
-
-            if self.is_leaf() {
-                if !self.children.is_empty() {
-                    return Err(InvariantViolation::LeafWithChildren);
-                }
-            } else {
-                if self.children.len() != self.keys.len() + 1 {
-                    return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
-                }
-                if self.children.len() < Self::MINIMUM_CHILD_LEN {
-                    return Err(InvariantViolation::ChildrenLenBelowMin);
-                }
-                if self.children.len() > Self::MAXIMUM_CHILD_LEN {
-                    return Err(InvariantViolation::ChildrenLenAboveMax);
-                }
-            }
-
-            Ok(())
-        }
-    }
 
     /// Insert `2 * M` items such that the btree contains more than the root
     /// node. Checking that every item is contained in the collection.
@@ -1870,365 +1690,542 @@ mod wasm_test_btree {
         claim!(!tree.insert(1));
     }
 
-    // The module is using `concordium_quickcheck` which is located in a deprecated
-    // module.
-    #[allow(deprecated)]
-    #[cfg(feature = "concordium-quickcheck")] // todo remove this conditional as part of https://linear.app/concordium/issue/COR-2474/property-based-tests-on-wasm32-target to reenable property testst
-    mod quickcheck {
-        use super::super::*;
-        use crate::{
-            self as concordium_std, StateApi, StateBuilder, StateError, concordium_quickcheck,
-            concordium_test, fail,
-        };
-        use ::quickcheck::{Arbitrary, Gen, TestResult};
-        use alloc::boxed::Box;
-        use alloc::string::String;
-        use alloc::{format, vec};
-
-        /// Quickcheck inserting random items, check invariants on the tree and
-        /// query every item ensuring the tree contains it.
-        #[concordium_quickcheck]
-        fn quickcheck_btree_inserts(items: Vec<u32>) -> TestResult {
-            let mut state_builder = StateBuilder::open(StateApi::open());
-            let mut tree = state_builder.new_btree_set_degree::<2, _>();
-            for k in items.clone() {
-                tree.insert(k);
-            }
-            if let Err(violation) = tree.check_invariants() {
-                return TestResult::error(format!("Invariant violated: {:?}", violation));
-            }
-            for k in items.iter() {
-                if !tree.contains(k) {
-                    return TestResult::error(format!("Missing key: {}", k));
-                }
-            }
-            TestResult::passed()
-        }
-
-        /// Quickcheck inserting random items and then clear the entire tree
-        /// again. Use state api to ensure the btree nodes are no longer
-        /// stored in the state.
-        #[concordium_quickcheck]
-        fn quickcheck_btree_clear(items: Vec<u32>) -> TestResult {
-            let mut state_builder = StateBuilder::open(StateApi::open());
-            let mut tree = state_builder.new_btree_set_degree::<2, _>();
-            for k in items.clone() {
-                tree.insert(k);
-            }
-            tree.clear();
-            for k in items.iter() {
-                if tree.contains(k) {
-                    return TestResult::error(format!("Found {k} in a cleared btree"));
-                }
-            }
-
-            let state_api = StateApi::open();
-            match state_api.iterator(&tree.prefix) {
-                Ok(node_iter) => {
-                    let nodes_in_state = node_iter.count();
-                    TestResult::error(format!(
-                        "Found {} nodes still stored in the state",
-                        nodes_in_state
-                    ))
-                }
-                Err(StateError::SubtreeWithPrefixNotFound) => TestResult::passed(),
-                Err(err) => {
-                    TestResult::error(format!("Failed to get iterator for btree nodes: {err:?}"))
-                }
-            }
-        }
-
-        /// Quickcheck inserting random items, then we call query the tree for
-        /// higher and lower of every item validating the outcome.
-        #[concordium_quickcheck(num_tests = 100)]
-        fn quickcheck_btree_iter(mut items: Vec<u32>) -> TestResult {
-            let mut state_builder = StateBuilder::open(StateApi::open());
-            let mut tree = state_builder.new_btree_set_degree::<2, _>();
-            for k in items.clone() {
-                tree.insert(k);
-            }
-            if let Err(violation) = tree.check_invariants() {
-                return TestResult::error(format!("Invariant violated: {:?}", violation));
-            }
-
-            items.sort();
-            items.dedup();
-
-            for (value, expected) in tree.iter().zip(items.into_iter()) {
-                if *value != expected {
-                    return TestResult::error(format!("Got {} but expected {expected}", *value));
-                }
-            }
-
-            TestResult::passed()
-        }
-
-        /// Quickcheck inserting random items, then we call query the tree for
-        /// higher and lower of every item validating the outcome.
-        #[concordium_quickcheck(num_tests = 100)]
-        fn quickcheck_btree_higher_lower(mut items: Vec<u32>) -> TestResult {
-            let mut state_builder = StateBuilder::open(StateApi::open());
-            let mut tree = state_builder.new_btree_set_degree::<2, _>();
-            for k in items.clone() {
-                tree.insert(k);
-            }
-            if let Err(violation) = tree.check_invariants() {
-                return TestResult::error(format!("Invariant violated: {:?}", violation));
-            }
-
-            items.sort();
-            items.dedup();
-            for window in items.windows(2) {
-                let l = &window[0];
-                let r = &window[1];
-                let l_higher = tree.higher(l);
-                if l_higher.as_deref() != Some(r) {
-                    return TestResult::error(format!(
-                        "higher({l}) gave {:?} instead of the expected Some({r})",
-                        l_higher.as_deref()
-                    ));
-                }
-                let r_lower = tree.lower(r);
-                if r_lower.as_deref() != Some(l) {
-                    return TestResult::error(format!(
-                        "lower({r}) gave {:?} instead of the expected Some({l})",
-                        r_lower.as_deref()
-                    ));
-                }
-
-                let space_between = r - l > 1;
-                if space_between {
-                    let l_eq_or_higher = tree.eq_or_higher(&(l + 1));
-                    if l_eq_or_higher.as_deref() != Some(r) {
-                        return TestResult::error(format!(
-                            "eq_or_higher({}) gave {:?} instead of the expected Some({r})",
-                            l + 1,
-                            l_higher.as_deref()
-                        ));
-                    }
-                }
-
-                if space_between {
-                    let r_eq_or_lower = tree.eq_or_lower(&(r - 1));
-                    if r_eq_or_lower.as_deref() != Some(l) {
-                        return TestResult::error(format!(
-                            "eq_or_lower({}) gave {:?} instead of the expected Some({l})",
-                            r - 1,
-                            l_higher.as_deref()
-                        ));
-                    }
-                }
-            }
-
-            if let Some(first) = items.first() {
-                let lower = tree.lower(first);
-                if lower.is_some() {
-                    return TestResult::error(format!(
-                        "lower({first}) gave {:?} instead of the expected None",
-                        lower.as_deref()
-                    ));
-                }
-            }
-
-            if let Some(last) = items.last() {
-                let higher = tree.higher(last);
-                if higher.is_some() {
-                    return TestResult::error(format!(
-                        "higher({last}) gave {:?} instead of the expected None",
-                        higher.as_deref()
-                    ));
-                }
-            }
-
-            TestResult::passed()
-        }
-
-        /// Quickcheck random mutations see `Mutations` and `run_mutations` for
-        /// the details.
-        #[concordium_quickcheck(num_tests = 500)]
-        fn quickcheck_btree_inserts_removes(mutations: Mutations<u32>) -> TestResult {
-            let mut state_builder = StateBuilder::open(StateApi::open());
-            let mut tree = state_builder.new_btree_set_degree::<2, _>();
-
-            if let Err(err) = run_mutations(&mut tree, &mutations.mutations) {
-                TestResult::error(format!("Error: {}, tree: {}", err, tree.debug()))
-            } else {
-                TestResult::passed()
-            }
-        }
-
-        /// Newtype wrapper for Vec to implement Arbitrary.
-        #[derive(Debug, Clone)]
-        struct Mutations<K> {
-            expected_keys: crate::collections::BTreeSet<K>,
-            mutations: Vec<(K, Operation)>,
-        }
-
-        /// The different mutating operations to generate for the btree.
-        #[allow(clippy::enum_variant_names)]
-        #[derive(Debug, Clone, Copy)]
-        enum Operation {
-            /// Insert a new key in the set.
-            InsertKeyNotPresent,
-            /// Insert a key already in the set.
-            InsertKeyPresent,
-            /// Remove a key in the set.
-            RemoveKeyPresent,
-            /// Remove a key not already in the set.
-            RemoveKeyNotPresent,
-        }
-
-        /// Run a list of mutations on a btree, checking the return value and
-        /// tree invariants using `StateBTreeSet::check_invariants`
-        /// between each mutation, returning an error string if violated.
-        fn run_mutations<const M: usize>(
-            tree: &mut StateBTreeSet<u32, M>,
-            mutations: &[(u32, Operation)],
-        ) -> Result<(), String> {
-            for (k, op) in mutations.iter() {
-                if let Err(violation) = tree.check_invariants() {
-                    return Err(format!("Invariant violated: {:?}", violation));
-                }
-                match op {
-                    Operation::InsertKeyPresent => {
-                        if tree.insert(*k) {
-                            return Err(format!("InsertKeyPresent was not present: {}", k));
-                        }
-                    }
-                    Operation::InsertKeyNotPresent => {
-                        if !tree.insert(*k) {
-                            return Err(format!("InsertKeyNotPresent was present: {}", k));
-                        }
-                    }
-                    Operation::RemoveKeyNotPresent => {
-                        if tree.remove(k) {
-                            return Err(format!("RemoveKeyNotPresent was present: {}", k));
-                        }
-                    }
-                    Operation::RemoveKeyPresent => {
-                        if !tree.remove(k) {
-                            return Err(format!("RemoveKeyPresent was not present: {}", k));
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
-
-        impl Arbitrary for Operation {
-            fn arbitrary(g: &mut Gen) -> Self {
-                *g.choose(&[
-                    Self::InsertKeyNotPresent,
-                    Self::InsertKeyPresent,
-                    Self::RemoveKeyPresent,
-                    Self::RemoveKeyNotPresent,
-                ])
-                .unwrap()
-            }
-        }
-
-        impl<K> Arbitrary for Mutations<K>
-        where
-            K: Arbitrary + Ord,
-        {
-            fn arbitrary(g: &mut Gen) -> Self {
-                // Tracking the keys expected in the set at the point of each mutation.
-                // This is used to ensure operations such as inserting and removing a key which
-                // is present are actually valid.
-                let mut inserted_keys: Vec<K> = Vec::new();
-                // The generated mutations to return.
-                let mut mutations = Vec::new();
-
-                while mutations.len() < g.size() {
-                    let op: Operation = Operation::arbitrary(g);
-                    match op {
-                        Operation::InsertKeyPresent if !inserted_keys.is_empty() => {
-                            let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
-                            let k_index = g.choose(&indexes).unwrap();
-                            let k = &inserted_keys[*k_index];
-                            mutations.push((k.clone(), op));
-                        }
-                        Operation::InsertKeyNotPresent => {
-                            let k = K::arbitrary(g);
-                            if let Err(index) = inserted_keys.binary_search(&k) {
-                                inserted_keys.insert(index, k.clone());
-                                mutations.push((k, op));
-                            }
-                        }
-                        Operation::RemoveKeyPresent if !inserted_keys.is_empty() => {
-                            let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
-                            let k_index = g.choose(&indexes).unwrap();
-                            let k = inserted_keys.remove(*k_index);
-                            mutations.push((k, op));
-                        }
-                        Operation::RemoveKeyNotPresent => {
-                            let k = K::arbitrary(g);
-                            if inserted_keys.binary_search(&k).is_err() {
-                                mutations.push((k, op));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-
-                Self {
-                    expected_keys: crate::collections::BTreeSet::from_iter(inserted_keys),
-                    mutations,
-                }
-            }
-
-            /// We attempt to produce several shrinked versions:
-            ///
-            /// - Simply remove the last mutation from the list of mutations.
-            /// - Remove mutations, which are not adding or removing keys
-            ///   (Remove non-present keys and inserting present keys), note
-            ///   these might still mutate the internal structure.
-            /// - Iterate the mutations and when a key is removed, we traverse
-            ///   back in the mutations and remove other mutations of the same
-            ///   key back to when it was inserted.
-            fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-                let pop = {
-                    let mut clone = self.clone();
-                    clone.mutations.pop();
-                    clone
-                };
-                let mut v = vec![pop];
-                for (i, (k, op)) in self.mutations.iter().enumerate() {
-                    match op {
-                        Operation::InsertKeyPresent | Operation::RemoveKeyNotPresent => {
-                            let mut clone = self.clone();
-                            clone.mutations.remove(i);
-                            v.push(clone);
-                        }
-                        Operation::RemoveKeyPresent => {
-                            let mut clone = self.clone();
-                            let mut prev = self.mutations[0..i].iter().enumerate().rev();
-                            clone.mutations.remove(i);
-                            clone.expected_keys.remove(k);
-                            loop {
-                                if let Some((j, (k2, op))) = prev.next() {
-                                    match op {
-                                        Operation::InsertKeyPresent if k == k2 => {
-                                            clone.mutations.remove(j);
-                                        }
-                                        Operation::InsertKeyNotPresent if k == k2 => {
-                                            clone.mutations.remove(j);
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
-                                    fail!("No insertion found before")
-                                }
-                            }
-                            v.push(clone);
-                        }
-                        _ => {}
-                    }
-                }
-
-                Box::new(v.into_iter())
-            }
-        }
-    }
+    // todo: The following property based tests are commented out, since we no longer support running
+    // property based tests in WASM using quickcheck. The tests are left commented out to make it visible
+    // that there is now a potential gap in the test coverage.
+    // /// The module is using `concordium_quickcheck` which is located in a deprecated
+    // /// module.
+    // mod quickcheck {
+    //     use super::super::*;
+    //     use crate::{
+    //         self as concordium_std, StateApi, StateBuilder, StateError, concordium_quickcheck,
+    //         concordium_test, fail,
+    //     };
+    //     use ::quickcheck::{Arbitrary, Gen, TestResult};
+    //     use alloc::boxed::Box;
+    //     use alloc::string::String;
+    //     use alloc::{format, vec};
+    //
+    //     /// The invariants to check in a btree.
+    //     /// Should only be used while debugging and testing the btree itself.
+    //     #[derive(Debug)]
+    //     pub(crate) enum InvariantViolation {
+    //         /// The collection has length above 0, but no root.
+    //         NonZeroLenWithNoRoot,
+    //         /// The collection contain a root node, but this has no keys.
+    //         ZeroKeysInRoot,
+    //         /// Iterating the keys in the entire collection, is not in strictly
+    //         /// ascending order.
+    //         IterationOutOfOrder,
+    //         /// Leaf node found at different depths.
+    //         LeafAtDifferentDepth,
+    //         /// The keys in a node are not in strictly ascending order.
+    //         NodeKeysOutOfOrder,
+    //         /// The non-leaf node does not contain `keys.len() + 1` children.
+    //         MismatchingChildrenLenKeyLen,
+    //         /// The non-root node contains fewer keys than the minimum.
+    //         KeysLenBelowMin,
+    //         /// The non-root node contains more keys than the maximum.
+    //         KeysLenAboveMax,
+    //         /// The leaf node contains children nodes.
+    //         LeafWithChildren,
+    //         /// The non-root non-leaf node contains fewer children than the minimum.
+    //         ChildrenLenBelowMin,
+    //         /// The non-root non-leaf node contains more children than the maximum.
+    //         ChildrenLenAboveMax,
+    //     }
+    //
+    //     impl<K, const M: usize> StateBTreeSet<K, M> {
+    //         /// Check invariants, producing an error if any of them are
+    //         /// violated.
+    //         /// See [`InvariantViolation`] for the of list invariants being checked.
+    //         /// Should only be used while debugging and testing the btree itself.
+    //         fn check_invariants(&self) -> Result<(), InvariantViolation>
+    //         where
+    //             K: Serialize + Ord,
+    //         {
+    //             use crate::ops::Deref;
+    //             let Some(root_node_id) = self.root else {
+    //                 return if self.len == 0 {
+    //                     Ok(())
+    //                 } else {
+    //                     Err(InvariantViolation::NonZeroLenWithNoRoot)
+    //                 };
+    //             };
+    //             let root: Node<M, K> = self.get_node(root_node_id);
+    //             if root.keys.is_empty() {
+    //                 return Err(InvariantViolation::ZeroKeysInRoot);
+    //             }
+    //
+    //             for i in 1..root.keys.len() {
+    //                 if root.keys[i - 1] >= root.keys[i] {
+    //                     return Err(InvariantViolation::NodeKeysOutOfOrder);
+    //                 }
+    //             }
+    //             if root.keys.len() > Node::<M, K>::MAXIMUM_KEY_LEN {
+    //                 return Err(InvariantViolation::KeysLenAboveMax);
+    //             }
+    //
+    //             if root.is_leaf() {
+    //                 if !root.children.is_empty() {
+    //                     return Err(InvariantViolation::LeafWithChildren);
+    //                 }
+    //             } else {
+    //                 if root.children.len() != root.keys.len() + 1 {
+    //                     return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+    //                 }
+    //                 if root.children.len() > Node::<M, K>::MAXIMUM_CHILD_LEN {
+    //                     return Err(InvariantViolation::ChildrenLenAboveMax);
+    //                 }
+    //             }
+    //
+    //             let mut stack = vec![(0usize, root.children)];
+    //             let mut leaf_depth = None;
+    //             while let Some((node_level, mut nodes)) = stack.pop() {
+    //                 while let Some(node_id) = nodes.pop() {
+    //                     let node: Node<M, K> = self.get_node(node_id);
+    //                     node.check_invariants()?;
+    //                     if node.is_leaf() {
+    //                         let depth = leaf_depth.get_or_insert(node_level);
+    //                         if *depth != node_level {
+    //                             return Err(InvariantViolation::LeafAtDifferentDepth);
+    //                         }
+    //                     } else {
+    //                         stack.push((node_level + 1, node.children));
+    //                     }
+    //                 }
+    //             }
+    //
+    //             let mut prev = None;
+    //             for key in self.iter() {
+    //                 if let Some(p) = prev.as_deref() {
+    //                     if p > key.deref() {
+    //                         return Err(InvariantViolation::IterationOutOfOrder);
+    //                     }
+    //                 }
+    //                 prev = Some(key);
+    //             }
+    //             Ok(())
+    //         }
+    //
+    //         /// Construct a string for displaying the btree and debug information.
+    //         /// Should only be used while debugging and testing the btree itself.
+    //         pub(crate) fn debug(&self) -> String
+    //         where
+    //             K: Serialize + fmt::Debug + Ord,
+    //         {
+    //             let Some(root_node_id) = self.root else {
+    //                 return "no root".to_string();
+    //             };
+    //             let mut string = String::new();
+    //             let root: Node<M, K> = self.get_node(root_node_id);
+    //             string.push_str(format!("root: {:#?}", root).as_str());
+    //             let mut stack = root.children;
+    //
+    //             while let Some(node_id) = stack.pop() {
+    //                 let node: Node<M, K> = self.get_node(node_id);
+    //                 string.push_str(
+    //                     format!(
+    //                         "node {} {:?}: {:#?},\n",
+    //                         node_id.id,
+    //                         node.check_invariants(),
+    //                         node
+    //                     )
+    //                     .as_str(),
+    //                 );
+    //
+    //                 stack.extend(node.children);
+    //             }
+    //             string
+    //         }
+    //     }
+    //
+    //     impl<const M: usize, K> Node<M, K> {
+    //         /// Check invariants of a non-root node in a btree, producing an error
+    //         /// if any of them are violated.
+    //         /// See [`InvariantViolation`] for the of list invariants being checked.
+    //         /// Should only be used while debugging and testing the btree itself.
+    //         pub(crate) fn check_invariants(&self) -> Result<(), InvariantViolation>
+    //         where
+    //             K: Ord,
+    //         {
+    //             for i in 1..self.keys.len() {
+    //                 if self.keys[i - 1] >= self.keys[i] {
+    //                     return Err(InvariantViolation::NodeKeysOutOfOrder);
+    //                 }
+    //             }
+    //
+    //             if self.keys.len() < Self::MINIMUM_KEY_LEN {
+    //                 return Err(InvariantViolation::KeysLenBelowMin);
+    //             }
+    //             if self.keys.len() > Self::MAXIMUM_KEY_LEN {
+    //                 return Err(InvariantViolation::KeysLenAboveMax);
+    //             }
+    //
+    //             if self.is_leaf() {
+    //                 if !self.children.is_empty() {
+    //                     return Err(InvariantViolation::LeafWithChildren);
+    //                 }
+    //             } else {
+    //                 if self.children.len() != self.keys.len() + 1 {
+    //                     return Err(InvariantViolation::MismatchingChildrenLenKeyLen);
+    //                 }
+    //                 if self.children.len() < Self::MINIMUM_CHILD_LEN {
+    //                     return Err(InvariantViolation::ChildrenLenBelowMin);
+    //                 }
+    //                 if self.children.len() > Self::MAXIMUM_CHILD_LEN {
+    //                     return Err(InvariantViolation::ChildrenLenAboveMax);
+    //                 }
+    //             }
+    //
+    //             Ok(())
+    //         }
+    //     }
+    //
+    //     /// Quickcheck inserting random items, check invariants on the tree and
+    //     /// query every item ensuring the tree contains it.
+    //     #[concordium_quickcheck]
+    //     fn quickcheck_btree_inserts(items: Vec<u32>) -> TestResult {
+    //         let mut state_builder = StateBuilder::open(StateApi::open());
+    //         let mut tree = state_builder.new_btree_set_degree::<2, _>();
+    //         for k in items.clone() {
+    //             tree.insert(k);
+    //         }
+    //         if let Err(violation) = tree.check_invariants() {
+    //             return TestResult::error(format!("Invariant violated: {:?}", violation));
+    //         }
+    //         for k in items.iter() {
+    //             if !tree.contains(k) {
+    //                 return TestResult::error(format!("Missing key: {}", k));
+    //             }
+    //         }
+    //         TestResult::passed()
+    //     }
+    //
+    //     /// Quickcheck inserting random items and then clear the entire tree
+    //     /// again. Use state api to ensure the btree nodes are no longer
+    //     /// stored in the state.
+    //     #[concordium_quickcheck]
+    //     fn quickcheck_btree_clear(items: Vec<u32>) -> TestResult {
+    //         let mut state_builder = StateBuilder::open(StateApi::open());
+    //         let mut tree = state_builder.new_btree_set_degree::<2, _>();
+    //         for k in items.clone() {
+    //             tree.insert(k);
+    //         }
+    //         tree.clear();
+    //         for k in items.iter() {
+    //             if tree.contains(k) {
+    //                 return TestResult::error(format!("Found {k} in a cleared btree"));
+    //             }
+    //         }
+    //
+    //         let state_api = StateApi::open();
+    //         match state_api.iterator(&tree.prefix) {
+    //             Ok(node_iter) => {
+    //                 let nodes_in_state = node_iter.count();
+    //                 TestResult::error(format!(
+    //                     "Found {} nodes still stored in the state",
+    //                     nodes_in_state
+    //                 ))
+    //             }
+    //             Err(StateError::SubtreeWithPrefixNotFound) => TestResult::passed(),
+    //             Err(err) => {
+    //                 TestResult::error(format!("Failed to get iterator for btree nodes: {err:?}"))
+    //             }
+    //         }
+    //     }
+    //
+    //     /// Quickcheck inserting random items, then we call query the tree for
+    //     /// higher and lower of every item validating the outcome.
+    //     #[concordium_quickcheck(num_tests = 100)]
+    //     fn quickcheck_btree_iter(mut items: Vec<u32>) -> TestResult {
+    //         let mut state_builder = StateBuilder::open(StateApi::open());
+    //         let mut tree = state_builder.new_btree_set_degree::<2, _>();
+    //         for k in items.clone() {
+    //             tree.insert(k);
+    //         }
+    //         if let Err(violation) = tree.check_invariants() {
+    //             return TestResult::error(format!("Invariant violated: {:?}", violation));
+    //         }
+    //
+    //         items.sort();
+    //         items.dedup();
+    //
+    //         for (value, expected) in tree.iter().zip(items.into_iter()) {
+    //             if *value != expected {
+    //                 return TestResult::error(format!("Got {} but expected {expected}", *value));
+    //             }
+    //         }
+    //
+    //         TestResult::passed()
+    //     }
+    //
+    //     /// Quickcheck inserting random items, then we call query the tree for
+    //     /// higher and lower of every item validating the outcome.
+    //     #[concordium_quickcheck(num_tests = 100)]
+    //     fn quickcheck_btree_higher_lower(mut items: Vec<u32>) -> TestResult {
+    //         let mut state_builder = StateBuilder::open(StateApi::open());
+    //         let mut tree = state_builder.new_btree_set_degree::<2, _>();
+    //         for k in items.clone() {
+    //             tree.insert(k);
+    //         }
+    //         if let Err(violation) = tree.check_invariants() {
+    //             return TestResult::error(format!("Invariant violated: {:?}", violation));
+    //         }
+    //
+    //         items.sort();
+    //         items.dedup();
+    //         for window in items.windows(2) {
+    //             let l = &window[0];
+    //             let r = &window[1];
+    //             let l_higher = tree.higher(l);
+    //             if l_higher.as_deref() != Some(r) {
+    //                 return TestResult::error(format!(
+    //                     "higher({l}) gave {:?} instead of the expected Some({r})",
+    //                     l_higher.as_deref()
+    //                 ));
+    //             }
+    //             let r_lower = tree.lower(r);
+    //             if r_lower.as_deref() != Some(l) {
+    //                 return TestResult::error(format!(
+    //                     "lower({r}) gave {:?} instead of the expected Some({l})",
+    //                     r_lower.as_deref()
+    //                 ));
+    //             }
+    //
+    //             let space_between = r - l > 1;
+    //             if space_between {
+    //                 let l_eq_or_higher = tree.eq_or_higher(&(l + 1));
+    //                 if l_eq_or_higher.as_deref() != Some(r) {
+    //                     return TestResult::error(format!(
+    //                         "eq_or_higher({}) gave {:?} instead of the expected Some({r})",
+    //                         l + 1,
+    //                         l_higher.as_deref()
+    //                     ));
+    //                 }
+    //             }
+    //
+    //             if space_between {
+    //                 let r_eq_or_lower = tree.eq_or_lower(&(r - 1));
+    //                 if r_eq_or_lower.as_deref() != Some(l) {
+    //                     return TestResult::error(format!(
+    //                         "eq_or_lower({}) gave {:?} instead of the expected Some({l})",
+    //                         r - 1,
+    //                         l_higher.as_deref()
+    //                     ));
+    //                 }
+    //             }
+    //         }
+    //
+    //         if let Some(first) = items.first() {
+    //             let lower = tree.lower(first);
+    //             if lower.is_some() {
+    //                 return TestResult::error(format!(
+    //                     "lower({first}) gave {:?} instead of the expected None",
+    //                     lower.as_deref()
+    //                 ));
+    //             }
+    //         }
+    //
+    //         if let Some(last) = items.last() {
+    //             let higher = tree.higher(last);
+    //             if higher.is_some() {
+    //                 return TestResult::error(format!(
+    //                     "higher({last}) gave {:?} instead of the expected None",
+    //                     higher.as_deref()
+    //                 ));
+    //             }
+    //         }
+    //
+    //         TestResult::passed()
+    //     }
+    //
+    //     /// Quickcheck random mutations see `Mutations` and `run_mutations` for
+    //     /// the details.
+    //     #[concordium_quickcheck(num_tests = 500)]
+    //     fn quickcheck_btree_inserts_removes(mutations: Mutations<u32>) -> TestResult {
+    //         let mut state_builder = StateBuilder::open(StateApi::open());
+    //         let mut tree = state_builder.new_btree_set_degree::<2, _>();
+    //
+    //         if let Err(err) = run_mutations(&mut tree, &mutations.mutations) {
+    //             TestResult::error(format!("Error: {}, tree: {}", err, tree.debug()))
+    //         } else {
+    //             TestResult::passed()
+    //         }
+    //     }
+    //
+    //     /// Newtype wrapper for Vec to implement Arbitrary.
+    //     #[derive(Debug, Clone)]
+    //     struct Mutations<K> {
+    //         expected_keys: crate::collections::BTreeSet<K>,
+    //         mutations: Vec<(K, Operation)>,
+    //     }
+    //
+    //     /// The different mutating operations to generate for the btree.
+    //     #[allow(clippy::enum_variant_names)]
+    //     #[derive(Debug, Clone, Copy)]
+    //     enum Operation {
+    //         /// Insert a new key in the set.
+    //         InsertKeyNotPresent,
+    //         /// Insert a key already in the set.
+    //         InsertKeyPresent,
+    //         /// Remove a key in the set.
+    //         RemoveKeyPresent,
+    //         /// Remove a key not already in the set.
+    //         RemoveKeyNotPresent,
+    //     }
+    //
+    //     /// Run a list of mutations on a btree, checking the return value and
+    //     /// tree invariants using `StateBTreeSet::check_invariants`
+    //     /// between each mutation, returning an error string if violated.
+    //     fn run_mutations<const M: usize>(
+    //         tree: &mut StateBTreeSet<u32, M>,
+    //         mutations: &[(u32, Operation)],
+    //     ) -> Result<(), String> {
+    //         for (k, op) in mutations.iter() {
+    //             if let Err(violation) = tree.check_invariants() {
+    //                 return Err(format!("Invariant violated: {:?}", violation));
+    //             }
+    //             match op {
+    //                 Operation::InsertKeyPresent => {
+    //                     if tree.insert(*k) {
+    //                         return Err(format!("InsertKeyPresent was not present: {}", k));
+    //                     }
+    //                 }
+    //                 Operation::InsertKeyNotPresent => {
+    //                     if !tree.insert(*k) {
+    //                         return Err(format!("InsertKeyNotPresent was present: {}", k));
+    //                     }
+    //                 }
+    //                 Operation::RemoveKeyNotPresent => {
+    //                     if tree.remove(k) {
+    //                         return Err(format!("RemoveKeyNotPresent was present: {}", k));
+    //                     }
+    //                 }
+    //                 Operation::RemoveKeyPresent => {
+    //                     if !tree.remove(k) {
+    //                         return Err(format!("RemoveKeyPresent was not present: {}", k));
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         Ok(())
+    //     }
+    //
+    //     impl Arbitrary for Operation {
+    //         fn arbitrary(g: &mut Gen) -> Self {
+    //             *g.choose(&[
+    //                 Self::InsertKeyNotPresent,
+    //                 Self::InsertKeyPresent,
+    //                 Self::RemoveKeyPresent,
+    //                 Self::RemoveKeyNotPresent,
+    //             ])
+    //             .unwrap()
+    //         }
+    //     }
+    //
+    //     impl<K> Arbitrary for Mutations<K>
+    //     where
+    //         K: Arbitrary + Ord,
+    //     {
+    //         fn arbitrary(g: &mut Gen) -> Self {
+    //             // Tracking the keys expected in the set at the point of each mutation.
+    //             // This is used to ensure operations such as inserting and removing a key which
+    //             // is present are actually valid.
+    //             let mut inserted_keys: Vec<K> = Vec::new();
+    //             // The generated mutations to return.
+    //             let mut mutations = Vec::new();
+    //
+    //             while mutations.len() < g.size() {
+    //                 let op: Operation = Operation::arbitrary(g);
+    //                 match op {
+    //                     Operation::InsertKeyPresent if !inserted_keys.is_empty() => {
+    //                         let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
+    //                         let k_index = g.choose(&indexes).unwrap();
+    //                         let k = &inserted_keys[*k_index];
+    //                         mutations.push((k.clone(), op));
+    //                     }
+    //                     Operation::InsertKeyNotPresent => {
+    //                         let k = K::arbitrary(g);
+    //                         if let Err(index) = inserted_keys.binary_search(&k) {
+    //                             inserted_keys.insert(index, k.clone());
+    //                             mutations.push((k, op));
+    //                         }
+    //                     }
+    //                     Operation::RemoveKeyPresent if !inserted_keys.is_empty() => {
+    //                         let indexes: Vec<usize> = (0..inserted_keys.len()).collect();
+    //                         let k_index = g.choose(&indexes).unwrap();
+    //                         let k = inserted_keys.remove(*k_index);
+    //                         mutations.push((k, op));
+    //                     }
+    //                     Operation::RemoveKeyNotPresent => {
+    //                         let k = K::arbitrary(g);
+    //                         if inserted_keys.binary_search(&k).is_err() {
+    //                             mutations.push((k, op));
+    //                         }
+    //                     }
+    //                     _ => {}
+    //                 }
+    //             }
+    //
+    //             Self {
+    //                 expected_keys: crate::collections::BTreeSet::from_iter(inserted_keys),
+    //                 mutations,
+    //             }
+    //         }
+    //
+    //         /// We attempt to produce several shrinked versions:
+    //         ///
+    //         /// - Simply remove the last mutation from the list of mutations.
+    //         /// - Remove mutations, which are not adding or removing keys
+    //         ///   (Remove non-present keys and inserting present keys), note
+    //         ///   these might still mutate the internal structure.
+    //         /// - Iterate the mutations and when a key is removed, we traverse
+    //         ///   back in the mutations and remove other mutations of the same
+    //         ///   key back to when it was inserted.
+    //         fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+    //             let pop = {
+    //                 let mut clone = self.clone();
+    //                 clone.mutations.pop();
+    //                 clone
+    //             };
+    //             let mut v = vec![pop];
+    //             for (i, (k, op)) in self.mutations.iter().enumerate() {
+    //                 match op {
+    //                     Operation::InsertKeyPresent | Operation::RemoveKeyNotPresent => {
+    //                         let mut clone = self.clone();
+    //                         clone.mutations.remove(i);
+    //                         v.push(clone);
+    //                     }
+    //                     Operation::RemoveKeyPresent => {
+    //                         let mut clone = self.clone();
+    //                         let mut prev = self.mutations[0..i].iter().enumerate().rev();
+    //                         clone.mutations.remove(i);
+    //                         clone.expected_keys.remove(k);
+    //                         loop {
+    //                             if let Some((j, (k2, op))) = prev.next() {
+    //                                 match op {
+    //                                     Operation::InsertKeyPresent if k == k2 => {
+    //                                         clone.mutations.remove(j);
+    //                                     }
+    //                                     Operation::InsertKeyNotPresent if k == k2 => {
+    //                                         clone.mutations.remove(j);
+    //                                         break;
+    //                                     }
+    //                                     _ => {}
+    //                                 }
+    //                             } else {
+    //                                 fail!("No insertion found before")
+    //                             }
+    //                         }
+    //                         v.push(clone);
+    //                     }
+    //                     _ => {}
+    //                 }
+    //             }
+    //
+    //             Box::new(v.into_iter())
+    //         }
+    //     }
+    // }
 }

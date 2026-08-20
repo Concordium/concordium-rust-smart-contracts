@@ -354,8 +354,6 @@ unsafe extern "C" {
 
     /// Generating random numbers for randomised testing.
     /// Not available for contracts deployed on the chain.
-    #[cfg(feature = "concordium-quickcheck")]
-    #[cfg(target_arch = "wasm32")]
     pub(crate) fn get_random(dest: *mut u8, size: u32);
 }
 
