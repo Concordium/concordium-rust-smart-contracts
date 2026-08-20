@@ -22,7 +22,7 @@ default-features = false
 features = ["smart-contract"]
 
 [features]
-default = ["dlmalloc", "global_alloc"]
+default = ["dlmalloc"]
 # Enabling the wasm-test feature changes the #[concoridum_test] macro to output test functions callable from WASM interpreter
 wasm-test = ["concordium-contracts-common/wasm-test"]
 # Own internal wasm-tests leak out to the smart contracts using this library,
@@ -38,8 +38,6 @@ debug = []
 dlmalloc = ["dep:dlmalloc"]
 # Use the custom bump allocator instead of dlmalloc. See module documentation for bump_alloc in this crate.
 bump_alloc = []
-# Set a global allocator. Otherwise, it must be set in smart contract.
-global_alloc = []
 
 [dev-dependencies]
 trybuild = "1.0"

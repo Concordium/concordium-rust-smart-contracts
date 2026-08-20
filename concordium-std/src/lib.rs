@@ -19,15 +19,14 @@
 //! # Features
 //!
 //! This library has the following features:
-//! [`dlmalloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator),
-//! [`bump_alloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator),
-//! [`global_alloc`](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator), and
+//! [`dlmalloc`](#dlmalloc-and-bump_alloc-use-a-custom-allocator),
+//! [`bump_alloc`](#dlmalloc-and-bump_alloc-use-a-custom-allocator), and
 //! [`debug`](#debug-emit-debug-information).
 //! And the following features used by tooling only:
 //! [`build-schema`](#build-schema-build-for-generating-a-module-schema) and
 //! [`wasm-test`](#wasm-test-build-for-testing-in-wasm),
 //!
-//! ## `dlmalloc`, `bump_alloc` and `global_alloc`: Use a custom allocator
+//! ## `dlmalloc` and `bump_alloc`: Use a custom allocator
 //!
 //! The default allocator is [`dlmalloc`](https://crates.io/crates/dlmalloc), which
 //! is a general purpose allocator. For smart contracts, the lighter `bump_alloc`
@@ -41,8 +40,7 @@
 //! tradeoff. Especially for contracts such as those dealing with tokens.
 //! For very complex contracts it may be beneficial to run benchmarks to see
 //! whether `bump_alloc` is the best option. It is also possible to specify
-//! your own allocator by disabling the feature flag `global_alloc`. If the flag
-//! is enabled, the `concordium-std` will set the global allocator.
+//! your own allocator by not enabling any of the `dlmalloc` and `bump_alloc` features.
 //! See the Rust [allocator](https://doc.rust-lang.org/std/alloc/index.html#the-global_allocator-attribute)
 //! documentation for more context and details on using custom allocators.
 //!
@@ -277,7 +275,7 @@
 //! sense to compile it with `no_std`. If you have code that conditionally should only compile
 //! when WASM is the target, you can condition on the WASM target: `#[cfg(target_arch = "wasm32")]`.
 //!
-//! If you are using a custom allocator, see [this section](#dlmalloc-bump_alloc-and-global_alloc-use-a-custom-allocator)
+//! If you are using a custom allocator, see [this section](#dlmalloc-and-bump_alloc-use-a-custom-allocator)
 //! on how to configure it.
 //!
 //! ## Version 8.1
@@ -415,20 +413,15 @@ pub use core::{cell, cmp, convert, fmt, hash, hint, iter, marker, mem, num, ops,
 #[cfg(all(
     feature = "dlmalloc",
     not(feature = "bump_alloc"),
-    feature = "global_alloc",
     target_arch = "wasm32"
 ))]
 #[global_allocator]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
-#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 pub mod bump_alloc;
 
-#[cfg(all(
-    feature = "bump_alloc",
-    feature = "global_alloc",
-    target_arch = "wasm32"
-))]
+#[cfg(all(feature = "bump_alloc", target_arch = "wasm32"))]
 #[global_allocator]
 static ALLOC: bump_alloc::BumpAllocator = unsafe { bump_alloc::BumpAllocator::new() };
 
