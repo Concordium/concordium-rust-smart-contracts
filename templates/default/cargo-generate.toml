@@ -1,2 +1,8 @@
 [template]
 cargo_generate_version = ">= 0.17.0"
+
+[placeholders]
+include_deploy_scripts = { type = "bool", prompt = "Include deploy scripts (a Rust program for deploying and initializing the contract on chain)?", default = false }
+
+[conditional.'include_deploy_scripts == false']
+ignore = ["deploy-scripts"]
