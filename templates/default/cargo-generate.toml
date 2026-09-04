@@ -1,2 +1,8 @@
 [template]
 cargo_generate_version = ">= 0.17.0"
+
+[placeholders]
+include_deploy_scripts = { type = "bool", prompt = "Include Rust based smart contract deployments scripts (alternative to using concordium-client to deploy the contract)?", default = false }
+
+[conditional.'include_deploy_scripts == false']
+ignore = ["deploy-scripts"]

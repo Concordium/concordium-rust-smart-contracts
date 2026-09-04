@@ -58,12 +58,11 @@ pub struct MintParams {
 
 /// The state for each address.
 #[derive(Serial, DeserialWithState, Deletable)]
-#[concordium(state_parameter = "S")]
-pub struct AddressState<S = StateApi> {
+pub struct AddressState {
     /// The tokens owned by this address.
-    pub owned_tokens: StateSet<ContractTokenId, S>,
+    pub owned_tokens: StateSet<ContractTokenId>,
     /// The address which are currently enabled as operators for this address.
-    pub operators:    StateSet<Address, S>,
+    pub operators:    StateSet<Address>,
 }
 
 impl AddressState {
@@ -79,15 +78,14 @@ impl AddressState {
 // Note: The specification does not specify how to structure the contract state
 // and this could be structured in a more space efficient way depending on the use case.
 #[derive(Serial, DeserialWithState)]
-#[concordium(state_parameter = "S")]
-pub struct State<S = StateApi> {
+pub struct State{
     /// The state for each address.
-    pub state:        StateMap<Address, AddressState<S>, S>,
+    pub state:        StateMap<Address, AddressState>,
     /// All of the token IDs
-    pub all_tokens:   StateSet<ContractTokenId, S>,
+    pub all_tokens:   StateSet<ContractTokenId>,
     /// Map with contract addresses providing implementations of additional
     /// standards.
-    pub implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>, S>,
+    pub implementors: StateMap<StandardIdentifierOwned, Vec<ContractAddress>>,
 }
 
 /// The parameter type for the contract function `setImplementors`.
@@ -358,7 +356,7 @@ fn contract_view(_ctx: &ReceiveContext, host: &Host<State>) -> ReceiveResult<Vie
 fn contract_mint(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Get the contract owner
     let owner = ctx.owner();
@@ -422,7 +420,7 @@ type TransferParameter = TransferParams<ContractTokenId, ContractTokenAmount>;
 fn contract_transfer(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let TransferParams(transfers): TransferParameter = ctx.parameter_cursor().get()?;
@@ -488,7 +486,7 @@ fn contract_transfer(
 fn contract_update_operator(
     ctx: &ReceiveContext,
     host: &mut Host<State>,
-    logger: &mut impl HasLogger,
+    logger: &mut Logger,
 ) -> ContractResult<()> {
     // Parse the parameter.
     let UpdateOperatorParams(params) = ctx.parameter_cursor().get()?;
