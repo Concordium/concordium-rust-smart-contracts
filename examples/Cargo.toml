@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+
+members = [
+    "account-signature-checks",
+    "auction",
+    "bump-alloc-tests",
+    "cis2-dynamic-nft",
+    "cis2-multi",
+    "cis2-multi-royalties",
+    "cis2-nft",
+    "cis2-wccd",
+    "cis3-nft-sponsored-txs",
+    "cis5-smart-contract-wallet",
+    "counter-notify",
+    "credential-registry",
+    "eSealing",
+    "factory",
+    "fib",
+    "icecream",
+    "memo",
+    "nametoken",
+    "offchain-transfers",
+    "piggy-bank/part1",
+    "piggy-bank/part2",
+    "proxy",
+    "recorder",
+    "signature-verifier",
+    "smart-contract-upgrade/contract-version1",
+    "smart-contract-upgrade/contract-version2",
+    "sponsored-tx-enabled-auction",
+    "transfer-policy-check",
+    "two-step-transfer",
+    "voting",
+]
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1

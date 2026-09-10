@@ -156,7 +156,7 @@
 //! system of the chain enforces isolation. As always, the balance of risks
 //! should be considered when choosing the approach for any application.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 pub mod factory {
     //! The factory smart contract.

@@ -19,6 +19,9 @@
 //! appends ", world" to the parameter and returns it.
 //!
 //! The tests are located in `/tests/tests.rs`.
+
+#![no_std]
+
 use concordium_std::*;
 
 /// The contract behind this proxy.

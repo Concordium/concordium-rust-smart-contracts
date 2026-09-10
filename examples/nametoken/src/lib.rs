@@ -40,7 +40,7 @@
 //! This example demonstrates how to use crypto primitives (hashing) and
 //! lazy-loaded data.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::*;
 use concordium_std::*;

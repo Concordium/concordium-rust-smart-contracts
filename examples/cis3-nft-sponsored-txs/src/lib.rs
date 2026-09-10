@@ -54,10 +54,10 @@
 //! (that have exactly one credential and exactly one public key for that
 //! credential), the signaturesMaps/publicKeyMaps in this contract, will have
 //! only one value at key 0 in the inner and outer maps.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::*;
-use concordium_std::{collections::BTreeMap, EntrypointName, *};
+use concordium_std::{EntrypointName, collections::BTreeMap, *};
 
 /// The url for the token metadata. Every `token_id` in this contract has the
 /// same metadata url for simplicity.

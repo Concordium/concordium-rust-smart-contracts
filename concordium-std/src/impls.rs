@@ -1,6 +1,6 @@
-#[cfg(feature = "p7")]
 use crate::vec;
 use crate::{
+    String,
     cell::UnsafeCell,
     convert::{self, TryInto},
     fmt,
@@ -12,7 +12,6 @@ use crate::{
     traits::*,
     types::*,
     vec::Vec,
-    String,
 };
 pub(crate) use concordium_contracts_common::*;
 
@@ -1920,10 +1919,8 @@ const INVOKE_CHECK_ACCOUNT_SIGNATURE_TAG: u32 = 5;
 /// Tag of the query account's public keys [prims::invoke].
 const INVOKE_QUERY_ACCOUNT_PUBLIC_KEYS_TAG: u32 = 6;
 /// Tag of the query contract module reference operation. See [prims::invoke].
-#[cfg(feature = "p7")]
 const INVOKE_QUERY_CONTRACT_MODULE_REFERENCE_TAG: u32 = 7;
 /// Tag of the query contract name operation. See [prims::invoke].
-#[cfg(feature = "p7")]
 const INVOKE_QUERY_CONTRACT_NAME_TAG: u32 = 8;
 
 /// Check whether the response code from calling `invoke` is encoding a failure
@@ -2171,7 +2168,6 @@ fn parse_query_exchange_rates_response_code(code: u64) -> ExternCallResponse {
 /// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x03' encodes missing contract.
-#[cfg(feature = "p7")]
 fn parse_query_contract_module_reference_response_code(
     code: u64,
 ) -> Result<ExternCallResponse, QueryContractModuleReferenceError> {
@@ -2195,7 +2191,6 @@ fn parse_query_contract_module_reference_response_code(
 /// - In case of failure the 4th byte is used, and encodes the environment
 ///   failure where:
 ///    - '0x03' encodes missing contract.
-#[cfg(feature = "p7")]
 fn parse_query_contract_name_response_code(
     code: u64,
 ) -> Result<OwnedContractName, QueryContractNameError> {
@@ -2337,7 +2332,6 @@ fn check_account_signature_worker(
 
 /// Helper factoring out the common behaviour of contract_module_reference for
 /// the two extern hosts below.
-#[cfg(feature = "p7")]
 fn query_contract_module_reference_worker(
     address: &ContractAddress,
 ) -> QueryContractModuleReferenceResult {
@@ -2355,7 +2349,6 @@ fn query_contract_module_reference_worker(
 
 /// Helper factoring out the common behaviour of contract_name for
 /// the two extern hosts below.
-#[cfg(feature = "p7")]
 fn query_contract_name_worker(address: &ContractAddress) -> QueryContractNameResult {
     let data = [address.index.to_le_bytes(), address.subindex.to_le_bytes()];
     let response = unsafe {
@@ -2639,7 +2632,6 @@ where
         check_account_signature_worker(address, signatures, data)
     }
 
-    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_module_reference(
         &self,
@@ -2648,7 +2640,6 @@ where
         query_contract_module_reference_worker(&address)
     }
 
-    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
         query_contract_name_worker(&address)
@@ -2743,7 +2734,6 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         check_account_signature_worker(address, signatures, data)
     }
 
-    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_module_reference(
         &self,
@@ -2752,7 +2742,6 @@ impl HasHost<ExternStateApi> for ExternLowLevelHost {
         query_contract_module_reference_worker(&address)
     }
 
-    #[cfg(feature = "p7")]
     #[inline(always)]
     fn contract_name(&self, address: ContractAddress) -> QueryContractNameResult {
         query_contract_name_worker(&address)
@@ -3005,9 +2994,6 @@ pub fn put_in_memory(input: &[u8]) -> *mut u8 {
     let mut bytes = to_bytes(&bytes_length);
     bytes.extend_from_slice(input);
     let ptr = bytes.as_mut_ptr();
-    #[cfg(feature = "std")]
-    ::std::mem::forget(bytes);
-    #[cfg(not(feature = "std"))]
     core::mem::forget(bytes);
     ptr
 }
@@ -3306,13 +3292,16 @@ mod tests {
 
 /// This test module relies on the runtime providing host functions and can only
 /// be run using `cargo concordium test`.
-#[cfg(feature = "internal-wasm-test")]
+#[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
 mod wasm_test {
     use crate::{
-        claim, claim_eq, concordium_test, to_bytes, Deletable, Deserial, DeserialWithState,
-        EntryRaw, HasStateApi, HasStateEntry, ParseResult, Serial, StateApi, StateBuilder,
-        StateError, StateMap, StateSet, INITIAL_NEXT_ITEM_PREFIX,
+        Deletable, Deserial, DeserialWithState, EntryRaw, HasStateApi, HasStateEntry,
+        INITIAL_NEXT_ITEM_PREFIX, ParseResult, Serial, StateApi, StateBuilder, StateError,
+        StateMap, StateSet, claim, claim_eq, concordium_test, to_bytes,
     };
+    use alloc::string::String;
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
 
     const GENERIC_MAP_PREFIX: u64 = 1;
 
@@ -3562,16 +3551,20 @@ mod wasm_test {
             .insert(my_set_key, set)
             .expect("Insert failed");
 
-        claim!(state_builder
-            .get::<_, StateSet<u8, _>>(my_set_key)
-            .unwrap()
-            .unwrap()
-            .contains(&0),);
-        claim!(!state_builder
-            .get::<_, StateSet<u8, _>>(my_set_key)
-            .unwrap()
-            .unwrap()
-            .contains(&2),);
+        claim!(
+            state_builder
+                .get::<_, StateSet<u8, _>>(my_set_key)
+                .unwrap()
+                .unwrap()
+                .contains(&0),
+        );
+        claim!(
+            !state_builder
+                .get::<_, StateSet<u8, _>>(my_set_key)
+                .unwrap()
+                .unwrap()
+                .contains(&2),
+        );
 
         let set = state_builder
             .get::<_, StateSet<u8, _>>(my_set_key)

@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use concordium_contracts_common::{
     AccountAddress, Address, Amount, ContractAddress, EntrypointName, Serial, SlotTime,
 };
@@ -65,11 +67,7 @@ impl TestEnv {
         let mut buf = vec![0; event_len.try_into().unwrap()];
         let bytes_written = unsafe { prims::get_event(index, buf.as_mut_ptr()) };
 
-        if bytes_written < 0 {
-            None
-        } else {
-            Some(buf)
-        }
+        if bytes_written < 0 { None } else { Some(buf) }
     }
 
     /// Set the address of the sender.
@@ -105,9 +103,20 @@ impl TestEnv {
         unsafe { prims::set_receive_entrypoint(buf.as_ptr()) };
         self
     }
+
+    /// Function for generating random numbers.
+    /// There is no Wasm primitive to sample random numbers and this function
+    /// redirects calls to the `get_random` primitive (host function), which is
+    /// later handled by `TestHost`, where the actual random number generation
+    /// happens.
+    pub fn get_random(dest: &mut [u8]) {
+        unsafe {
+            prims::get_random(dest.as_mut_ptr(), dest.len() as u32);
+        }
+    }
 }
 
-#[cfg(feature = "internal-wasm-test")]
+#[cfg(all(feature = "internal-wasm-test", target_arch = "wasm32"))]
 mod wasm_test {
     use core::{num::NonZeroU32, str::FromStr};
 
@@ -156,7 +165,7 @@ mod wasm_test {
         let original = Timestamp::from_timestamp_millis(10);
         TestEnv.set_slot_time(original);
         let stored = extern_chain_meta.block_time();
-        claim_eq!(original, stored)
+        claim_eq!(original, stored);
     }
 
     #[concordium_test]
@@ -229,7 +238,7 @@ mod wasm_test {
         let event_size = unsafe { prims::get_event_size(0) };
 
         claim_eq!(store_status, 1);
-        claim_eq!(event_size, event_prim.len().try_into().unwrap_abort());
+        claim_eq!(event_size, i32::try_from(event_prim.len()).unwrap_abort());
 
         let mut buf = vec![0; event_prim.len()];
         let bytes_written = unsafe { prims::get_event(0, buf.as_mut_ptr()) };
@@ -403,5 +412,12 @@ mod wasm_test {
 
         let received_hash = crypto_primitives().hash_keccak_256(message).0;
         claim_eq!(expected_hash, received_hash);
+    }
+
+    #[concordium_test]
+    fn get_random() {
+        let mut r = [1u8; 8];
+        TestEnv::get_random(&mut r);
+        claim_ne!(r, [1u8; 8]);
     }
 }
