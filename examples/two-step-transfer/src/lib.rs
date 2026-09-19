@@ -213,7 +213,10 @@ fn contract_receive_message<S: HasStateApi>(
             .init_params
             .account_holders
             .iter()
-            .any(|account_holder| sender.matches_account(account_holder)),
+            // Compare full account addresses, not aliases: `matches_account` treats
+            // all aliases of an account as equal, which would let a single holder
+            // satisfy the agreement threshold multiple times via its aliases.
+            .any(|account_holder| sender == Address::Account(*account_holder)),
         ReceiveError::NotAccountHolder
     );
     let sender_address = match sender {
