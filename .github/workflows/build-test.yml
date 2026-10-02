@@ -83,7 +83,7 @@ jobs:
           # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
           rustup target add wasm32v1-none          
-          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch main --locked
           cargo concordium test --only-unit-tests
 
   std_clippy_wasm32v1:
@@ -209,7 +209,7 @@ jobs:
           # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
           # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
           rustup target add wasm32v1-none
-          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch feature/wasm32v1 --locked
+          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch main --locked
       - name: Run cargo concordium tests script
         working-directory: examples
         run: ./run-tests.sh
