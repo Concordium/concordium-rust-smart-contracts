@@ -259,7 +259,7 @@ fn revoke_credential(
         },
     };
     // Call the revoke credential entrypoint.
-    let update = chain
+    chain
         .contract_update(
             SIGNER,
             ISSUER_ACCOUNT,
@@ -275,8 +275,7 @@ fn revoke_credential(
                     .expect("Parameter has valid size."),
             },
         )
-        .expect("Revoke credential call succeeds.");
-    update
+        .expect("Revoke credential call succeeds.")
 }
 
 /// Helper for looking up the status of a credential.

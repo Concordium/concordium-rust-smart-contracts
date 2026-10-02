@@ -22,6 +22,7 @@
 //! `contract-version2` includes a `migration` function
 //! that converts the shape of the smart contract state from `contract-version1`
 //! to `contract-version2`.
+#![no_std]
 use concordium_std::*;
 
 /// The smart contract state.

@@ -34,7 +34,7 @@
 //! It has `get` and `set` receive functions, which either return or set the
 //! weather. Only the owner can update the weather.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_std::*;
 
 #[derive(Serialize, SchemaType, Clone)]

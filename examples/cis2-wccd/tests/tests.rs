@@ -536,7 +536,7 @@ fn test_pause_functionality() {
         .expect("Pause");
 
     // Check that the contract is now paused.
-    assert_eq!(invoke_view(&mut chain, contract_address).paused, true);
+    assert!(invoke_view(&mut chain, contract_address).paused);
 
     // Unpause the contract.
     chain
@@ -554,7 +554,7 @@ fn test_pause_functionality() {
         )
         .expect("Unpause");
     // Check that the contract is now unpaused.
-    assert_eq!(invoke_view(&mut chain, contract_address).paused, false);
+    assert!(!invoke_view(&mut chain, contract_address).paused);
 }
 
 /// Test that only the admin can pause/unpause the contract.

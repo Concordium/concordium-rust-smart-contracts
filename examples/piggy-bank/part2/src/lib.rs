@@ -15,6 +15,8 @@
 //! - Integration testing (in the `/tests/tests.rs file`)
 //! - Custom errors.
 
+#![no_std]
+
 // Pulling in everything from the smart contract standard library.
 use concordium_std::*;
 

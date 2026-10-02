@@ -1,6 +1,6 @@
 //! # Concordium V1 Smart Contract Template
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_std::*;
 use core::fmt::Debug;

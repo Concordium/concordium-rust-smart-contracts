@@ -2,10 +2,8 @@
 name = "signature-verifier"
 version = "0.1.0"
 authors = ["Concordium <developers@concordium.com>"]
-edition = "2021"
+edition = "2024"
 license = "MPL-2.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 concordium-std = {path = "../../concordium-std"}
@@ -15,11 +13,6 @@ concordium-smart-contract-testing = { path = "../../contract-testing" }
 concordium-std-derive = { path = "../../concordium-std-derive" }
 ed25519-dalek = { version = "2.0", features = ["rand_core"]  }
 rand = "0.8.5"
-
-[features]
-default = ["std", "bump_alloc"]
-std = ["concordium-std/std"]
-bump_alloc = ["concordium-std/bump_alloc"]
 
 [lib]
 crate-type=["cdylib", "rlib"]

@@ -36,7 +36,7 @@
 //! auction. The creator of that auction receives the highest bid when the
 //! auction is finalized and the item is marked as sold to the highest bidder.
 //! This can be done only once.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_cis2::{Cis2Client, *};
 use concordium_std::{collections::BTreeMap, *};

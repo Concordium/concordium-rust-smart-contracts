@@ -28,7 +28,7 @@
  * cancel it, iff it is still outstanding.
  */
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 use concordium_std::{collections::*, *};
 

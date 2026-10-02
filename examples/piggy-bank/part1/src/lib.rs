@@ -13,6 +13,8 @@
 //! - The `mutable` attribute.
 //! - Invoking a transfer with the host.
 
+#![no_std]
+
 // Pulling in everything from the smart contract standard library.
 use concordium_std::*;
 

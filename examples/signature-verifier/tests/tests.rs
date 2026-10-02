@@ -140,7 +140,7 @@ fn test_inside_signature_check() {
     let message: &[u8] = b"Concordium";
     let signing_key = SigningKey::generate(rng);
     let verifying_key = signing_key.verifying_key();
-    let signature = signing_key.sign(&message);
+    let signature = signing_key.sign(message);
 
     // Construct a parameter with an invalid signature.
     let parameter_invalid = VerificationParameter {

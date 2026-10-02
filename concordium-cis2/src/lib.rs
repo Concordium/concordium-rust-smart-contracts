@@ -33,7 +33,8 @@
 //! [`TokenAmountU256`] is defined and implements the [`IsTokenAmount`]
 //! interface. The `serde` features derives `serde::Serialize` and
 //! `serde::Deserialize` for a variety of types.
-#![cfg_attr(not(feature = "std"), no_std)]
+
+#![no_std]
 
 mod cis2_client;
 pub use cis2_client::{Cis2Client, Cis2ClientError};
@@ -41,12 +42,9 @@ pub use cis2_client::{Cis2Client, Cis2ClientError};
 use concordium_std::{collections::BTreeMap, schema::SchemaType, *};
 // Re-export for backward compatibility.
 pub use concordium_std::MetadataUrl;
-#[cfg(not(feature = "std"))]
 use core::{fmt, ops, str::FromStr};
 #[cfg(feature = "serde")]
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-#[cfg(feature = "std")]
-use std::{fmt, ops, str::FromStr};
 
 use convert::TryFrom;
 
@@ -695,7 +693,7 @@ impl TryFrom<String> for TokenIdUnit {
     type Error = ParseError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        if s == "" {
+        if s.is_empty() {
             Ok(Self())
         } else {
             Err(ParseError {})

@@ -3,8 +3,8 @@ use cis2_multi::{ContractBalanceOfQueryParams, ContractBalanceOfQueryResponse, *
 use concordium_cis2::*;
 use concordium_smart_contract_testing::*;
 use concordium_std::{
-    collections::BTreeMap, AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256,
-    SignatureEd25519, Timestamp,
+    AccountPublicKeys, AccountSignatures, CredentialSignatures, HashSha2256, SignatureEd25519,
+    Timestamp, collections::BTreeMap,
 };
 use concordium_std_derive::*;
 
@@ -39,7 +39,9 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 const SIGNER: Signer = Signer::with_one_key();
 
 /// Dummy signature used as placeholder.
-const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+const DUMMY_SIGNATURE: SignatureEd25519 = signature_ed25519!(
+    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+);
 
 /// Test minting succeeds and the tokens are owned by the given address and
 /// the appropriate events are logged.
@@ -1233,7 +1235,7 @@ fn test_pause_functionality() {
         .expect("Pause");
 
     // Check that the contract is now paused.
-    assert_eq!(invoke_view(&mut chain, contract_address).paused, true);
+    assert!(invoke_view(&mut chain, contract_address).paused);
 
     // Unpause the contract.
     chain
@@ -1251,7 +1253,7 @@ fn test_pause_functionality() {
         )
         .expect("Unpause");
     // Check that the contract is now unpaused.
-    assert_eq!(invoke_view(&mut chain, contract_address).paused, false);
+    assert!(!invoke_view(&mut chain, contract_address).paused);
 }
 
 /// Test that only the PAUSER can pause/unpause the contract.

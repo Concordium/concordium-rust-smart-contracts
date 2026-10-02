@@ -39,6 +39,9 @@
 //! The public key accounts in this smart contract wallet can't submit the
 //! transactions on chain themselves, but rely on someone with a native account
 //! (third-party) to do so.
+
+#![no_std]
+
 use concordium_cis2::{self as cis2, *};
 use concordium_std::*;
 #[cfg(feature = "serde")]

@@ -16,7 +16,7 @@
 //! different witness) would not prove that the second witness is also in
 //! possession of that file because the second witness could have read the
 //! file hash during the initial registration transaction from the blockchain.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_std::*;
 
 /// The different errors the contract can produce.

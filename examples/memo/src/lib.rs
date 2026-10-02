@@ -1,3 +1,4 @@
+#![no_std]
 use concordium_std::*;
 
 /// # Implementation of a smart contract that can receive transfers with a memo

@@ -1,6 +1,6 @@
 //! Tests for the transfer-policy-check contract.
 use concordium_smart_contract_testing::*;
-use concordium_std::{attributes, OwnedPolicy};
+use concordium_std::{OwnedPolicy, attributes};
 use concordium_std_derive::*;
 use transfer_policy_check::*;
 
@@ -62,14 +62,12 @@ fn test_amount_forward_on_correct_policy() {
 
 /// Construct a policy with the provided country code.
 fn policy_with_country(country_code: [u8; 2]) -> OwnedPolicy {
-    let policies = OwnedPolicy {
+    OwnedPolicy {
         identity_provider: 0,
         created_at: Timestamp::from_timestamp_millis(0),
         valid_to: Timestamp::from_timestamp_millis(1000),
         items: vec![(attributes::COUNTRY_OF_RESIDENCE, country_code.into())],
-    };
-
-    policies
+    }
 }
 
 /// Initialize the chain and contract.

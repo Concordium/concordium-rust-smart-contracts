@@ -39,7 +39,7 @@ impl PageCount {
 /// The number of pages returned from `memory_grow` to indicate out of memory.
 const ERROR_PAGE_COUNT: PageCount = PageCount(usize::MAX);
 
-extern "C" {
+unsafe extern "C" {
     /// A pointer to the `__heap_base` field defined in the Wasm files that
     /// specifies which memory address the heap starts at. Memory addresses
     /// prior to that are used for the data and the stack.
@@ -142,76 +142,80 @@ impl BumpAllocator {
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let heap_end = &mut *self.heap_end.get();
-        let next = &mut *self.next.get();
+        unsafe {
+            let heap_end = &mut *self.heap_end.get();
+            let next = &mut *self.next.get();
 
-        // On the first allocation, we need to replace the dummy values in the struct
-        // with the actual memory addresses of the `heap_start` and `heap_end` as well
-        // as the `next` and `last_alloc`.
-        //
-        // This is because the size of the data and stack sections (which are located
-        // before the beginning of the heap) and the initial size of the heap
-        // can be configured in the wasm.
-        if *heap_end == 0 {
-            // Get the base/start of the heap.
-            let heap_base = unsafe { &__heap_base as *const _ as usize };
-            // Get the actual size of the memory, which is also the end of the heap, as the
-            // heap is the last section in the memory.
-            let actual_size = self.memory_size().size_in_bytes();
-            // Replace all the dummy values.
-            *next = heap_base;
-            *self.heap_start.get() = heap_base;
-            *self.last_alloc.get() = heap_base;
-            *heap_end = actual_size;
-        }
-
-        // Align the address.
-        let alloc_start = align_up(*next, layout.align());
-        // Get the end of the allocation. This should always return `Some` as the
-        // contract memory is limited to much below usize::MAX.
-        let alloc_end = match alloc_start.checked_add(layout.size()) {
-            Some(end) => end,
-            None => return ptr::null_mut(),
-        };
-
-        // Check if we need to request more memory.
-        if alloc_end > *heap_end {
-            let space_needed = alloc_end - *heap_end;
-            let pages_to_request = pages_to_request(space_needed);
-            let previous_page_count = self.memory_grow(pages_to_request);
-            // Check if we are out of memory.
-            if previous_page_count == ERROR_PAGE_COUNT {
-                return ptr::null_mut();
+            // On the first allocation, we need to replace the dummy values in the struct
+            // with the actual memory addresses of the `heap_start` and `heap_end` as well
+            // as the `next` and `last_alloc`.
+            //
+            // This is because the size of the data and stack sections (which are located
+            // before the beginning of the heap) and the initial size of the heap
+            // can be configured in the wasm.
+            if *heap_end == 0 {
+                // Get the base/start of the heap.
+                let heap_base = &__heap_base as *const _ as usize;
+                // Get the actual size of the memory, which is also the end of the heap, as the
+                // heap is the last section in the memory.
+                let actual_size = self.memory_size().size_in_bytes();
+                // Replace all the dummy values.
+                *next = heap_base;
+                *self.heap_start.get() = heap_base;
+                *self.last_alloc.get() = heap_base;
+                *heap_end = actual_size;
             }
-            // Increase the heap size.
-            *heap_end += pages_to_request.size_in_bytes();
-        }
 
-        // Increment allocations counter.
-        *self.allocations.get() += 1;
-        // Remember the last address handed out, so that we may move `next` backwards if
-        // it is deallocated before a new allocation occurs.
-        *self.last_alloc.get() = alloc_start;
-        *next = alloc_end;
-        alloc_start as *mut u8
+            // Align the address.
+            let alloc_start = align_up(*next, layout.align());
+            // Get the end of the allocation. This should always return `Some` as the
+            // contract memory is limited to much below usize::MAX.
+            let alloc_end = match alloc_start.checked_add(layout.size()) {
+                Some(end) => end,
+                None => return ptr::null_mut(),
+            };
+
+            // Check if we need to request more memory.
+            if alloc_end > *heap_end {
+                let space_needed = alloc_end - *heap_end;
+                let pages_to_request = pages_to_request(space_needed);
+                let previous_page_count = self.memory_grow(pages_to_request);
+                // Check if we are out of memory.
+                if previous_page_count == ERROR_PAGE_COUNT {
+                    return ptr::null_mut();
+                }
+                // Increase the heap size.
+                *heap_end += pages_to_request.size_in_bytes();
+            }
+
+            // Increment allocations counter.
+            *self.allocations.get() += 1;
+            // Remember the last address handed out, so that we may move `next` backwards if
+            // it is deallocated before a new allocation occurs.
+            *self.last_alloc.get() = alloc_start;
+            *next = alloc_end;
+            alloc_start as *mut u8
+        }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        let allocations = self.allocations.get();
-        let last_alloc = self.last_alloc.get();
-        let next = self.next.get();
-        // Decrease the allocation counter.
-        *allocations -= 1;
-        if *allocations == 0 {
-            // Reset next and last allocation so they point at the start of the heap if
-            // everything has been deallocated.
-            let heap_start = self.heap_start.get();
-            *next = *heap_start;
-            *last_alloc = *heap_start;
-        } else if *last_alloc as *mut u8 == ptr {
-            // Move next back to last alloc. This is a small optimization over the regular
-            // bump allocator.
-            *next = *last_alloc;
+        unsafe {
+            let allocations = self.allocations.get();
+            let last_alloc = self.last_alloc.get();
+            let next = self.next.get();
+            // Decrease the allocation counter.
+            *allocations -= 1;
+            if *allocations == 0 {
+                // Reset next and last allocation so they point at the start of the heap if
+                // everything has been deallocated.
+                let heap_start = self.heap_start.get();
+                *next = *heap_start;
+                *last_alloc = *heap_start;
+            } else if *last_alloc as *mut u8 == ptr {
+                // Move next back to last alloc. This is a small optimization over the regular
+                // bump allocator.
+                *next = *last_alloc;
+            }
         }
     }
 }

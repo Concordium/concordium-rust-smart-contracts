@@ -18,20 +18,20 @@ const ACC_INITIAL_BALANCE: Amount = Amount::from_ccd(10000);
 /// 0. Auction is initialized.
 /// 1. Alice successfully bids 1 CCD.
 /// 2. Alice successfully bids 2 CCD, highest
-/// bid becomes 2 CCD. Alice gets her 1 CCD refunded.
+///    bid becomes 2 CCD. Alice gets her 1 CCD refunded.
 /// 3. Bob successfully bids 3 CCD, highest
-/// bid becomes 3 CCD. Alice gets her 2 CCD refunded.
+///    bid becomes 3 CCD. Alice gets her 2 CCD refunded.
 /// 4. Alice tries to bid 3 CCD, which matches the current highest bid, which
-/// fails.
+///    fails.
 /// 5. Alice tries to bid 3.5 CCD, which is below the minimum raise
-/// threshold of 1 CCD.
+///    threshold of 1 CCD.
 /// 6. Someone tries to finalize the auction before
-/// its end time. Attempt fails.
+///    its end time. Attempt fails.
 /// 7. Someone tries to bid after the auction has ended (but before it has been
-/// finalized), which fails.
+///    finalized), which fails.
 /// 8. Dave successfully finalizes the auction after
-/// its end time. Carol (the owner of the contract) collects the highest bid
-/// amount.
+///    its end time. Carol (the owner of the contract) collects the highest bid
+///    amount.
 /// 9. Attempts to subsequently bid or finalize fail.
 #[test]
 fn test_multiple_scenarios() {

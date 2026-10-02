@@ -6,7 +6,7 @@
 //! altering the test. Some of the tests fail if the black boxes are removed,
 //! other's simply do not work as intended, which is only visible by logs from
 //! the allocator.
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 use concordium_std::{collections::BTreeMap, hint::black_box, *};
 
 type State = ();
