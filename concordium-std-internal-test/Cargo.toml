@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std-internal-test"
-version = "1.0.0"
+publish = false
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2024"
 rust-version = "1.85"
