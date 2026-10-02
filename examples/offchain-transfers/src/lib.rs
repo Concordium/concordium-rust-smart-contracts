@@ -57,7 +57,6 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::collections::BTreeSet;
 use concordium_std::*;
 
 /// Unique identifier for settlements
@@ -451,7 +450,7 @@ fn is_settlement_valid<S: HasStateApi>(
     // check whether all senders have sufficient funds with respect to the updated
     // state first get of all senders (to avoid duplicate checks) and then
     // check for each sender in set
-    let mut sender_addresses = BTreeSet::new();
+    let mut sender_addresses = HashSet::default();
     for send_transfer in settlement.transfer.send_transfers.iter() {
         sender_addresses.insert(send_transfer.address);
     }
