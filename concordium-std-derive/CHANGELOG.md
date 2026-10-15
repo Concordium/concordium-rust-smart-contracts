@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased changes
+## concordium-std-derive 6.1.0 (2026-10-15)
+
+- Bump MSRV (minimal-supported rust version) to 1.85
 
 ## concordium-std-derive 6.0.0 (2024-04-04)
 

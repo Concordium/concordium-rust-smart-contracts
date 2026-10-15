@@ -1,6 +1,6 @@
 [package]
 name = "concordium-std"
-version = "10.1.0"
+version = "11.0.0"
 authors = ["Concordium <developers@concordium.com>"]
 edition = "2024"
 rust-version = "1.85"
@@ -15,7 +15,7 @@ dlmalloc = { version = "0.2.14", features = ["global"], optional = true }
 
 [dependencies.concordium-contracts-common]
 path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common"
-version = "9.0"
+version = "10.0.0"
 default-features = false
 features = ["smart-contract"]
 
