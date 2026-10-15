@@ -9,12 +9,12 @@ authors = [ "{{authors}}" ]
 description = "{{description}}"
 
 [dependencies]
-concordium-std = {version = "10.1"}
-concordium-cis2 = {version = "6.2"}
+concordium-std = {version = "11.0.0"}
+concordium-cis2 = {version = "7.0.0"}
 
 [dev-dependencies]
-concordium-smart-contract-testing = "4.3"
-concordium-std-derive = "6.0"
+concordium-smart-contract-testing = "5.0.0"
+concordium-std-derive = "6.1.0"
 
 [lib]
 crate-type=["cdylib", "rlib"]
