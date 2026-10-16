@@ -1,11 +1,9 @@
 # Changelog
 
-## [unreleased]
-
-## [6.2.1-alpha.1] - 2025-10-03
+## concordium-cis2 7.0.0 (2026-10-15)
 
 - Bump MSRV (minimal-supported rust version) to 1.85
-
+- Bump concordium-std dependency to version 11.
 
 ## concordium-cis2 6.2.0 (2024-09-19)
 

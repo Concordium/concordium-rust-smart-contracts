@@ -1,7 +1,7 @@
 [package]
 name = "concordium-std-derive"
 authors = ["Concordium <developers@concordium.com>"]
-version = "6.0.1-alpha.1"
+version = "6.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MPL-2.0"
@@ -9,12 +9,11 @@ description = "Procedural macros to generate concordium type constants from stri
 homepage = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 repository = "https://github.com/Concordium/concordium-rust-smart-contracts/"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 proc-macro = true
 
 [dependencies]
-concordium-contracts-common = { path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common", features = [ "derive-serde" ], version = "9" }
+concordium-contracts-common = { path = "../concordium-rust-sdk/concordium-base/smart-contracts/contracts-common/concordium-contracts-common", features = [ "derive-serde" ], version = "10.0.0" }
 syn = "2.0"
 proc-macro2 = "1.0"
 quote = "1.0"

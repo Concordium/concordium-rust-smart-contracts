@@ -10,7 +10,7 @@ on:
 name: Clippy & fmt
 
 env:
-  CARGO_CONCORDIUM_VERSION: "4.2.0"
+  CARGO_CONCORDIUM_VERSION: "5.0.0"
 
 jobs:
 
@@ -75,15 +75,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Install cargo binstall
+        uses: cargo-bins/cargo-binstall@main
       - name: Run internal wasm unit test
         working-directory: concordium-std-internal-test
         run: |
-          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
-          # chmod +x /tmp/cargo-concordium
-          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
-          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
-          rustup target add wasm32v1-none          
-          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch main --locked
+          rustup target add wasm32v1-none
+          cargo binstall --version $CARGO_CONCORDIUM_VERSION cargo-concordium 
           cargo concordium test --only-unit-tests
 
   std_clippy_wasm32v1:
@@ -202,14 +200,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Install cargo binstall
+        uses: cargo-bins/cargo-binstall@main
       - name: Download and install Cargo Concordium
         run: |
-          # curl -L https://github.com/Concordium/concordium-smart-contract-tools/releases/download/releases/cargo-concordium/${CARGO_CONCORDIUM_VERSION}/cargo-concordium-linux-amd64 -o /tmp/cargo-concordium
-          # chmod +x /tmp/cargo-concordium
-          # sudo mv /tmp/cargo-concordium /usr/bin/cargo-concordium
-          # todo change to use release as part of https://linear.app/concordium/issue/COR-2479/release-for-wasm32v1
           rustup target add wasm32v1-none
-          cargo install --git https://github.com/Concordium/concordium-smart-contract-tools.git --branch main --locked
+          cargo binstall --version $CARGO_CONCORDIUM_VERSION cargo-concordium
       - name: Run cargo concordium tests script
         working-directory: examples
         run: ./run-tests.sh
