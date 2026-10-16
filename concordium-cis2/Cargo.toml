@@ -1,6 +1,6 @@
 [package]
 name = "concordium-cis2"
-version = "7.0.0"
+version = "7.0.1"
 authors = ["Concordium <developers@concordium.com>"]
 rust-version = "1.85"
 edition = "2024"
@@ -44,5 +44,5 @@ serde = [
 # exist on that platform.
 targets = ["wasm32v1-none"]
 # Default features to build documentation for.
-features = ["u256_amount", "serde"]
+features = ["u256_amount"]
 rustc-args = ["--cfg", "docsrs"]
