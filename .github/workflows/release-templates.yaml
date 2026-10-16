@@ -104,9 +104,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target:
-          - wasm32v1-none
-
         crates:
           - templates/default
           - templates/cis2-nft
@@ -142,7 +139,7 @@ jobs:
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           rustup target add wasm32v1-none
-          cargo clippy --manifest-path ./Cargo.toml --target=${{ matrix.target }} --features concordium-std/build-schema -- -D warnings
+          cargo clippy --manifest-path ./Cargo.toml --target=wasm32v1-none --features concordium-std/build-schema -- -D warnings
 
   # The credential registry template is used to generate code for all combinations of parameters
   # with the `cargo-generate` command and it is checked that the schemas can be built as part
@@ -152,9 +149,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target:
-          - wasm32v1-none
-
         restorable: ["true", "false"]
         revocable_by_others: ["true", "false"]
 
@@ -184,7 +178,7 @@ jobs:
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           rustup target add wasm32v1-none
-          cargo clippy --manifest-path ./Cargo.toml --target=${{ matrix.target }} --features concordium-std/build-schema -- -D warnings
+          cargo clippy --manifest-path ./Cargo.toml --target=wasm32v1-none --features concordium-std/build-schema -- -D warnings
 
   release:
     name: Releases
