@@ -7,6 +7,8 @@ on:
 
 name: Release Templates
 
+env:
+  CARGO_CONCORDIUM_VERSION: "5.0.0"
 
 jobs:
   # All templates are generated with the `cargo-generate` command and it is checked that the 'cargo test' command
