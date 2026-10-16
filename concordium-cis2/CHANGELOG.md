@@ -1,5 +1,9 @@
 # Changelog
 
+## concordium-cis2 7.0.1 (2026-10-16)
+
+- Fix docs.rs by removing `serde` feature, since it is not compatible with `wasm32v1-none` target 
+
 ## concordium-cis2 7.0.0 (2026-10-15)
 
 - Bump MSRV (minimal-supported rust version) to 1.85
