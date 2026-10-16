@@ -35,7 +35,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d include_deploy_scripts=false"
 
       - name: Install Wasm target
         run: rustup target install wasm32v1-none
@@ -123,7 +123,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full"
+          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full -d include_deploy_scripts=false"
 
       - name: Install clippy
         run: |
