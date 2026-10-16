@@ -593,8 +593,8 @@ pub struct InitParams {
 }
 
 /// Init function that creates a fresh registry state given the required
-/// initialisation data.
-{% if revocable_by_others %}///
+/// initialisation data.{% if revocable_by_others %}
+///
 /// Logs `CredentialEvent::IssuerMetadata`, `CredentialEvent::RevocationKey`
 /// (with the `Register` action) for each key in the input, and
 /// `CredentialEvent::Schema` for each schema in the input.
