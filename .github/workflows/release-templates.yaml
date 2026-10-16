@@ -5,6 +5,8 @@ on:
         description: "Release version, eg. 1.2.3 (Don't include a 'v'!)"
         required: true
 
+  pull_request:
+
 name: Release Templates
 
 env:
@@ -35,7 +37,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d include_deploy_scripts=false"
+          arguments: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d include_deploy_scripts=false"
 
       - name: Install Wasm target
         run: rustup target install wasm32v1-none
@@ -78,7 +80,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: templates/credential-registry
-          other: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
+          arguments: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
 
       - name: Install Wasm target
         run: rustup target install wasm32v1-none
@@ -123,7 +125,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: ${{ matrix.crates }}
-          other: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full -d include_deploy_scripts=false"
+          arguments: "-d description=myProject -d tokenMetadataBaseURL=https://some.example/token/ -d template_type=full -d include_deploy_scripts=false"
 
       - name: Install clippy
         run: |
@@ -164,7 +166,7 @@ jobs:
         with:
           name: ${{ env.PROJECT_NAME }}
           template: templates/credential-registry
-          other: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
+          arguments: "-d description=myProject -d template_type=custom -d restorable=${{ matrix.restorable }} -d revocable_by_others=${{ matrix.revocable_by_others }}"
 
       - name: Install clippy
         run: |
@@ -180,23 +182,23 @@ jobs:
           rustup target add wasm32v1-none
           cargo clippy --manifest-path ./Cargo.toml --target=wasm32v1-none --features concordium-std/build-schema -- -D warnings
 
-  release:
-    name: Releases
-    runs-on: ubuntu-latest
-    needs:
-      - cargo-generate-templates
-      - cargo-generate-credential-registry-template
-      - clippy-template
-      - clippy-credential-registry-template
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Create a GitHub release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: releases/templates/v${{ github.event.inputs.tag }}
-          draft: true
-          name: Template Release v${{ github.event.inputs.tag }}
+#  release:
+#    name: Releases
+#    runs-on: ubuntu-latest
+#    needs:
+#      - cargo-generate-templates
+#      - cargo-generate-credential-registry-template
+#      - clippy-template
+#      - clippy-credential-registry-template
+#    steps:
+#      - name: Checkout sources
+#        uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Create a GitHub release
+#        uses: ncipollo/release-action@v1
+#        with:
+#          tag: releases/templates/v${{ github.event.inputs.tag }}
+#          draft: true
+#          name: Template Release v${{ github.event.inputs.tag }}
