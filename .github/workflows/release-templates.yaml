@@ -52,6 +52,7 @@ jobs:
       - name: Run cargo test
         run: |
           cargo binstall --version $CARGO_CONCORDIUM_VERSION cargo-concordium
+          cp rust-toolchain.toml $PROJECT_NAME/
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo concordium test --out "./concordium-out/module.wasm.v1"
@@ -95,6 +96,7 @@ jobs:
       - name: Run cargo test
         run: |
           cargo binstall --version $CARGO_CONCORDIUM_VERSION cargo-concordium
+          cp rust-toolchain.toml $PROJECT_NAME/
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           cargo concordium test --out "./concordium-out/module.wasm.v1"
@@ -136,6 +138,7 @@ jobs:
       # see https://github.com/rust-lang/cargo/issues/9922
       - name: Run clippy with build-schema
         run: |
+          cp rust-toolchain.toml $PROJECT_NAME/
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           rustup target add wasm32v1-none
@@ -177,6 +180,7 @@ jobs:
       # see https://github.com/rust-lang/cargo/issues/9922
       - name: Run clippy with build-schema
         run: |
+          cp rust-toolchain.toml $PROJECT_NAME/
           mv $PROJECT_NAME ${{ runner.temp }}/
           cd ${{ runner.temp }}/$PROJECT_NAME
           rustup target add wasm32v1-none
